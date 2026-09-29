@@ -1,0 +1,4 @@
+# Normalize line endings: the code runs on Linux (Docker, CI, Kubernetes).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
