@@ -1,4 +1,5 @@
-"""`agency` command line: index, route, ask (single or --team), eval, serve, mcp."""
+"""`agency` command line: index, route, ask (single or --team), eval, eval-answers,
+eval-judge, serve, mcp."""
 
 from __future__ import annotations
 
@@ -82,6 +83,70 @@ def _eval_cmd(dataset: Path, min_top1: float, min_recall: float, output: Path | 
     return 0 if ok else 1
 
 
+def _write(summary: dict[str, Any], output: Path | None) -> None:
+    if output:
+        output.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _gate(failures: list[str]) -> int:
+    for failure in failures:
+        print(f"FAIL: {failure}", file=sys.stderr)
+    return 1 if failures else 0
+
+
+async def _answers(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    from orchestrator.answer_eval import run_answer_eval
+    from orchestrator.judge import Judge
+
+    async with _started() as orch:
+        report = await run_answer_eval(orch, Judge(orch.llm, orch.settings), rows)
+    return report.summary()
+
+
+def _eval_answers_cmd(
+    dataset: Path, min_pass_rate: float, min_mean: float, output: Path | None
+) -> int:
+    from orchestrator.answer_eval import load_rows
+
+    summary = asyncio.run(_answers(load_rows(dataset)))
+    _print({k: v for k, v in summary.items() if k != "failures"})
+    _write(summary, output)
+    failures = []
+    if summary["pass_rate"] < min_pass_rate:
+        failures.append(f"pass_rate={summary['pass_rate']:.3f} (min {min_pass_rate})")
+    failures += [
+        f"{name} mean={mean:.3f} (min {min_mean})"
+        for name, mean in summary["criterion_means"].items()
+        if mean < min_mean
+    ]
+    return _gate(failures)
+
+
+async def _calibrate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    from orchestrator.answer_eval import run_calibration
+    from orchestrator.judge import Judge
+    from orchestrator.llm import build_llm
+
+    settings = get_settings()  # the judge alone: no catalog, index or database needed
+    return (await run_calibration(Judge(build_llm(settings), settings), rows)).summary()
+
+
+def _eval_judge_cmd(
+    dataset: Path, min_agreement: float, max_false_pass: int, output: Path | None
+) -> int:
+    from orchestrator.answer_eval import load_rows
+
+    summary = asyncio.run(_calibrate(load_rows(dataset, calibration=True)))
+    _print({k: v for k, v in summary.items() if k != "disagreements"})
+    _write(summary, output)
+    failures = []
+    if summary["agreement"] < min_agreement:
+        failures.append(f"agreement={summary['agreement']:.3f} (min {min_agreement})")
+    if summary["false_pass"] > max_false_pass:
+        failures.append(f"false_pass={summary['false_pass']} (max {max_false_pass})")
+    return _gate(failures)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -102,6 +167,20 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--min-top1", type=float, default=0.0)
     p_eval.add_argument("--min-recall", type=float, default=0.0)
     p_eval.add_argument("--output", type=Path)
+    p_answers = sub.add_parser("eval-answers", help="Grade end-to-end answers with an LLM judge")
+    p_answers.add_argument("--dataset", type=Path, default=Path("evals/answers.jsonl"))
+    p_answers.add_argument("--min-pass-rate", type=float, default=0.0)
+    p_answers.add_argument(
+        "--min-mean", type=float, default=0.0, help="Minimum mean score (1-5) per criterion"
+    )
+    p_answers.add_argument("--output", type=Path)
+    p_judge = sub.add_parser("eval-judge", help="Check the judge against human labels")
+    p_judge.add_argument("--dataset", type=Path, default=Path("evals/judge_calibration.jsonl"))
+    p_judge.add_argument("--min-agreement", type=float, default=0.0)
+    p_judge.add_argument(
+        "--max-false-pass", type=int, default=None, help="Max bad answers the judge may pass"
+    )
+    p_judge.add_argument("--output", type=Path)
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -116,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(_ask(args.question, args.agent_id, args.team))
     elif args.cmd == "eval":
         return _eval_cmd(args.dataset, args.min_top1, args.min_recall, args.output)
+    elif args.cmd == "eval-answers":
+        return _eval_answers_cmd(args.dataset, args.min_pass_rate, args.min_mean, args.output)
+    elif args.cmd == "eval-judge":
+        max_fp = args.max_false_pass if args.max_false_pass is not None else sys.maxsize
+        return _eval_judge_cmd(args.dataset, args.min_agreement, max_fp, args.output)
     elif args.cmd == "serve":
         import uvicorn
 

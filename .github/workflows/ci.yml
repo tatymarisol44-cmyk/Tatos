@@ -85,6 +85,10 @@ jobs:
           enable-cache: true
       - run: uv sync
       - run: uv run agency eval --min-top1 0.50 --min-recall 0.80 --output eval-report.json
+      # Answer-eval smoke test: validates the dataset, that pinned agents still exist in
+      # the catalog and that no row is blocked or errors. The fake judge passes everything,
+      # so quality itself is gated nightly with real models.
+      - run: uv run agency eval-answers --min-pass-rate 1.0 --output answers-report.json
       - name: Publish summary
         if: always()
         run: |

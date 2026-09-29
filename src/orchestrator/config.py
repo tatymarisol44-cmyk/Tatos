@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 
+    # --- Answer-quality evals (LLM-as-judge) -------------------------------
+    # A stronger model than the one answering; ideally another family (self-preference).
+    judge_model: str = "anthropic/claude-opus-5-5"
+    # An answer passes when every rubric criterion (1-5) reaches this score.
+    judge_min_score: int = Field(default=4, ge=1, le=5)
+
     # --- Conversation state (LangGraph checkpointer) -----------------------
     # "postgres" makes threads survive restarts and be shared by every replica.
     checkpointer_backend: Literal["memory", "postgres"] = "memory"

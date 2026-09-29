@@ -1,6 +1,9 @@
 name: Nightly eval (real models)
 
-# Measures production routing quality: LLM router + hosted embeddings.
+# Measures production quality with real models:
+#   1. routing (LLM router + hosted embeddings)
+#   2. judge calibration: the LLM judge must agree with human labels before we trust it
+#   3. answer quality: end-to-end answers (single, team, RAG) graded by that judge
 # Requires repository secrets ANTHROPIC_API_KEY and OPENAI_API_KEY.
 on:
   schedule:
@@ -31,8 +34,19 @@ jobs:
           enable-cache: true
       - run: uv sync
       - run: uv run agency eval --min-top1 0.80 --min-recall 0.95 --output eval-report.json
+      - name: Judge calibration
+        id: judge
+        if: always()
+        run: uv run agency eval-judge --min-agreement 0.85 --max-false-pass 1 --output judge-report.json
+      # Independent of the routing gate, but only meaningful with a calibrated judge.
+      - name: Answer quality
+        if: always() && steps.judge.outcome == 'success'
+        run: uv run agency eval-answers --min-pass-rate 0.80 --min-mean 4.0 --output answers-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nightly-eval-report
-          path: eval-report.json
+          path: |
+            eval-report.json
+            judge-report.json
+            answers-report.json

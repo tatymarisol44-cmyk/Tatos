@@ -129,7 +129,7 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
 | **Reproducibility** | `uv.lock` with `--frozen` everywhere (local, CI, Docker). Agent catalog pinned as a git submodule and baked into the image. Vector collections are named `<name>_<catalog-hash>_<embedder>`, so an index is immutable and tied to exactly one catalog + embedding model. LiteLLM uses its bundled pricing map instead of fetching one at runtime. |
 | **Provider portability** | LiteLLM behind a small `LLMClient` protocol. Model, router model and fallback chain are env vars. Retries, timeouts and fallbacks are configured centrally. |
 | **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Documents: injection check at ingestion, delimited as data in prompts. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
-| **Evaluation** | `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. |
+| **Evaluation** | *Routing:* `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. *Answers:* an LLM judge grades end-to-end answers (single, team, RAG) on relevance, faithfulness to the tenant's documents and completeness (`evals/answers.jsonl`). The judge itself is calibrated nightly against hand-labelled good/bad answers (`evals/judge_calibration.jsonl`), gating on agreement and false passes. See [ADR 0006](docs/adr/0006-llm-as-judge-evals.md). |
 | **Observability** | OpenTelemetry traces per graph node, team step (`team.plan`, `team.worker`, `team.synthesize`) and LLM call, with GenAI semantic-convention attributes (model, input/output tokens). Metrics: routed count by agent and method, guardrail blocks, latency histogram, token usage. The collector strips prompt/completion text before export. |
 | **Testing** | 105 tests, 97% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access) are tested explicitly. |
 | **Code quality** | Ruff (lint + format, incl. security rules), mypy `--strict`, pre-commit hooks. |
@@ -166,8 +166,10 @@ src/orchestrator/
   api/            FastAPI app, SSE, auth/rate limit, A2A
   web/            static web console (HTML/CSS/JS, no build)
   mcp_server.py   MCP tools
+  judge.py        LLM-as-judge rubric, prompt and fail-closed verdict parsing
+  answer_eval.py  end-to-end answer eval and judge calibration
   evals.py, cli.py
-evals/routing.jsonl
+evals/            routing.jsonl, answers.jsonl, judge_calibration.jsonl
 deploy/           otel-collector, prometheus, k8s (kustomize)
 docs/adr/         architecture decision records
 ```
@@ -178,9 +180,8 @@ docs/adr/         architecture decision records
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.
 - **Retrieval is dense-only.** Hybrid search (BM25 + vectors) and a reranker would help with exact terms like SKUs.
-- **Team and RAG answer quality is not evaluated yet.** Routing has an eval gate; plans and syntheses need an LLM-as-judge suite (plan coverage, faithfulness to contributions).
 - **Guardrails are heuristic.** For regulated tenants, add an LLM-based classifier (e.g. Llama Guard) as an extra graph node.
-- **Answer quality is not evaluated yet**, only routing. Next: an LLM-as-judge suite with DeepEval or RAGAS on a sample of routed answers.
+- **The answer eval set is small** (14 questions, 16 calibration answers). It catches regressions but is not statistically tight; grow it from production traces (sampled, PII-redacted) and add plan-level metrics for team mode.
 - **Polyglot agents via A2A**: a Java (Spring AI / Quarkus LangChain4j) or .NET (Semantic Kernel) specialist can register as an A2A remote agent and be routed to like any local one.
 
 ## License

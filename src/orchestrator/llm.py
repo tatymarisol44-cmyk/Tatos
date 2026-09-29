@@ -88,12 +88,14 @@ class LiteLLMClient:
 @dataclass
 class FakeLLM:
     """Router calls get the first candidate id; planner calls get a two-step sequential
-    plan over the first two candidates; agent and synthesizer calls get an echo answer."""
+    plan over the first two candidates; judge calls get top scores (override with
+    `judge_reply`); agent and synthesizer calls get an echo answer."""
 
     calls: list[list[Message]] = field(default_factory=list)
     router_reply: str | None = None
     planner_reply: str | None = None
     fail_synthesis: bool = False
+    judge_reply: str | None = None
 
     async def complete(
         self,
@@ -128,6 +130,14 @@ class FakeLLM:
                 steps[1]["depends_on"] = ["s1"]
             plan = {"steps": steps, "reasoning": "fake: first two candidates in sequence"}
             return LLMResult(json.dumps(plan), model, 20, 20)
+        if "JUDGE" in system:
+            if self.judge_reply is not None:
+                return LLMResult(self.judge_reply, model, 50, 30)
+            verdict = {
+                c: {"score": 5, "reason": "fake"}
+                for c in ("relevance", "faithfulness", "completeness")
+            }
+            return LLMResult(json.dumps(verdict), model, 50, 30)
         if "SYNTHESIZER" in system:
             if self.fail_synthesis:
                 raise RuntimeError("fake synthesizer outage")
