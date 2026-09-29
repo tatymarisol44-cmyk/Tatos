@@ -1,4 +1,4 @@
-.PHONY: install lint test eval eval-answers eval-judge run mcp up down k8s-dev
+.PHONY: install lint test eval eval-answers eval-judge run mcp java-test java-run up down k8s-dev
 
 install:        ## Install locked deps + git hooks
 	git submodule update --init --recursive
@@ -28,7 +28,13 @@ run:            ## API with hot reload on :8000
 mcp:            ## MCP server over stdio
 	uv run agency mcp
 
-up:             ## Full stack: API + Qdrant + OTel + Jaeger + Prometheus
+java-test:      ## Java A2A agent: build + tests (needs JDK 21)
+	cd agents/jvm-specialist && ./mvnw -B verify
+
+java-run:       ## Java A2A agent on :8080 (then REMOTE_AGENTS='["http://localhost:8080"]' make run)
+	cd agents/jvm-specialist && ./mvnw -B spring-boot:run
+
+up:             ## Full stack: API + Java agent + Qdrant + Postgres + OTel + Jaeger + Prometheus
 	docker compose up --build -d
 
 down:

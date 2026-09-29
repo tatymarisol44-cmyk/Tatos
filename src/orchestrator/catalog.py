@@ -1,4 +1,5 @@
-"""Loads specialist agents from The Agency markdown catalog."""
+"""Loads specialist agents from The Agency markdown catalog. Remote A2A agents (see
+remote.py) are added at startup and routed like local ones."""
 
 from __future__ import annotations
 
@@ -25,6 +26,8 @@ class AgentSpec:
     emoji: str = ""
     vibe: str = ""
     path: str = ""
+    # JSON-RPC endpoint of a remote A2A agent; empty for local (prompt-based) agents.
+    remote_url: str = ""
 
     def index_text(self) -> str:
         """Text used to embed the agent for routing. The name is repeated to weight it,
@@ -47,6 +50,23 @@ class Catalog:
 
     def __len__(self) -> int:
         return len(self.agents)
+
+    def add_remote(self, specs: list[AgentSpec]) -> list[AgentSpec]:
+        """Register remote agents, skipping ids already taken. The catalog version covers
+        them too, so the (immutable, versioned) routing index is rebuilt when they change."""
+        added = [s for s in specs if s.id not in self.agents]
+        if not added:
+            return []
+        digest = hashlib.sha256(self.version.encode())
+        for spec in sorted(added, key=lambda s: s.id):
+            self.agents[spec.id] = spec
+            for part in (spec.id, spec.remote_url, spec.name, spec.description, spec.system_prompt):
+                digest.update(part.encode())
+                digest.update(b"\x00")  # field separator
+        self.version = digest.hexdigest()[:12]
+        if "remote" not in self.divisions:
+            self.divisions.append("remote")
+        return added
 
 
 def _section(body: str, heading: str) -> str:

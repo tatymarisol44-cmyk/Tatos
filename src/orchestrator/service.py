@@ -21,6 +21,7 @@ from orchestrator.knowledge import (
     QdrantChunkStore,
 )
 from orchestrator.llm import LLMClient, build_llm
+from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
 
@@ -106,7 +107,11 @@ def _usage(state: dict[str, Any]) -> dict[str, Any]:
 
 class Orchestrator:
     def __init__(
-        self, settings: Settings, catalog: Catalog | None = None, llm: LLMClient | None = None
+        self,
+        settings: Settings,
+        catalog: Catalog | None = None,
+        llm: LLMClient | None = None,
+        remote: A2AClient | None = None,
     ) -> None:
         self.settings = settings
         self.catalog = catalog or load_catalog(settings.agents_dir)
@@ -115,19 +120,32 @@ class Orchestrator:
         self.router = Router(self.catalog, embedder, build_store(settings), self.llm, settings)
         self.knowledge = KnowledgeBase(embedder, build_chunk_store(settings), settings)
         self.checkpointer = Checkpointer(settings)
+        self.remote = remote or (A2AClient(settings) if settings.remote_agents else None)
         self.graph = build_graph(
-            self.catalog, self.router, self.llm, settings, self.knowledge, self.checkpointer.saver
+            self.catalog,
+            self.router,
+            self.llm,
+            settings,
+            self.knowledge,
+            self.checkpointer.saver,
+            self.remote,
         )
         self.ready = False
 
     async def start(self) -> None:
         await self.checkpointer.start()
+        if self.remote is not None:
+            # Before indexing: remote agents are routed like local ones.
+            specs = await discover_all(self.remote, self.settings.remote_agents)
+            self.catalog.add_remote(specs)
         await self.router.build_index()
         await self.knowledge.start()
         self.ready = True
 
     async def close(self) -> None:
         self.ready = False
+        if self.remote is not None:
+            await self.remote.close()
         await self.checkpointer.close()
 
     async def route(self, question: str) -> RoutingDecision:

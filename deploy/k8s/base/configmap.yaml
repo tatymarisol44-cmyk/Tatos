@@ -13,6 +13,8 @@ data:
   QDRANT_URL: http://qdrant:6333
   # POSTGRES_URL comes from the secret (managed Postgres: RDS, Cloud SQL, Azure DB...).
   CHECKPOINTER_BACKEND: postgres
+  # Remote A2A specialists (JSON list of base URLs).
+  REMOTE_AGENTS: '["http://jvm-agent:8080"]'
   OTEL_ENABLED: "true"
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
   RATE_LIMIT_PER_MINUTE: "60"

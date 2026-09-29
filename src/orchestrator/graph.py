@@ -5,7 +5,10 @@ documents (RAG), then the request takes one of two paths:
 - team:   plan -> worker x N (Send, in dependency waves) -> join -> ... -> synthesize
 
 Both end in output_guard. Conversation state is checkpointed per `thread_id`, so
-follow-up questions keep their history whichever path or specialists they take."""
+follow-up questions keep their history whichever path or specialists they take.
+
+A specialist can be a remote A2A agent (another service, any language): it is called over
+JSON-RPC instead of the LLM, and if it is unreachable the LLM answers from its card."""
 
 from __future__ import annotations
 
@@ -14,17 +17,19 @@ import operator
 import time
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
-from orchestrator.catalog import Catalog
+from orchestrator.catalog import AgentSpec, Catalog
 from orchestrator.config import Settings
 from orchestrator.guardrails import check_input, check_output
 from orchestrator.knowledge import Chunk, KnowledgeBase, knowledge_block
 from orchestrator.llm import LLMClient, LLMResult
+from orchestrator.remote import A2AClient, RemoteAgentError, context_id
 from orchestrator.router import Router
 from orchestrator.team import (
     Planner,
@@ -87,8 +92,32 @@ def build_graph(
     settings: Settings,
     knowledge_base: KnowledgeBase | None = None,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
+    remote: A2AClient | None = None,
 ) -> CompiledStateGraph[Any]:
     planner = Planner(catalog, router, llm, settings)
+
+    async def answer(
+        agent: AgentSpec,
+        messages: list[dict[str, str]],
+        remote_text: str,
+        config: RunnableConfig,
+    ) -> tuple[LLMResult, dict[str, str] | None]:
+        """Ask a local agent (LLM + its prompt) or a remote A2A agent. A failed remote
+        call degrades to the LLM playing the agent from its card, and says so."""
+        if not agent.remote_url or remote is None:
+            return await llm.complete(messages, model=settings.llm_model), None
+        thread = str((config.get("configurable") or {}).get("thread_id", ""))
+        with tracer().start_as_current_span("agent.remote") as span:
+            span.set_attribute("agent.id", agent.id)
+            try:
+                text = await remote.send(agent, remote_text, context_id(thread, agent.id))
+            except RemoteAgentError as exc:
+                span.record_exception(exc)
+                log.warning("remote agent %s failed (%s); answering locally", agent.id, exc)
+            else:
+                return LLMResult(text, f"a2a/{agent.id}"), {"status": "ok"}
+        result = await llm.complete(messages, model=settings.llm_model)
+        return result, {"status": "fallback", "error": "remote agent unavailable"}
 
     def context_block(state: OrchestratorState) -> str:
         chunks = [Chunk(**c) for c in state.get("knowledge", [])]
@@ -153,25 +182,34 @@ def build_graph(
         ROUTED.add(1, {"agent_id": decision.agent_id, "method": decision.method})
         return {"decision": decision.to_dict()}
 
-    async def specialist(state: OrchestratorState) -> dict[str, Any]:
+    async def specialist(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
         decision = state["decision"]
         assert decision is not None
         agent = catalog.agents[decision["agent_id"]]
+        block = context_block(state)
         messages = [
             {"role": "system", "content": agent.system_prompt},
             *history(state),
-            {"role": "user", "content": with_context(context_block(state), state["sanitized"])},
+            {"role": "user", "content": with_context(block, state["sanitized"])},
         ]
+        # Remote agents keep their own history (per contextId) and only see tenant
+        # documents when REMOTE_SHARE_KNOWLEDGE allows it.
+        shared = block if settings.remote_share_knowledge else ""
         with tracer().start_as_current_span("agent.answer") as span:
             span.set_attribute("agent.id", agent.id)
             span.set_attribute("agent.division", agent.division)
-            result = await llm.complete(messages, model=settings.llm_model)
+            result, remote_info = await answer(
+                agent, messages, with_context(shared, state["sanitized"]), config
+            )
         _count_tokens(result)
-        return {
+        update: dict[str, Any] = {
             "answer": result.text,
             "answer_usage": result.usage(),
             "messages": turn(state, result.text),
         }
+        if remote_info:
+            update["decision"] = {**decision, "remote": remote_info}
+        return update
 
     # --- team path -----------------------------------------------------------
     async def plan(state: OrchestratorState) -> dict[str, Any]:
@@ -201,7 +239,7 @@ def build_graph(
             for step in ready
         ]
 
-    async def worker(payload: WorkerInput) -> dict[str, Any]:
+    async def worker(payload: WorkerInput, config: RunnableConfig) -> dict[str, Any]:
         step = payload["step"]
         agent = catalog.agents[step["agent_id"]]
         out: dict[str, Any] = {
@@ -220,13 +258,17 @@ def build_graph(
             payload["context"],
             settings.team_context_chars,
         )
-        messages[-1]["content"] = with_context(payload["knowledge"], messages[-1]["content"])
+        task_text = messages[-1]["content"]
+        messages[-1]["content"] = with_context(payload["knowledge"], task_text)
+        shared = payload["knowledge"] if settings.remote_share_knowledge else ""
         with tracer().start_as_current_span("team.worker") as span:
             span.set_attribute("agent.id", agent.id)
             span.set_attribute("team.step_id", step["id"])
             started = time.perf_counter()
             try:
-                result = await llm.complete(messages, model=settings.llm_model)
+                result, remote_info = await answer(
+                    agent, messages, with_context(shared, task_text), config
+                )
             except Exception as exc:  # one failed specialist must not sink the team
                 span.record_exception(exc)
                 out["error"] = type(exc).__name__
@@ -234,6 +276,8 @@ def build_graph(
                 _count_tokens(result)
                 out["output"] = result.text
                 out["usage"] = result.usage()
+                if remote_info:
+                    out["remote"] = remote_info
             out["duration_s"] = round(time.perf_counter() - started, 3)
         return {"results": [out]}
 

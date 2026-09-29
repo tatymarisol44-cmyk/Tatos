@@ -14,6 +14,14 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule: {interval: weekly}
+  - package-ecosystem: maven
+    directory: /agents/jvm-specialist
+    schedule: {interval: weekly}
+    groups:
+      java-deps: {patterns: ["*"]}
+  - package-ecosystem: docker
+    directory: /agents/jvm-specialist
+    schedule: {interval: weekly}
   - package-ecosystem: gitsubmodule
     directory: /
     schedule: {interval: weekly}

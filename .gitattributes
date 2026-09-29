@@ -1,4 +1,6 @@
 # Normalize line endings: the code runs on Linux (Docker, CI, Kubernetes).
 * text=auto eol=lf
+# Windows batch scripts (Maven wrapper) need CRLF.
+*.cmd text eol=crlf
 *.png binary
 *.jpg binary

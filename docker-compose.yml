@@ -1,4 +1,4 @@
-# Local production-like stack: API + Qdrant + Postgres + OpenTelemetry Collector + Jaeger + Prometheus.
+# Local production-like stack: API + Java A2A agent + Qdrant + Postgres + OpenTelemetry Collector + Jaeger + Prometheus.
 #   cp .env.example .env   # add at least one LLM provider key
 #   docker compose up --build
 # API http://localhost:8000/docs · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
@@ -12,6 +12,7 @@ services:
       QDRANT_URL: http://qdrant:6333
       CHECKPOINTER_BACKEND: postgres
       POSTGRES_URL: postgresql://agency:agency@postgres:5432/agency
+      REMOTE_AGENTS: '["http://jvm-agent:8080"]'
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports: ["8000:8000"]
@@ -19,6 +20,8 @@ services:
       qdrant:
         condition: service_started
       postgres:
+        condition: service_healthy
+      jvm-agent:
         condition: service_healthy
       otel-collector:
         condition: service_started
@@ -28,6 +31,18 @@ services:
     image: qdrant/qdrant:v1.13.4
     ports: ["6333:6333"]
     volumes: [qdrant-data:/qdrant/storage]
+
+  # Remote specialist in Java/Spring Boot, spoken to over A2A. Rule-based by default;
+  # AGENT_LLM_PROVIDER=anthropic (+ ANTHROPIC_API_KEY in .env) switches on Spring AI.
+  jvm-agent:
+    build:
+      context: ./agents/jvm-specialist
+    environment:
+      AGENT_PUBLIC_URL: http://jvm-agent:8080
+      AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-none}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: ["8080:8080"]
+    restart: unless-stopped
 
   # Conversation checkpoints (LangGraph). Dev credentials only.
   postgres:

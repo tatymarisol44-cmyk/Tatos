@@ -1,0 +1,38 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: jvm-specialist-agent
+  threads:
+    virtual:
+      enabled: true
+  ai:
+    model:
+      # "anthropic" enables the LLM mode (needs ANTHROPIC_API_KEY); "none" = rule engine only.
+      chat: ${AGENT_LLM_PROVIDER:none}
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      chat:
+        options:
+          model: ${AGENT_LLM_MODEL:claude-sonnet-5-5}
+          max-tokens: 1500
+          temperature: 0.2
+
+agent:
+  public-url: ${AGENT_PUBLIC_URL:}
+  api-key: ${AGENT_API_KEY:}
+  max-input-chars: 8000
+  max-contexts: 1000
+  max-messages-per-context: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true

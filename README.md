@@ -2,7 +2,7 @@
 
 A multi-agent orchestration service over **260+ specialist agents** from [The Agency](https://github.com/msitarzewski/agency-agents) catalog. It either routes a request to the single best specialist, or **orchestrates a team**: a planner splits the work across several specialists, they run in parallel (respecting dependencies) and a synthesizer merges one answer. Each company can upload its own documents, which the agents use and cite (**RAG**, isolated per tenant). It ships with a web console, streaming, guardrails, tracing, evaluation and a CI/CD path to Kubernetes.
 
-It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation).
+It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation, in both directions: other agents can call the orchestrator, and specialists written in other languages, such as the included **Java/Spring Boot agent**, join its catalog).
 
 ```mermaid
 flowchart LR
@@ -26,6 +26,7 @@ flowchart LR
     K -->|tenant filter| D[(Qdrant<br/>company documents)]
     R -->|2. pick one| L1[small LLM]
     S --> L2[LLM via LiteLLM<br/>Claude · GPT · Gemini · Mistral · Llama]
+    S -->|A2A message/send| JA[Java agent<br/>Spring Boot · Spring AI]
     Orchestrator -.OTLP.-> O[OTel Collector → Jaeger / Prometheus]
 ```
 
@@ -69,6 +70,24 @@ curl -s localhost:8000/v1/knowledge/documents -H "X-API-Key: key1" -H "Content-T
   -d '{"title": "Return policy", "text": "Customers can return products within 30 days..."}'
 ```
 
+## Polyglot specialists over A2A
+
+Specialists do not have to be prompts in this repo. Any service that speaks [A2A](https://a2a-protocol.org) can join the catalog. [`agents/jvm-specialist`](agents/jvm-specialist) is a **Java 21 / Spring Boot 4** JVM performance agent (memory, GC, container sizing, startup, threads, profiling):
+
+1. **Discover** — at startup the orchestrator fetches the Agent Card of every URL in `REMOTE_AGENTS` and turns it into a catalog entry (division `remote`); its description and skills are embedded into the routing index like any local agent. The catalog version includes remote agents, so the immutable index is rebuilt when one changes. Agents that start late are retried with backoff; unreachable ones are skipped without blocking startup.
+2. **Route** — the router and the planner choose it like any other specialist. In team mode, Python and Java agents work in the same plan.
+3. **Delegate** — the graph calls `message/send` instead of the LLM. The `contextId` is a UUIDv5 of *(tenant thread, agent)*: stable, so the remote agent keeps multi-turn context, but opaque, so tenant names never leave the orchestrator.
+4. **Degrade** — if the agent is down or replies with garbage, the LLM answers in its role (from the card) and the response says so: `routing.remote = {"status": "fallback"}`.
+
+**Trust boundary.** Cards and replies are untrusted input: the JSON-RPC URL must stay on the card's own origin, redirects are not followed, responses are size-capped while streaming, and replies go through the same output guard (PII redaction) as local answers. Tenant documents are not sent to remote agents unless `REMOTE_SHARE_KNOWLEDGE=true`.
+
+The Java agent works with no API key: a deterministic rule engine answers from a vetted playbook. With `AGENT_LLM_PROVIDER=anthropic` it uses Spring AI, grounded in that playbook and with per-`contextId` memory, and it falls back to the rules if the model fails. CI builds it, runs its 34 JUnit tests, then starts it and runs a **Python ↔ Java contract test** over real HTTP. See [ADR 0007](docs/adr/0007-polyglot-agents-over-a2a.md).
+
+```bash
+make java-run                                         # Java agent on :8080 (needs JDK 21)
+REMOTE_AGENTS='["http://localhost:8080"]' uv run agency ask "Our pods get OOMKilled, how do we size the JVM heap?"
+```
+
 ## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is pinned and fetched by uv.
@@ -85,7 +104,7 @@ uv run agency serve             # console at http://127.0.0.1:8000 · API docs a
 
 No API key? `LLM_BACKEND=fake` runs the whole pipeline offline with a deterministic model.
 
-**Full stack** (API + Qdrant + OpenTelemetry Collector + Jaeger + Prometheus):
+**Full stack** (API + Java A2A agent + Qdrant + Postgres + OpenTelemetry Collector + Jaeger + Prometheus):
 
 ```bash
 docker compose up --build
@@ -131,7 +150,7 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
 | **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Documents: injection check at ingestion, delimited as data in prompts. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
 | **Evaluation** | *Routing:* `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. *Answers:* an LLM judge grades end-to-end answers (single, team, RAG) on relevance, faithfulness to the tenant's documents and completeness (`evals/answers.jsonl`). The judge itself is calibrated nightly against hand-labelled good/bad answers (`evals/judge_calibration.jsonl`), gating on agreement and false passes. See [ADR 0006](docs/adr/0006-llm-as-judge-evals.md). |
 | **Observability** | OpenTelemetry traces per graph node, team step (`team.plan`, `team.worker`, `team.synthesize`) and LLM call, with GenAI semantic-convention attributes (model, input/output tokens). Metrics: routed count by agent and method, guardrail blocks, latency histogram, token usage. The collector strips prompt/completion text before export. |
-| **Testing** | 105 tests, 97% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access) are tested explicitly. |
+| **Testing** | 181 Python tests, 98% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access, remote-agent outages and malicious cards) are tested explicitly. Integration tests run in CI against real Postgres and the real Java agent. 34 JUnit tests cover the Java agent. |
 | **Code quality** | Ruff (lint + format, incl. security rules), mypy `--strict`, pre-commit hooks. |
 | **CI/CD** | GitHub Actions: lint/types → tests (py3.12 + 3.13) → eval gate → Trivy (deps, secrets, IaC) → kubeconform on rendered manifests → multi-stage image with SBOM + provenance, pushed to GHCR on `main`/tags and scanned. Dependabot for uv, actions, Docker, compose and the submodule. |
 | **Deployment** | Kustomize base + dev overlay: non-root, read-only rootfs, dropped capabilities, restricted Pod Security, probes, HPA, PDB, topology spread, NetworkPolicy on Qdrant. Secrets are created out-of-band, never committed. |
@@ -163,6 +182,7 @@ src/orchestrator/
   guardrails.py   injection, PII, size limits
   llm.py          LiteLLM client, deterministic fake
   service.py      composition root shared by API, A2A, MCP, CLI
+  remote.py       A2A client: discover remote agents, message/send, trust checks
   api/            FastAPI app, SSE, auth/rate limit, A2A
   web/            static web console (HTML/CSS/JS, no build)
   mcp_server.py   MCP tools
@@ -170,6 +190,7 @@ src/orchestrator/
   answer_eval.py  end-to-end answer eval and judge calibration
   evals.py, cli.py
 evals/            routing.jsonl, answers.jsonl, judge_calibration.jsonl
+agents/jvm-specialist/  Java 21 / Spring Boot 4 A2A agent (rules + Spring AI), JUnit tests
 deploy/           otel-collector, prometheus, k8s (kustomize)
 docs/adr/         architecture decision records
 ```
@@ -182,7 +203,8 @@ docs/adr/         architecture decision records
 - **Retrieval is dense-only.** Hybrid search (BM25 + vectors) and a reranker would help with exact terms like SKUs.
 - **Guardrails are heuristic.** For regulated tenants, add an LLM-based classifier (e.g. Llama Guard) as an extra graph node.
 - **The answer eval set is small** (14 questions, 16 calibration answers). It catches regressions but is not statistically tight; grow it from production traces (sampled, PII-redacted) and add plan-level metrics for team mode.
-- **Polyglot agents via A2A**: a Java (Spring AI / Quarkus LangChain4j) or .NET (Semantic Kernel) specialist can register as an A2A remote agent and be routed to like any local one.
+- **Remote agents are discovered once, at startup.** Adding or changing one needs a restart (or a rolling deploy). Next: periodic card refresh with an index rebuild, per-agent API keys, and a .NET (Semantic Kernel) agent next to the Java one.
+- **The Java agent's LLM memory is in-process**, so it runs as one replica; the rule-based mode is stateless. Scaling it out means moving memory to Redis.
 
 ## License
 

@@ -96,7 +96,12 @@ def create_app(
         o = orch(request)
         if not o.ready:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "index not ready")
-        return {"status": "ready", "agents": len(o.catalog), "catalog_version": o.catalog.version}
+        return {
+            "status": "ready",
+            "agents": len(o.catalog),
+            "catalog_version": o.catalog.version,
+            "remote_agents": sorted(a.id for a in o.catalog.agents.values() if a.remote_url),
+        }
 
     @app.get("/v1/agents", response_model=list[AgentSummary], tags=["agents"])
     async def list_agents(
@@ -106,7 +111,12 @@ def create_app(
     ) -> list[AgentSummary]:
         return [
             AgentSummary(
-                id=a.id, name=a.name, division=a.division, description=a.description, emoji=a.emoji
+                id=a.id,
+                name=a.name,
+                division=a.division,
+                description=a.description,
+                emoji=a.emoji,
+                remote=bool(a.remote_url),
             )
             for a in sorted(orch(request).catalog.agents.values(), key=lambda a: a.id)
             if division is None or a.division == division

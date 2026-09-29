@@ -14,7 +14,11 @@ resources:
   - pdb.yaml
   - networkpolicy.yaml
   - qdrant.yaml
+  - jvm-agent.yaml
 images:
   - name: agency-orchestrator
     newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator
+    newTag: latest
+  - name: jvm-agent
+    newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator-jvm-agent
     newTag: latest

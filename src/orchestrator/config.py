@@ -68,6 +68,19 @@ class Settings(BaseSettings):
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 
+    # --- Remote A2A agents (any language: Java/Spring, .NET, ...) -------------
+    # Base URLs whose Agent Card is served at /.well-known/agent-card.json. Operator
+    # config only: never taken from requests.
+    remote_agents: list[str] = Field(default_factory=list)
+    remote_agents_api_key: SecretStr | None = None
+    remote_agent_timeout_s: float = 30.0
+    remote_agent_max_chars: int = 20_000
+    # Tenant documents leave our trust boundary only if this is on.
+    remote_share_knowledge: bool = False
+    # Startup discovery retries unreachable agents (they may boot slower than we do).
+    remote_discovery_attempts: int = Field(default=5, ge=1)
+    remote_discovery_backoff_s: float = 2.0
+
     # --- Answer-quality evals (LLM-as-judge) -------------------------------
     # A stronger model than the one answering; ideally another family (self-preference).
     judge_model: str = "anthropic/claude-opus-5-5"

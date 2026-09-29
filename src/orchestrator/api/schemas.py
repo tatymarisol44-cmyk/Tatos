@@ -77,3 +77,4 @@ class AgentSummary(BaseModel):
     division: str
     description: str
     emoji: str = ""
+    remote: bool = False
