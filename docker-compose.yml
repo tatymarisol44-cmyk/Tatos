@@ -1,0 +1,45 @@
+# Local production-like stack: API + Qdrant + OpenTelemetry Collector + Jaeger + Prometheus.
+#   cp .env.example .env   # add at least one LLM provider key
+#   docker compose up --build
+# API http://localhost:8000/docs · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
+services:
+  api:
+    build:
+      context: .
+    env_file: .env
+    environment:
+      VECTOR_BACKEND: qdrant
+      QDRANT_URL: http://qdrant:6333
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports: ["8000:8000"]
+    depends_on:
+      qdrant:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    ports: ["6333:6333"]
+    volumes: [qdrant-data:/qdrant/storage]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.118.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes: [./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro]
+    depends_on: [jaeger]
+
+  jaeger:
+    image: jaegertracing/jaeger:2.2.0
+    ports: ["16686:16686"]
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes: [./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["9090:9090"]
+
+volumes:
+  qdrant-data:

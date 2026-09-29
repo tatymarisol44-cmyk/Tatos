@@ -1,0 +1,60 @@
+# Secrets are NOT committed. Create them out-of-band (or via External Secrets / SOPS):
+#   kubectl -n agency create secret generic agency-orchestrator-secrets \
+#     --from-literal=API_KEYS='key1:tenant-a' \
+#     --from-literal=ANTHROPIC_API_KEY=... --from-literal=OPENAI_API_KEY=...
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agency-orchestrator
+  labels: {app.kubernetes.io/name: agency-orchestrator}
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: {app.kubernetes.io/name: agency-orchestrator}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: agency-orchestrator}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: agency-orchestrator}
+      containers:
+        - name: api
+          image: agency-orchestrator
+          ports: [{name: http, containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: agency-orchestrator-config}
+            - secretRef: {name: agency-orchestrator-secrets}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            failureThreshold: 30
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}

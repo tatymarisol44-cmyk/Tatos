@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agency
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: agency-orchestrator
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - qdrant.yaml
+images:
+  - name: agency-orchestrator
+    newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator
+    newTag: latest

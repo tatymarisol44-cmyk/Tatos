@@ -1,0 +1,19 @@
+.git
+.github
+.venv
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.env
+tests
+docs
+deploy
+evals
+# Only agent markdown + divisions.json are needed from the catalog.
+vendor/agency-agents/.git
+vendor/agency-agents/.github
+vendor/agency-agents/integrations
+vendor/agency-agents/scripts
+vendor/agency-agents/examples

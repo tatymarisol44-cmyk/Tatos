@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agency-orchestrator-config
+data:
+  APP_ENV: prod
+  LLM_BACKEND: litellm
+  LLM_MODEL: anthropic/claude-sonnet-5-5
+  ROUTER_MODEL: anthropic/claude-haiku-4-5-20251001
+  EMBEDDING_BACKEND: litellm
+  EMBEDDING_MODEL: openai/text-embedding-3-small
+  VECTOR_BACKEND: qdrant
+  QDRANT_URL: http://qdrant:6333
+  OTEL_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
+  RATE_LIMIT_PER_MINUTE: "60"
+  # Use the pricing map bundled with the pinned LiteLLM instead of fetching it at startup.
+  LITELLM_LOCAL_MODEL_COST_MAP: "True"

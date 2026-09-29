@@ -1,0 +1,38 @@
+name: Nightly eval (real models)
+
+# Measures production routing quality: LLM router + hosted embeddings.
+# Requires repository secrets ANTHROPIC_API_KEY and OPENAI_API_KEY.
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    env:
+      UV_FROZEN: "1"
+      LLM_BACKEND: litellm
+      ROUTER_USE_LLM: "true"
+      EMBEDDING_BACKEND: litellm
+      ROUTER_TOP_K: "10"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run agency eval --min-top1 0.80 --min-recall 0.95 --output eval-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-eval-report
+          path: eval-report.json

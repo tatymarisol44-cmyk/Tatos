@@ -1,0 +1,164 @@
+# Agency Orchestrator
+
+A multi-agent orchestration service over **260+ specialist agents** from [The Agency](https://github.com/msitarzewski/agency-agents) catalog. It either routes a request to the single best specialist, or **orchestrates a team**: a planner splits the work across several specialists, they run in parallel (respecting dependencies) and a synthesizer merges one answer. It ships with a web console, streaming, guardrails, tracing, evaluation and a CI/CD path to Kubernetes.
+
+It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation).
+
+```mermaid
+flowchart LR
+    C[Web console / SaaS UI] -->|REST + SSE| API
+    X[Other agents<br/>Spring AI · Semantic Kernel] -->|A2A JSON-RPC| API
+    M[Claude Desktop / Cursor] -->|MCP stdio| MCP[MCP server]
+    subgraph Orchestrator [LangGraph workflow]
+      direction LR
+      G1[input guard<br/>injection · PII · size] -->|single| R[router]
+      R --> S[specialist agent]
+      S --> G2[output guard<br/>PII]
+      G1 -->|team| P[planner]
+      P -->|Send, by dependency wave| W[specialist ×N]
+      W --> J[join] -->|next wave| W
+      J --> Y[synthesizer] --> G2
+    end
+    API[FastAPI<br/>auth · rate limit] --> G1
+    MCP --> G1
+    R -->|1. retrieve top-k| V[(Qdrant<br/>agent index)]
+    R -->|2. pick one| L1[small LLM]
+    S --> L2[LLM via LiteLLM<br/>Claude · GPT · Gemini · Mistral · Llama]
+    Orchestrator -.OTLP.-> O[OTel Collector → Jaeger / Prometheus]
+```
+
+## How routing works
+
+1. **Retrieve** — the question is embedded and matched against an index of every agent's name, description and mission (Qdrant in production, in-process for dev). This narrows 260 agents to the top *k* candidates.
+2. **Decide** — a small, cheap model (Claude Haiku by default) picks one candidate and returns `{agent_id, confidence, reasoning}` as JSON.
+3. **Fail safe** — the LLM can only choose among retrieved ids. Hallucinated ids, malformed JSON, low confidence or a provider outage all fall back to the best retrieval hit, so routing never fails closed. Every decision records its `method` (`llm`, `retrieval`, `override`, `default`) for observability.
+4. **Answer** — the chosen agent's full markdown body becomes the system prompt; the thread's recent history is included.
+
+Callers can bypass routing with `agent_id`, or call `/v1/route` to get only the decision.
+
+## Team mode: orchestrating several agents
+
+With `"mode": "team"` the request goes through a planner instead of the router:
+
+1. **Plan** — retrieval widens to 16 candidates; the planner model returns up to `TEAM_MAX_AGENTS` steps, each `{agent_id, task, depends_on}`. Steps are validated like routing decisions: only retrieved ids, non-empty tasks, and dependencies only on *earlier* steps (so the plan is always a DAG). Callers can also pin the team with `agent_ids`.
+2. **Execute** — LangGraph's `Send` fans out every step whose dependencies are done; a `join` node waits for the wave and dispatches the next one. A step receives its dependencies' outputs as context. Concurrency is capped by `TEAM_MAX_CONCURRENCY`.
+3. **Synthesize** — one call merges the contributions in the user's language. A one-step plan skips it.
+4. **Fail safe** — invalid plan or planner outage → specialists from distinct divisions each take the whole request. A failed specialist is recorded as `error` and its dependents are told; a synthesizer outage returns the contributions as sections. The team degrades instead of failing.
+
+The response carries the plan, each specialist's output, duration and usage, plus `usage.total` (tokens, cost, LLM calls) for metering. See [ADR 0004](docs/adr/0004-team-orchestration.md).
+
+```bash
+uv run agency ask "Launch plan for our B2B SaaS: pricing, landing page, SEO, security review" --team
+uv run agency ask "Review our checkout flow" --team security-penetration-tester engineering-frontend-developer
+```
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is pinned and fetched by uv.
+
+```bash
+git clone --recurse-submodules <this repo> && cd agency-orchestrator
+uv sync --frozen
+cp .env.example .env            # add ANTHROPIC_API_KEY (or any provider)
+
+uv run agency route "Our React bundle is 4MB, how do we speed it up?"
+uv run agency ask   "Set up CI/CD with GitHub Actions and Kubernetes"
+uv run agency serve             # console at http://127.0.0.1:8000 · API docs at /docs
+```
+
+No API key? `LLM_BACKEND=fake` runs the whole pipeline offline with a deterministic model.
+
+**Full stack** (API + Qdrant + OpenTelemetry Collector + Jaeger + Prometheus):
+
+```bash
+docker compose up --build
+```
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Web console: agent catalog, single/team mode, live team progress. |
+| `POST /v1/chat` | Answer. Body: `question`, `mode` (`single`\|`team`), optional `thread_id`, `agent_id` (single) or `agent_ids` (team). |
+| `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `routing` or `plan`, one `step` per specialist, `done`. |
+| `POST /v1/route` | Routing decision only, with candidates and scores. |
+| `GET /v1/agents?division=` | Catalog listing. |
+| `GET /.well-known/agent-card.json` | A2A Agent Card (skills = divisions). |
+| `POST /a2a` | A2A JSON-RPC `message/send`; `contextId` ↔ `thread_id`; message metadata `{"mode": "team"}` for a team. |
+| `GET /healthz`, `/readyz` | Liveness / readiness (index built). |
+
+Auth is `X-API-Key`, mapped to a tenant via `API_KEYS="key1:tenant-a,key2:tenant-b"`. Threads are namespaced per tenant.
+
+```bash
+curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: application/json" \
+  -d '{"question": "Necesito optimizar el SEO de mi sitio"}'
+```
+
+**Web console**: open `/`, paste an API key, pick *Single specialist* or *Team*. Clicking agents in the catalog pins them (one in single mode, a hand-picked team in team mode). The page is static HTML/JS served by the API — no build step, no third-party origins, strict CSP.
+
+**MCP**: `uv run agency mcp` exposes `list_agents`, `route_question`, `ask` and `ask_team` over stdio. Claude Desktop config:
+
+```json
+{ "mcpServers": { "agency": { "command": "uv", "args": ["--directory", "/path/to/agency-orchestrator", "run", "agency", "mcp"] } } }
+```
+
+## Engineering practices
+
+| Concern | Implementation |
+|---|---|
+| **Reproducibility** | `uv.lock` with `--frozen` everywhere (local, CI, Docker). Agent catalog pinned as a git submodule and baked into the image. Vector collections are named `<name>_<catalog-hash>_<embedder>`, so an index is immutable and tied to exactly one catalog + embedding model. LiteLLM uses its bundled pricing map instead of fetching one at runtime. |
+| **Provider portability** | LiteLLM behind a small `LLMClient` protocol. Model, router model and fallback chain are env vars. Retries, timeouts and fallbacks are configured centrally. |
+| **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
+| **Evaluation** | `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. |
+| **Observability** | OpenTelemetry traces per graph node, team step (`team.plan`, `team.worker`, `team.synthesize`) and LLM call, with GenAI semantic-convention attributes (model, input/output tokens). Metrics: routed count by agent and method, guardrail blocks, latency histogram, token usage. The collector strips prompt/completion text before export. |
+| **Testing** | 86 tests, 97% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access) are tested explicitly. |
+| **Code quality** | Ruff (lint + format, incl. security rules), mypy `--strict`, pre-commit hooks. |
+| **CI/CD** | GitHub Actions: lint/types → tests (py3.12 + 3.13) → eval gate → Trivy (deps, secrets, IaC) → kubeconform on rendered manifests → multi-stage image with SBOM + provenance, pushed to GHCR on `main`/tags and scanned. Dependabot for uv, actions, Docker, compose and the submodule. |
+| **Deployment** | Kustomize base + dev overlay: non-root, read-only rootfs, dropped capabilities, restricted Pod Security, probes, HPA, PDB, topology spread, NetworkPolicy on Qdrant. Secrets are created out-of-band, never committed. |
+
+## Current eval results
+
+Offline baseline (lexical hashing embedder, no LLM — what CI gates on):
+
+| Metric | Value |
+|---|---|
+| Top-1 accuracy | 0.575 (EN 0.647 · ES 0.167) |
+| Recall@8 | 0.875 |
+| p50 routing latency | ~27 ms |
+
+The offline embedder is lexical, so it cannot bridge Spanish questions to the English catalog; that is what the LLM router and multilingual embeddings (`EMBEDDING_BACKEND=litellm`) are for. Recall@k is the number that matters for the two-stage design — the LLM can only pick an agent that retrieval surfaced. Run `nightly-eval.yml` with API keys to get production numbers.
+
+## Project layout
+
+```
+src/orchestrator/
+  catalog.py      markdown agents -> AgentSpec, catalog version hash
+  embeddings.py   offline hashing embedder, LiteLLM embedder
+  vectorstore.py  in-memory and Qdrant stores
+  router.py       retrieve -> LLM pick -> fallback
+  team.py         planner, plan validation, worker/synthesis prompts
+  graph.py        LangGraph workflow (single + team paths), per-thread checkpointing
+  guardrails.py   injection, PII, size limits
+  llm.py          LiteLLM client, deterministic fake
+  service.py      composition root shared by API, A2A, MCP, CLI
+  api/            FastAPI app, SSE, auth/rate limit, A2A
+  web/            static web console (HTML/CSS/JS, no build)
+  mcp_server.py   MCP tools
+  evals.py, cli.py
+evals/routing.jsonl
+deploy/           otel-collector, prometheus, k8s (kustomize)
+docs/adr/         architecture decision records
+```
+
+## Known limitations & roadmap
+
+- **Conversation state and rate limits are in-process.** With several replicas the Service uses `sessionAffinity: ClientIP` as a stopgap. Next step: LangGraph Postgres/Redis checkpointer and a Redis rate limiter.
+- **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
+- **Team answer quality is not evaluated yet.** Routing has an eval gate; plans and syntheses need an LLM-as-judge suite (plan coverage, faithfulness to contributions).
+- **Guardrails are heuristic.** For regulated tenants, add an LLM-based classifier (e.g. Llama Guard) as an extra graph node.
+- **Answer quality is not evaluated yet**, only routing. Next: an LLM-as-judge suite with DeepEval or RAGAS on a sample of routed answers.
+- **Polyglot agents via A2A**: a Java (Spring AI / Quarkus LangChain4j) or .NET (Semantic Kernel) specialist can register as an A2A remote agent and be routed to like any local one.
+
+## License
+
+MIT. Agent content © The Agency contributors (MIT), included as a submodule.

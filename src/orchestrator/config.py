@@ -1,0 +1,84 @@
+"""Runtime configuration. Every knob is an environment variable (12-factor)."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    app_env: Literal["dev", "test", "prod"] = "dev"
+    log_level: str = "INFO"
+
+    # --- Agent catalog -----------------------------------------------------
+    agents_dir: Path = Path("vendor/agency-agents")
+
+    # --- LLM (any LiteLLM model string: anthropic/..., openai/..., gemini/...,
+    # mistral/..., ollama/llama3.1). "fake" is a deterministic offline backend.
+    llm_backend: Literal["litellm", "fake"] = "litellm"
+    llm_model: str = "anthropic/claude-sonnet-5-5"
+    router_model: str = "anthropic/claude-haiku-4-5-20251001"
+    llm_fallback_models: list[str] = Field(default_factory=lambda: ["openai/gpt-4o-mini"])
+    llm_temperature: float = 0.3
+    llm_max_tokens: int = 2048
+    llm_timeout_s: float = 60.0
+    llm_num_retries: int = 2
+
+    # --- Retrieval ---------------------------------------------------------
+    embedding_backend: Literal["hashing", "litellm"] = "hashing"
+    embedding_model: str = "openai/text-embedding-3-small"
+    vector_backend: Literal["memory", "qdrant"] = "memory"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: SecretStr | None = None
+    qdrant_collection: str = "agency_agents"
+
+    # --- Routing -----------------------------------------------------------
+    router_top_k: int = 8
+    router_use_llm: bool = True
+    router_min_confidence: float = 0.35
+    default_agent_id: str | None = None
+    history_max_messages: int = 10
+
+    # --- Team orchestration (planner -> parallel specialists -> synthesizer) --
+    planner_model: str = "anthropic/claude-sonnet-5-5"
+    team_max_agents: int = 4
+    team_candidates_k: int = 16
+    team_max_concurrency: int = 4
+    team_context_chars: int = 6000
+
+    # --- Guardrails --------------------------------------------------------
+    max_input_chars: int = 8000
+    injection_action: Literal["block", "flag"] = "block"
+    redact_pii: bool = True
+
+    # --- API / multi-tenancy ----------------------------------------------
+    # Comma-separated "key:tenant" pairs. Empty in dev means anonymous access.
+    api_keys: SecretStr = SecretStr("")
+    rate_limit_per_minute: int = 60
+    public_base_url: str = "http://localhost:8000"
+
+    # --- Observability -----------------------------------------------------
+    otel_enabled: bool = False
+    otel_service_name: str = "agency-orchestrator"
+    otel_exporter_otlp_endpoint: str | None = None
+
+    def tenant_keys(self) -> dict[str, str]:
+        pairs: dict[str, str] = {}
+        for raw in self.api_keys.get_secret_value().split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            key, _, tenant = raw.partition(":")
+            pairs[key] = tenant or "default"
+        return pairs
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

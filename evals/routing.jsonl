@@ -1,0 +1,40 @@
+{"question": "Our React app re-renders too much and the bundle is 4MB, how do I speed up the frontend?", "expected": ["engineering-frontend-developer"], "lang": "en"}
+{"question": "Design a scalable REST API and database schema for a multi-tenant backend service", "expected": ["engineering-backend-architect", "engineering-software-architect", "engineering-api-platform-engineer"], "lang": "en"}
+{"question": "Our Postgres queries are slow, which indexes should we add?", "expected": ["engineering-database-optimizer", "engineering-database-reliability-engineer"], "lang": "en"}
+{"question": "Set up a CI/CD pipeline with GitHub Actions, Docker and Kubernetes deployments", "expected": ["engineering-devops-automator", "engineering-sre"], "lang": "en"}
+{"question": "Write a Solidity smart contract for an ERC-20 token", "expected": ["engineering-solidity-smart-contract-engineer"], "lang": "en"}
+{"question": "Build a native iOS and Android mobile app", "expected": ["engineering-mobile-app-builder"], "lang": "en"}
+{"question": "Improve the system prompt of our LLM chatbot so it follows instructions", "expected": ["engineering-prompt-engineer"], "lang": "en"}
+{"question": "We need to cut our AWS cloud bill, where is the spend going?", "expected": ["engineering-finops-engineer"], "lang": "en"}
+{"question": "Production is down, lead the incident response and postmortem", "expected": ["engineering-incident-response-commander", "security-incident-responder", "engineering-sre"], "lang": "en"}
+{"question": "Run a penetration test against our web application", "expected": ["security-penetration-tester", "security-appsec-engineer"], "lang": "en"}
+{"question": "Audit our cloud IAM policies and AWS security posture", "expected": ["security-cloud-security-architect", "engineering-identity-access-engineer"], "lang": "en"}
+{"question": "Prepare for a SOC 2 compliance audit", "expected": ["security-compliance-auditor", "support-legal-compliance-checker"], "lang": "en"}
+{"question": "Rotate leaked API keys and manage secrets in a vault", "expected": ["security-secrets-credential-engineer"], "lang": "en"}
+{"question": "Write detection rules for suspicious logins in our SIEM", "expected": ["security-threat-detection-engineer", "security-senior-secops"], "lang": "en"}
+{"question": "Improve our SEO so we rank higher on Google search", "expected": ["marketing-seo-specialist"], "lang": "en"}
+{"question": "Plan a TikTok content strategy for a Gen Z brand", "expected": ["marketing-tiktok-strategist"], "lang": "en"}
+{"question": "Grow our LinkedIn presence with thought leadership posts", "expected": ["marketing-linkedin-content-creator"], "lang": "en"}
+{"question": "Our Google Ads PPC campaigns have a bad cost per acquisition", "expected": ["paid-media-ppc-strategist", "paid-media-auditor", "paid-media-search-query-analyst"], "lang": "en"}
+{"question": "Design the user interface and component library for our dashboard", "expected": ["design-ui-designer", "design-ux-architect"], "lang": "en"}
+{"question": "Conduct user research interviews to understand our customers", "expected": ["design-ux-researcher", "product-feedback-synthesizer"], "lang": "en"}
+{"question": "Build a financial model and forecast revenue for next year", "expected": ["finance-fpa-analyst", "finance-financial-analyst", "chief-financial-officer"], "lang": "en"}
+{"question": "How can my company reduce its tax liability legally?", "expected": ["finance-tax-strategist"], "lang": "en"}
+{"question": "Write a product requirements document and prioritize the roadmap", "expected": ["product-manager", "product-sprint-prioritizer"], "lang": "en"}
+{"question": "Prioritize the backlog for the next sprint", "expected": ["product-sprint-prioritizer", "project-management-jira-workflow-steward"], "lang": "en"}
+{"question": "Load test our API and benchmark the performance under traffic", "expected": ["testing-performance-benchmarker", "testing-api-tester"], "lang": "en"}
+{"question": "Check our website for WCAG accessibility issues", "expected": ["testing-accessibility-auditor", "engineering-section-508-specialist"], "lang": "en"}
+{"question": "Coach my sales team on discovery calls", "expected": ["sales-discovery-coach", "sales-coach"], "lang": "en"}
+{"question": "Build a level for my Unity game", "expected": ["unity-architect", "level-designer", "game-designer"], "lang": "en"}
+{"question": "Create a thematic map with QGIS and spatial analysis", "expected": ["gis-analyst", "gis-cartography-designer", "gis-spatial-data-scientist"], "lang": "en"}
+{"question": "Build an MCP server that exposes our internal tools to Claude", "expected": ["specialized-mcp-builder"], "lang": "en"}
+{"question": "Translate our documentation into French and Spanish", "expected": ["language-translator", "engineering-i18n-engineer"], "lang": "en"}
+{"question": "Write a grant proposal for a nonprofit research foundation", "expected": ["grant-writer"], "lang": "en"}
+{"question": "Build an Apple Vision Pro visionOS spatial app", "expected": ["visionos-spatial-engineer"], "lang": "en"}
+{"question": "Design a statistical analysis and hypothesis test for my experiment", "expected": ["academic-statistician", "project-management-experiment-tracker"], "lang": "en"}
+{"question": "Necesito optimizar el SEO de mi sitio web para Google", "expected": ["marketing-seo-specialist"], "lang": "es"}
+{"question": "Configura un pipeline de CI/CD con Docker y Kubernetes", "expected": ["engineering-devops-automator", "engineering-sre"], "lang": "es"}
+{"question": "Quiero hacer un pentest de mi aplicación web", "expected": ["security-penetration-tester", "security-appsec-engineer"], "lang": "es"}
+{"question": "Diseña una estrategia de contenido para TikTok", "expected": ["marketing-tiktok-strategist"], "lang": "es"}
+{"question": "Crea un contrato inteligente en Solidity", "expected": ["engineering-solidity-smart-contract-engineer"], "lang": "es"}
+{"question": "Necesito un modelo financiero y proyección de ingresos", "expected": ["finance-fpa-analyst", "finance-financial-analyst", "chief-financial-officer"], "lang": "es"}

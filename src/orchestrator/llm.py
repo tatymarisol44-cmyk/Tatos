@@ -1,0 +1,142 @@
+"""Provider-agnostic chat completion. LiteLLM covers Claude, OpenAI, Gemini, Mistral
+and Llama (Ollama/vLLM); `FakeLLM` is deterministic for tests and offline dev."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+from orchestrator.config import Settings
+from orchestrator.telemetry import tracer
+
+Message = dict[str, str]
+
+
+@dataclass
+class LLMResult:
+    text: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+    def usage(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": round(self.cost_usd, 6),
+        }
+
+
+class LLMClient(Protocol):
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResult: ...
+
+
+class LiteLLMClient:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResult:
+        import litellm
+
+        with tracer().start_as_current_span("gen_ai.chat") as span:
+            span.set_attribute("gen_ai.request.model", model)
+            resp = await litellm.acompletion(
+                model=model,
+                messages=messages,
+                temperature=self.settings.llm_temperature if temperature is None else temperature,
+                max_tokens=max_tokens or self.settings.llm_max_tokens,
+                timeout=self.settings.llm_timeout_s,
+                num_retries=self.settings.llm_num_retries,
+                fallbacks=self.settings.llm_fallback_models or None,
+            )
+            usage = getattr(resp, "usage", None)
+            try:
+                cost = float(litellm.completion_cost(completion_response=resp))
+            except Exception:  # unknown pricing for local/self-hosted models
+                cost = 0.0
+            result = LLMResult(
+                text=resp.choices[0].message.content or "",
+                model=getattr(resp, "model", model) or model,
+                input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                cost_usd=cost,
+            )
+            span.set_attribute("gen_ai.response.model", result.model)
+            span.set_attribute("gen_ai.usage.input_tokens", result.input_tokens)
+            span.set_attribute("gen_ai.usage.output_tokens", result.output_tokens)
+            return result
+
+
+@dataclass
+class FakeLLM:
+    """Router calls get the first candidate id; planner calls get a two-step sequential
+    plan over the first two candidates; agent and synthesizer calls get an echo answer."""
+
+    calls: list[list[Message]] = field(default_factory=list)
+    router_reply: str | None = None
+    planner_reply: str | None = None
+    fail_synthesis: bool = False
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResult:
+        self.calls.append(messages)
+        system = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
+        question = messages[-1]["content"]
+        if "ROUTER" in system:
+            if self.router_reply is not None:
+                return LLMResult(self.router_reply, model)
+            first = re.search(r"^- id: (\S+)", question, re.MULTILINE)
+            payload = {
+                "agent_id": first.group(1) if first else "",
+                "confidence": 0.9,
+                "reasoning": "fake: first candidate",
+            }
+            return LLMResult(json.dumps(payload), model, 10, 10)
+        if "PLANNER" in system:
+            if self.planner_reply is not None:
+                return LLMResult(self.planner_reply, model)
+            ids = re.findall(r"^- id: (\S+)", question, re.MULTILINE)[:2]
+            steps = [
+                {"id": f"s{i}", "agent_id": a, "task": f"fake task {i}", "depends_on": []}
+                for i, a in enumerate(ids, 1)
+            ]
+            if len(steps) == 2:
+                steps[1]["depends_on"] = ["s1"]
+            plan = {"steps": steps, "reasoning": "fake: first two candidates in sequence"}
+            return LLMResult(json.dumps(plan), model, 20, 20)
+        if "SYNTHESIZER" in system:
+            if self.fail_synthesis:
+                raise RuntimeError("fake synthesizer outage")
+            return LLMResult(f"[synthesis] {question}", model, len(question) // 4, 12)
+        title = system.splitlines()[0] if system else "agent"
+        return LLMResult(f"[{title}] {question}", model, len(question) // 4, 12)
+
+
+def build_llm(settings: Settings) -> LLMClient:
+    if settings.llm_backend == "fake":
+        return FakeLLM()
+    return LiteLLMClient(settings)

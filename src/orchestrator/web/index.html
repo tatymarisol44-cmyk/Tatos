@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agency Console</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true">◆</span> Agency Console</div>
+    <div class="mode" role="radiogroup" aria-label="Orchestration mode">
+      <button type="button" data-mode="single" role="radio" aria-checked="true">Single specialist</button>
+      <button type="button" data-mode="team" role="radio" aria-checked="false">Team</button>
+    </div>
+    <div class="topbar-right">
+      <input id="api-key" type="password" placeholder="API key" autocomplete="off" aria-label="API key">
+      <button type="button" id="new-thread" class="ghost">New conversation</button>
+      <button type="button" id="toggle-catalog" class="ghost narrow-only" aria-controls="catalog">Agents</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside id="catalog" class="catalog" aria-label="Agent catalog">
+      <div class="catalog-head">
+        <input id="search" type="search" placeholder="Search agents…" aria-label="Search agents">
+        <select id="division" aria-label="Division"><option value="">All divisions</option></select>
+        <p class="hint" id="pin-hint"></p>
+        <div id="pinned" class="pinned"></div>
+      </div>
+      <ul id="agents" class="agents"></ul>
+      <p id="agents-status" class="muted small"></p>
+    </aside>
+
+    <main class="main">
+      <section id="thread" class="thread" aria-live="polite">
+        <div class="empty" id="empty">
+          <h1>Ask anything. The right specialists answer.</h1>
+          <p class="muted"><b>Single</b> routes your request to the best of the catalog's specialists.
+            <b>Team</b> plans the work, runs several specialists in parallel and merges their answers.</p>
+          <div class="examples">
+            <button type="button" class="example">Our React bundle is 4MB, how do we speed it up?</button>
+            <button type="button" class="example" data-team>Launch plan for a B2B SaaS in the US: pricing, landing page, SEO and security review</button>
+            <button type="button" class="example">Necesito una estrategia de contenido para LinkedIn</button>
+          </div>
+        </div>
+      </section>
+
+      <form id="composer" class="composer">
+        <textarea id="question" rows="2" maxlength="20000" placeholder="Describe what you need…" aria-label="Your request" required></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+    </main>
+  </div>
+</body>
+</html>
