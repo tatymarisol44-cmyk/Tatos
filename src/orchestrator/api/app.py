@@ -15,10 +15,19 @@ from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
 from orchestrator.api import a2a
-from orchestrator.api.schemas import AgentSummary, ChatRequest, ChatResponse, RouteRequest
+from orchestrator.api.schemas import (
+    AgentSummary,
+    ChatRequest,
+    ChatResponse,
+    DocumentIn,
+    DocumentOut,
+    KnowledgeSearchRequest,
+    RouteRequest,
+)
 from orchestrator.api.security import RateLimiter, require_tenant
 from orchestrator.config import Settings, get_settings
 from orchestrator.guardrails import check_input
+from orchestrator.knowledge import KnowledgeRejected
 from orchestrator.service import Orchestrator
 from orchestrator.telemetry import setup_telemetry
 
@@ -162,6 +171,54 @@ def create_app(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    # --- company knowledge base (RAG), always scoped to the caller's tenant -------
+    @app.post(
+        "/v1/knowledge/documents",
+        response_model=DocumentOut,
+        status_code=status.HTTP_201_CREATED,
+        tags=["knowledge"],
+    )
+    async def add_document(
+        body: DocumentIn, request: Request, tenant: str = Depends(require_tenant)
+    ) -> DocumentOut:
+        if len(body.text) > settings.knowledge_max_doc_chars:
+            raise HTTPException(
+                status.HTTP_413_CONTENT_TOO_LARGE,
+                f"document exceeds {settings.knowledge_max_doc_chars} characters",
+            )
+        try:
+            info = await orch(request).knowledge.add(tenant, body.title, body.text, body.doc_id)
+        except KnowledgeRejected as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        return DocumentOut(**info.__dict__)
+
+    @app.get("/v1/knowledge/documents", response_model=list[DocumentOut], tags=["knowledge"])
+    async def list_documents(
+        request: Request, tenant: str = Depends(require_tenant)
+    ) -> list[DocumentOut]:
+        docs = await orch(request).knowledge.documents(tenant)
+        return [DocumentOut(**d.__dict__) for d in docs]
+
+    @app.delete(
+        "/v1/knowledge/documents/{doc_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["knowledge"],
+    )
+    async def delete_document(
+        doc_id: str, request: Request, tenant: str = Depends(require_tenant)
+    ) -> None:
+        # Another tenant's doc_id looks exactly like a missing one: no existence leak.
+        if not await orch(request).knowledge.delete(tenant, doc_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+
+    @app.post("/v1/knowledge/search", tags=["knowledge"])
+    async def search_knowledge(
+        body: KnowledgeSearchRequest, request: Request, tenant: str = Depends(require_tenant)
+    ) -> list[dict[str, Any]]:
+        """Debug retrieval: which chunks a question would put in the agents' context."""
+        chunks = await orch(request).knowledge.search(tenant, body.query, body.k)
+        return [c.to_dict() for c in chunks]
 
     return app
 

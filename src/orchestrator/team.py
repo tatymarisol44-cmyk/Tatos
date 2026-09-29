@@ -33,7 +33,8 @@ Only use ids from the candidate list. Reply with JSON only:
 SYNTHESIZER_PROMPT = """You are the SYNTHESIZER of an AI agency. Several specialists each worked
 on part of the user's request. Merge their contributions into one coherent answer in the
 user's language: resolve contradictions, remove repetition, keep concrete details and
-next steps, and mention which specialist a recommendation comes from when it helps."""
+next steps, and mention which specialist a recommendation comes from when it helps. Keep
+citation markers such as [1] that refer to the company's knowledge base."""
 
 _STEP_ID = re.compile(r"^[\w-]{1,32}$")
 

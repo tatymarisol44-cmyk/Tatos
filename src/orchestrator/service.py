@@ -13,6 +13,12 @@ from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.config import Settings
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
 from orchestrator.graph import build_graph
+from orchestrator.knowledge import (
+    ChunkStore,
+    InMemoryChunkStore,
+    KnowledgeBase,
+    QdrantChunkStore,
+)
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
@@ -30,6 +36,7 @@ class ChatResult:
     usage: dict[str, Any] = field(default_factory=dict)
     mode: Mode = "single"
     team: dict[str, Any] | None = None
+    sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 def build_embedder(settings: Settings) -> Embedder:
@@ -43,6 +50,27 @@ def build_store(settings: Settings) -> VectorStore:
         key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
         return QdrantVectorStore(settings.qdrant_url, key)
     return InMemoryVectorStore()
+
+
+def build_chunk_store(settings: Settings) -> ChunkStore:
+    if settings.vector_backend == "qdrant":
+        key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
+        return QdrantChunkStore(settings.qdrant_url, key)
+    return InMemoryChunkStore()
+
+
+def _sources(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Citation list matching the [n] markers the agents were asked to use."""
+    return [
+        {
+            "n": i,
+            "doc_id": c["doc_id"],
+            "title": c["title"],
+            "score": round(c["score"], 4),
+            "excerpt": c["text"][:300],
+        }
+        for i, c in enumerate(chunks, 1)
+    ]
 
 
 def _total(parts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -82,14 +110,15 @@ class Orchestrator:
         self.settings = settings
         self.catalog = catalog or load_catalog(settings.agents_dir)
         self.llm = llm or build_llm(settings)
-        self.router = Router(
-            self.catalog, build_embedder(settings), build_store(settings), self.llm, settings
-        )
-        self.graph = build_graph(self.catalog, self.router, self.llm, settings)
+        embedder = build_embedder(settings)
+        self.router = Router(self.catalog, embedder, build_store(settings), self.llm, settings)
+        self.knowledge = KnowledgeBase(embedder, build_chunk_store(settings), settings)
+        self.graph = build_graph(self.catalog, self.router, self.llm, settings, self.knowledge)
         self.ready = False
 
     async def start(self) -> None:
         await self.router.build_index()
+        await self.knowledge.start()
         self.ready = True
 
     async def route(self, question: str) -> RoutingDecision:
@@ -137,6 +166,7 @@ class Orchestrator:
             usage=_usage(state),
             mode=mode,
             team={"plan": plan, "results": state.get("results", [])} if plan else None,
+            sources=_sources(state.get("knowledge", [])),
         )
 
     async def chat(
@@ -166,7 +196,8 @@ class Orchestrator:
         tenant: str = "default",
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Yields `(event, data)` as each graph node finishes: `start`, `guardrails`,
-        `routing` or `plan`, one `step` per specialist, then `done` with the full result.
+        `knowledge` (if the tenant's documents matched), `routing` or `plan`, one `step`
+        per specialist, then `done` with the full result.
         Validation errors raise before the first event, so callers can still return 4xx."""
         thread_id, inputs, config = self._prepare(
             question, thread_id, agent_id, agent_ids, mode, tenant
@@ -187,6 +218,8 @@ class Orchestrator:
                                 "flags": update["guardrail_flags"],
                             },
                         )
+                    elif node == "knowledge" and update.get("knowledge"):
+                        yield "knowledge", {"sources": _sources(update["knowledge"])}
                     elif node == "route":
                         yield "routing", update["decision"]
                     elif node == "plan":

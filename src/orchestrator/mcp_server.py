@@ -65,5 +65,12 @@ async def ask_team(
     return result.__dict__
 
 
+@mcp.tool()
+async def search_knowledge(query: str, k: int = 4) -> list[dict[str, Any]]:
+    """Search the company knowledge base (documents uploaded for the `mcp` tenant)."""
+    chunks = await (await _get()).knowledge.search("mcp", query, k)
+    return [c.to_dict() for c in chunks]
+
+
 def main() -> None:
     mcp.run()

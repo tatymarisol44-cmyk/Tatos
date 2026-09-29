@@ -42,8 +42,33 @@ class ChatResponse(BaseModel):
     mode: Literal["single", "team"] = "single"
     routing: dict[str, Any] | None
     team: dict[str, Any] | None = None
+    sources: list[dict[str, Any]] = Field(
+        default_factory=list, description="Company documents cited as [n] in the answer."
+    )
     guardrails: dict[str, list[str]]
     usage: dict[str, Any]
+
+
+class DocumentIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=1_000_000)
+    doc_id: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[\w.-]+$",
+        description="Reuse an id to replace a document; omit to create a new one.",
+    )
+
+
+class DocumentOut(BaseModel):
+    doc_id: str
+    title: str
+    chunks: int
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    k: int = Field(default=4, ge=1, le=20)
 
 
 class AgentSummary(BaseModel):

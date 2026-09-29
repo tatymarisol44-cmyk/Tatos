@@ -32,6 +32,11 @@ class GuardrailResult:
     flags: list[str] = field(default_factory=list)
 
 
+def detect_injection(text: str) -> bool:
+    """Heuristic prompt-injection check, for user input and ingested documents alike."""
+    return bool(_INJECTION.search(text))
+
+
 def _luhn_ok(number: str) -> bool:
     digits = [int(d) for d in number if d.isdigit()]
     checksum = 0
@@ -70,7 +75,7 @@ def check_input(
     if len(stripped) > max_chars:
         return GuardrailResult(False, text, [f"input_too_long:{len(stripped)}>{max_chars}"])
     result = GuardrailResult(True, stripped)
-    if _INJECTION.search(stripped):
+    if detect_injection(stripped):
         if injection_action == "block":
             return GuardrailResult(False, text, ["prompt_injection"])
         result.flags.append("prompt_injection")

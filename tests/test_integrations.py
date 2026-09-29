@@ -143,4 +143,8 @@ async def test_mcp_tools(offline_env: None, monkeypatch: pytest.MonkeyPatch) -> 
     team = await mcp_server.ask_team("kubernetes docker and google seo")
     assert team["mode"] == "team" and len(team["team"]["results"]) == 2
     tools = {t.name for t in await mcp_server.mcp.list_tools()}
-    assert tools == {"list_agents", "route_question", "ask", "ask_team"}
+    assert tools == {"list_agents", "route_question", "ask", "ask_team", "search_knowledge"}
+    orch = await mcp_server._get()
+    await orch.knowledge.add("mcp", "Refunds", "Refunds are accepted within 30 days.")
+    [hit] = await mcp_server.search_knowledge("refunds within 30 days")
+    assert hit["title"] == "Refunds"

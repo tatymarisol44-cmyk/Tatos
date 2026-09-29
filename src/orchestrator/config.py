@@ -52,6 +52,17 @@ class Settings(BaseSettings):
     team_max_concurrency: int = 4
     team_context_chars: int = 6000
 
+    # --- Company knowledge base (RAG) --------------------------------------
+    knowledge_enabled: bool = True
+    knowledge_collection: str = "knowledge"
+    knowledge_top_k: int = 4
+    # Chunks scoring below this are not relevant enough to put in the prompt. Tune it per
+    # embedder: lexical hashing scores are lower than semantic cosine similarities.
+    knowledge_min_score: float = 0.1
+    knowledge_chunk_chars: int = 800
+    knowledge_chunk_overlap: int = 150
+    knowledge_max_doc_chars: int = 200_000
+
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000
     injection_action: Literal["block", "flag"] = "block"

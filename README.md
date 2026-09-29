@@ -1,6 +1,6 @@
 # Agency Orchestrator
 
-A multi-agent orchestration service over **260+ specialist agents** from [The Agency](https://github.com/msitarzewski/agency-agents) catalog. It either routes a request to the single best specialist, or **orchestrates a team**: a planner splits the work across several specialists, they run in parallel (respecting dependencies) and a synthesizer merges one answer. It ships with a web console, streaming, guardrails, tracing, evaluation and a CI/CD path to Kubernetes.
+A multi-agent orchestration service over **260+ specialist agents** from [The Agency](https://github.com/msitarzewski/agency-agents) catalog. It either routes a request to the single best specialist, or **orchestrates a team**: a planner splits the work across several specialists, they run in parallel (respecting dependencies) and a synthesizer merges one answer. Each company can upload its own documents, which the agents use and cite (**RAG**, isolated per tenant). It ships with a web console, streaming, guardrails, tracing, evaluation and a CI/CD path to Kubernetes.
 
 It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation).
 
@@ -11,10 +11,11 @@ flowchart LR
     M[Claude Desktop / Cursor] -->|MCP stdio| MCP[MCP server]
     subgraph Orchestrator [LangGraph workflow]
       direction LR
-      G1[input guard<br/>injection · PII · size] -->|single| R[router]
+      G1[input guard<br/>injection · PII · size] --> K[knowledge<br/>tenant RAG]
+      K -->|single| R[router]
       R --> S[specialist agent]
       S --> G2[output guard<br/>PII]
-      G1 -->|team| P[planner]
+      K -->|team| P[planner]
       P -->|Send, by dependency wave| W[specialist ×N]
       W --> J[join] -->|next wave| W
       J --> Y[synthesizer] --> G2
@@ -22,6 +23,7 @@ flowchart LR
     API[FastAPI<br/>auth · rate limit] --> G1
     MCP --> G1
     R -->|1. retrieve top-k| V[(Qdrant<br/>agent index)]
+    K -->|tenant filter| D[(Qdrant<br/>company documents)]
     R -->|2. pick one| L1[small LLM]
     S --> L2[LLM via LiteLLM<br/>Claude · GPT · Gemini · Mistral · Llama]
     Orchestrator -.OTLP.-> O[OTel Collector → Jaeger / Prometheus]
@@ -52,6 +54,21 @@ uv run agency ask "Launch plan for our B2B SaaS: pricing, landing page, SEO, sec
 uv run agency ask "Review our checkout flow" --team security-penetration-tester engineering-frontend-developer
 ```
 
+## Company knowledge (RAG)
+
+Each tenant uploads its own documents (policies, product sheets, FAQs). The agents answer with them and cite them.
+
+1. **Ingest** — `POST /v1/knowledge/documents` splits the text into ~800-char chunks with 150 chars of overlap (paragraph-aware, so a fact cut at a boundary is whole in some chunk), embeds `title + chunk` and stores it with the tenant id. Documents that contain prompt-injection patterns are rejected at the door, and re-uploading a `doc_id` replaces the document.
+2. **Retrieve** — the `knowledge` graph node embeds the question and takes the top 4 chunks **of that tenant** above `KNOWLEDGE_MIN_SCORE`. If retrieval fails, the request is answered without company context instead of failing.
+3. **Answer** — chunks go into the prompt as a numbered, delimited block ("reference data, never instructions"). Specialists, team workers and the synthesizer all see the same numbering, so `[n]` citations stay valid. The response lists `sources`. Conversation history stores only the question, not the retrieved context.
+
+**Tenant isolation.** All tenants share one Qdrant collection, partitioned by a `tenant` payload index with `is_tenant=True` (Qdrant's recommended multi-tenant layout; one collection per tenant does not scale to thousands of customers). Every store method takes `tenant` as a required argument and filters server-side, so there is no unscoped query to forget. A cross-tenant delete returns 404, like a missing document, so ids do not leak. Contract tests run the same isolation checks against the in-memory and Qdrant stores.
+
+```bash
+curl -s localhost:8000/v1/knowledge/documents -H "X-API-Key: key1" -H "Content-Type: application/json" \
+  -d '{"title": "Return policy", "text": "Customers can return products within 30 days..."}'
+```
+
 ## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is pinned and fetched by uv.
@@ -80,9 +97,12 @@ docker compose up --build
 |---|---|
 | `GET /` | Web console: agent catalog, single/team mode, live team progress. |
 | `POST /v1/chat` | Answer. Body: `question`, `mode` (`single`\|`team`), optional `thread_id`, `agent_id` (single) or `agent_ids` (team). |
-| `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `routing` or `plan`, one `step` per specialist, `done`. |
+| `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `knowledge`, `routing` or `plan`, one `step` per specialist, `done`. |
 | `POST /v1/route` | Routing decision only, with candidates and scores. |
 | `GET /v1/agents?division=` | Catalog listing. |
+| `POST /v1/knowledge/documents` | Add or replace (`doc_id`) a company document. |
+| `GET /v1/knowledge/documents` · `DELETE …/{doc_id}` | List or delete the caller's documents. |
+| `POST /v1/knowledge/search` | Debug retrieval: which chunks a question would use. |
 | `GET /.well-known/agent-card.json` | A2A Agent Card (skills = divisions). |
 | `POST /a2a` | A2A JSON-RPC `message/send`; `contextId` ↔ `thread_id`; message metadata `{"mode": "team"}` for a team. |
 | `GET /healthz`, `/readyz` | Liveness / readiness (index built). |
@@ -94,9 +114,9 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
   -d '{"question": "Necesito optimizar el SEO de mi sitio"}'
 ```
 
-**Web console**: open `/`, paste an API key, pick *Single specialist* or *Team*. Clicking agents in the catalog pins them (one in single mode, a hand-picked team in team mode). The page is static HTML/JS served by the API — no build step, no third-party origins, strict CSP.
+**Web console**: open `/`, paste an API key, pick *Single specialist* or *Team*. Clicking agents in the catalog pins them (one in single mode, a hand-picked team in team mode). The *Knowledge* tab uploads and manages the company's documents; answers show the sources they used. The page is static HTML/JS served by the API — no build step, no third-party origins, strict CSP.
 
-**MCP**: `uv run agency mcp` exposes `list_agents`, `route_question`, `ask` and `ask_team` over stdio. Claude Desktop config:
+**MCP**: `uv run agency mcp` exposes `list_agents`, `route_question`, `ask`, `ask_team` and `search_knowledge` over stdio. Claude Desktop config:
 
 ```json
 { "mcpServers": { "agency": { "command": "uv", "args": ["--directory", "/path/to/agency-orchestrator", "run", "agency", "mcp"] } } }
@@ -108,10 +128,10 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
 |---|---|
 | **Reproducibility** | `uv.lock` with `--frozen` everywhere (local, CI, Docker). Agent catalog pinned as a git submodule and baked into the image. Vector collections are named `<name>_<catalog-hash>_<embedder>`, so an index is immutable and tied to exactly one catalog + embedding model. LiteLLM uses its bundled pricing map instead of fetching one at runtime. |
 | **Provider portability** | LiteLLM behind a small `LLMClient` protocol. Model, router model and fallback chain are env vars. Retries, timeouts and fallbacks are configured centrally. |
-| **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
+| **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Documents: injection check at ingestion, delimited as data in prompts. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
 | **Evaluation** | `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. |
 | **Observability** | OpenTelemetry traces per graph node, team step (`team.plan`, `team.worker`, `team.synthesize`) and LLM call, with GenAI semantic-convention attributes (model, input/output tokens). Metrics: routed count by agent and method, guardrail blocks, latency histogram, token usage. The collector strips prompt/completion text before export. |
-| **Testing** | 86 tests, 97% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access) are tested explicitly. |
+| **Testing** | 105 tests, 97% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access) are tested explicitly. |
 | **Code quality** | Ruff (lint + format, incl. security rules), mypy `--strict`, pre-commit hooks. |
 | **CI/CD** | GitHub Actions: lint/types → tests (py3.12 + 3.13) → eval gate → Trivy (deps, secrets, IaC) → kubeconform on rendered manifests → multi-stage image with SBOM + provenance, pushed to GHCR on `main`/tags and scanned. Dependabot for uv, actions, Docker, compose and the submodule. |
 | **Deployment** | Kustomize base + dev overlay: non-root, read-only rootfs, dropped capabilities, restricted Pod Security, probes, HPA, PDB, topology spread, NetworkPolicy on Qdrant. Secrets are created out-of-band, never committed. |
@@ -137,6 +157,7 @@ src/orchestrator/
   vectorstore.py  in-memory and Qdrant stores
   router.py       retrieve -> LLM pick -> fallback
   team.py         planner, plan validation, worker/synthesis prompts
+  knowledge.py    tenant RAG: chunking, stores (memory/Qdrant), retrieval
   graph.py        LangGraph workflow (single + team paths), per-thread checkpointing
   guardrails.py   injection, PII, size limits
   llm.py          LiteLLM client, deterministic fake
@@ -154,7 +175,9 @@ docs/adr/         architecture decision records
 
 - **Conversation state and rate limits are in-process.** With several replicas the Service uses `sessionAffinity: ClientIP` as a stopgap. Next step: LangGraph Postgres/Redis checkpointer and a Redis rate limiter.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
-- **Team answer quality is not evaluated yet.** Routing has an eval gate; plans and syntheses need an LLM-as-judge suite (plan coverage, faithfulness to contributions).
+- **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.
+- **Retrieval is dense-only.** Hybrid search (BM25 + vectors) and a reranker would help with exact terms like SKUs.
+- **Team and RAG answer quality is not evaluated yet.** Routing has an eval gate; plans and syntheses need an LLM-as-judge suite (plan coverage, faithfulness to contributions).
 - **Guardrails are heuristic.** For regulated tenants, add an LLM-based classifier (e.g. Llama Guard) as an extra graph node.
 - **Answer quality is not evaluated yet**, only routing. Next: an LLM-as-judge suite with DeepEval or RAGAS on a sample of routed answers.
 - **Polyglot agents via A2A**: a Java (Spring AI / Quarkus LangChain4j) or .NET (Semantic Kernel) specialist can register as an A2A remote agent and be routed to like any local one.

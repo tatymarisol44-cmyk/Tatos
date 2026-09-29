@@ -1,4 +1,5 @@
-"""LangGraph workflow with two paths after the input guard:
+"""LangGraph workflow. After the input guard, `knowledge` retrieves the tenant's own
+documents (RAG), then the request takes one of two paths:
 
 - single: route -> specialist                       (one agent answers)
 - team:   plan -> worker x N (Send, in dependency waves) -> join -> ... -> synthesize
@@ -8,6 +9,7 @@ follow-up questions keep their history whichever path or specialists they take."
 
 from __future__ import annotations
 
+import logging
 import operator
 import time
 from typing import Annotated, Any, TypedDict
@@ -20,6 +22,7 @@ from langgraph.types import Send
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.guardrails import check_input, check_output
+from orchestrator.knowledge import Chunk, KnowledgeBase, knowledge_block
 from orchestrator.llm import LLMClient, LLMResult
 from orchestrator.router import Router
 from orchestrator.team import (
@@ -30,6 +33,8 @@ from orchestrator.team import (
     worker_messages,
 )
 from orchestrator.telemetry import BLOCKED, LATENCY, ROUTED, TOKENS, tracer
+
+log = logging.getLogger(__name__)
 
 
 def _step_results(
@@ -53,6 +58,7 @@ class OrchestratorState(TypedDict, total=False):
     blocked: bool
     guardrail_reasons: list[str]
     guardrail_flags: list[str]
+    knowledge: list[dict[str, Any]]
     decision: dict[str, Any] | None
     plan: dict[str, Any] | None
     results: Annotated[list[dict[str, Any]], _step_results]
@@ -65,6 +71,7 @@ class WorkerInput(TypedDict):
     step: dict[str, Any]
     question: str
     context: list[dict[str, Any]]
+    knowledge: str
 
 
 def _count_tokens(result: LLMResult) -> None:
@@ -73,9 +80,21 @@ def _count_tokens(result: LLMResult) -> None:
 
 
 def build_graph(
-    catalog: Catalog, router: Router, llm: LLMClient, settings: Settings
+    catalog: Catalog,
+    router: Router,
+    llm: LLMClient,
+    settings: Settings,
+    knowledge_base: KnowledgeBase | None = None,
 ) -> CompiledStateGraph[Any]:
     planner = Planner(catalog, router, llm, settings)
+
+    def context_block(state: OrchestratorState) -> str:
+        chunks = [Chunk(**c) for c in state.get("knowledge", [])]
+        return knowledge_block(chunks) if chunks else ""
+
+    def with_context(block: str, text: str) -> str:
+        """Prepend the knowledge block (if any) to a user message."""
+        return f"{block}\n\n{text}" if block else text
 
     def history(state: OrchestratorState) -> list[dict[str, str]]:
         return state.get("messages", [])[-settings.history_max_messages :]
@@ -100,6 +119,7 @@ def build_graph(
             "blocked": not result.allowed,
             "guardrail_reasons": result.reasons,
             "guardrail_flags": result.flags,
+            "knowledge": [],
             "decision": None,
             "plan": None,
             "results": None,
@@ -109,8 +129,20 @@ def build_graph(
         }
 
     def after_guard(state: OrchestratorState) -> str:
-        if state["blocked"]:
-            return END
+        return END if state["blocked"] else "knowledge"
+
+    # --- RAG over the tenant's documents -------------------------------------
+    async def knowledge(state: OrchestratorState) -> dict[str, Any]:
+        if knowledge_base is None or not settings.knowledge_enabled:
+            return {}
+        try:
+            chunks = await knowledge_base.search(state.get("tenant", ""), state["sanitized"])
+        except Exception:  # retrieval is an enhancement: answer without it rather than fail
+            log.exception("knowledge search failed; answering without company context")
+            return {}
+        return {"knowledge": [c.to_dict() for c in chunks]}
+
+    def after_knowledge(state: OrchestratorState) -> str:
         return "plan" if state.get("mode") == "team" else "route"
 
     # --- single-agent path ---------------------------------------------------
@@ -126,7 +158,7 @@ def build_graph(
         messages = [
             {"role": "system", "content": agent.system_prompt},
             *history(state),
-            {"role": "user", "content": state["sanitized"]},
+            {"role": "user", "content": with_context(context_block(state), state["sanitized"])},
         ]
         with tracer().start_as_current_span("agent.answer") as span:
             span.set_attribute("agent.id", agent.id)
@@ -161,6 +193,7 @@ def build_graph(
                     "step": step,
                     "question": state["sanitized"],
                     "context": [by_step[d] for d in step["depends_on"]],
+                    "knowledge": context_block(state),
                 },
             )
             for step in ready
@@ -185,6 +218,7 @@ def build_graph(
             payload["context"],
             settings.team_context_chars,
         )
+        messages[-1]["content"] = with_context(payload["knowledge"], messages[-1]["content"])
         with tracer().start_as_current_span("team.worker") as span:
             span.set_attribute("agent.id", agent.id)
             span.set_attribute("team.step_id", step["id"])
@@ -220,6 +254,8 @@ def build_graph(
             messages = synthesis_messages(
                 state["sanitized"], results, history(state), settings.team_context_chars
             )
+            # Same numbered block the specialists saw, so their [n] citations stay valid.
+            messages[-1]["content"] = with_context(context_block(state), messages[-1]["content"])
             with tracer().start_as_current_span("team.synthesize") as span:
                 span.set_attribute("team.contributions", len(ok))
                 try:
@@ -245,6 +281,7 @@ def build_graph(
 
     builder = StateGraph(OrchestratorState)
     builder.add_node("input_guard", input_guard)
+    builder.add_node("knowledge", knowledge)
     builder.add_node("route", route)
     builder.add_node("specialist", specialist)
     builder.add_node("plan", plan)
@@ -253,7 +290,8 @@ def build_graph(
     builder.add_node("synthesize", synthesize)
     builder.add_node("output_guard", output_guard)
     builder.add_edge(START, "input_guard")
-    builder.add_conditional_edges("input_guard", after_guard, ["route", "plan", END])
+    builder.add_conditional_edges("input_guard", after_guard, ["knowledge", END])
+    builder.add_conditional_edges("knowledge", after_knowledge, ["route", "plan"])
     builder.add_edge("route", "specialist")
     builder.add_edge("specialist", "output_guard")
     # Each wave of workers converges on `join` (which runs once per wave); it either

@@ -256,7 +256,9 @@ async function send(question) {
     if (!resp.ok) throw await apiError(resp);
     for await (const { event, data } of sse(resp)) {
       if (event === "start") state.threadId = data.thread_id;
-      else if (event === "routing") {
+      else if (event === "knowledge") {
+        meta.append(el("span", { class: "badge", text: `${data.sources.length} company source${data.sources.length === 1 ? "" : "s"}` }));
+      } else if (event === "routing") {
         meta.append(el("span", { text: `→ ${data.agent_name}` }),
           el("span", { class: "badge", text: `${data.method} · ${Math.round(data.confidence * 100)}%` }));
         working.textContent = `${data.agent_name} is working…`;
@@ -275,6 +277,8 @@ async function send(question) {
           bubble.replaceChildren(el("div", { class: "error", text: `Blocked by guardrails: ${data.guardrails.reasons.join(", ")}` }));
         } else {
           bubble.replaceChildren(markdownNode(data.answer));
+          const sources = sourcesView(data.sources);
+          if (sources) bubble.append(sources);
         }
         const usage = usageLine(data.usage);
         if (usage) meta.append(usage);
@@ -293,11 +297,100 @@ async function send(question) {
   }
 }
 
+// --- knowledge base ----------------------------------------------------------
+async function loadDocs() {
+  const status = $("#docs-status");
+  try {
+    const resp = await fetch("/v1/knowledge/documents", { headers: headers() });
+    if (!resp.ok) throw await apiError(resp);
+    const docs = await resp.json();
+    $("#docs").replaceChildren(...docs.map((d) => el("li", { class: "doc" },
+      el("div", { class: "doc-body" },
+        el("span", { class: "doc-title", text: d.title, title: d.title }),
+        el("span", { class: "muted small", text: `${d.chunks} chunk${d.chunks === 1 ? "" : "s"} · ${d.doc_id}` })),
+      el("button", {
+        type: "button", class: "icon-btn", "aria-label": `Delete ${d.title}`, title: "Delete",
+        onclick: () => deleteDoc(d),
+      }, "✕"))));
+    status.textContent = docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "No documents yet.";
+  } catch (err) {
+    status.textContent = `Could not load documents: ${err.message}`;
+  }
+}
+
+async function addDoc(title, text) {
+  const resp = await fetch("/v1/knowledge/documents", {
+    method: "POST", headers: headers(), body: JSON.stringify({ title, text }),
+  });
+  if (!resp.ok) throw await apiError(resp);
+  return resp.json();
+}
+
+async function uploadFiles(files) {
+  const status = $("#docs-status");
+  for (const file of files) {
+    status.textContent = `Indexing ${file.name}…`;
+    try {
+      const info = await addDoc(file.name.replace(/\.[^.]+$/, ""), await file.text());
+      status.textContent = `Indexed ${file.name} (${info.chunks} chunks).`;
+    } catch (err) {
+      status.textContent = `${file.name}: ${err.message}`;
+      return;
+    }
+  }
+  await loadDocs();
+}
+
+async function deleteDoc(doc) {
+  if (!confirm(`Delete "${doc.title}" from the knowledge base?`)) return;
+  const resp = await fetch(`/v1/knowledge/documents/${encodeURIComponent(doc.doc_id)}`, {
+    method: "DELETE", headers: headers(),
+  });
+  if (!resp.ok && resp.status !== 404) $("#docs-status").textContent = (await apiError(resp)).message;
+  await loadDocs();
+}
+
+function sourcesView(sources) {
+  if (!sources?.length) return null;
+  return el("details", { class: "sources" },
+    el("summary", { text: `Sources from your documents (${sources.length})` }),
+    el("ol", {}, ...sources.map((s) => el("li", { value: String(s.n) },
+      el("b", { text: s.title }),
+      el("div", { class: "excerpt", text: `${s.excerpt}${s.excerpt.length >= 300 ? "…" : ""}` })))));
+}
+
+function selectTab(name) {
+  for (const tab of ["agents", "knowledge"]) {
+    $(`#tab-${tab}`).setAttribute("aria-selected", String(tab === name));
+    $(`#panel-${tab}`).hidden = tab !== name;
+  }
+  if (name === "knowledge") loadDocs();
+}
+
 // --- wiring ------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   const key = $("#api-key");
   key.value = store.get("agency.apiKey") || "";
-  key.addEventListener("change", () => { store.set("agency.apiKey", key.value.trim()); loadAgents(); });
+  key.addEventListener("change", () => {
+    store.set("agency.apiKey", key.value.trim());
+    loadAgents();
+    if (!$("#panel-knowledge").hidden) loadDocs();
+  });
+
+  $("#tab-agents").addEventListener("click", () => selectTab("agents"));
+  $("#tab-knowledge").addEventListener("click", () => selectTab("knowledge"));
+  $("#doc-file").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
+  $("#doc-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const info = await addDoc($("#doc-title").value.trim(), $("#doc-text").value);
+      $("#docs-status").textContent = `Indexed "${info.title}" (${info.chunks} chunks).`;
+      e.target.reset();
+      await loadDocs();
+    } catch (err) {
+      $("#docs-status").textContent = err.message;
+    }
+  });
 
   for (const b of document.querySelectorAll(".mode button")) b.addEventListener("click", () => setMode(b.dataset.mode));
   $("#search").addEventListener("input", renderAgents);

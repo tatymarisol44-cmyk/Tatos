@@ -22,15 +22,42 @@
   </header>
 
   <div class="layout">
-    <aside id="catalog" class="catalog" aria-label="Agent catalog">
-      <div class="catalog-head">
-        <input id="search" type="search" placeholder="Search agents…" aria-label="Search agents">
-        <select id="division" aria-label="Division"><option value="">All divisions</option></select>
-        <p class="hint" id="pin-hint"></p>
-        <div id="pinned" class="pinned"></div>
+    <aside id="catalog" class="catalog" aria-label="Sidebar">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="true">Agents</button>
+        <button type="button" role="tab" id="tab-knowledge" aria-controls="panel-knowledge" aria-selected="false">Knowledge</button>
       </div>
-      <ul id="agents" class="agents"></ul>
-      <p id="agents-status" class="muted small"></p>
+
+      <section id="panel-agents" class="panel" role="tabpanel" aria-labelledby="tab-agents">
+        <div class="catalog-head">
+          <input id="search" type="search" placeholder="Search agents…" aria-label="Search agents">
+          <select id="division" aria-label="Division"><option value="">All divisions</option></select>
+          <p class="hint" id="pin-hint"></p>
+          <div id="pinned" class="pinned"></div>
+        </div>
+        <ul id="agents" class="agents"></ul>
+        <p id="agents-status" class="muted small"></p>
+      </section>
+
+      <section id="panel-knowledge" class="panel" role="tabpanel" aria-labelledby="tab-knowledge" hidden>
+        <div class="catalog-head">
+          <p class="hint">Your company's documents. Agents use the relevant parts and cite them as [n]. Only your organization can see them.</p>
+          <label class="upload">
+            <input id="doc-file" type="file" accept=".md,.txt,.csv,.json,.html,text/*" multiple>
+            <span>Upload files (.md, .txt, .csv…)</span>
+          </label>
+          <details>
+            <summary class="small">…or paste text</summary>
+            <form id="doc-form" class="doc-form">
+              <input id="doc-title" placeholder="Title" maxlength="200" required aria-label="Document title">
+              <textarea id="doc-text" rows="5" placeholder="Policy, product sheet, FAQ…" required aria-label="Document text"></textarea>
+              <button type="submit" class="ghost">Add document</button>
+            </form>
+          </details>
+          <p id="docs-status" class="muted small" role="status"></p>
+        </div>
+        <ul id="docs" class="agents"></ul>
+      </section>
     </aside>
 
     <main class="main">
