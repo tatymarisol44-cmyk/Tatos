@@ -159,6 +159,7 @@ src/orchestrator/
   team.py         planner, plan validation, worker/synthesis prompts
   knowledge.py    tenant RAG: chunking, stores (memory/Qdrant), retrieval
   graph.py        LangGraph workflow (single + team paths), per-thread checkpointing
+  checkpoint.py   checkpointer backends: in-memory (dev) or Postgres (durable, shared)
   guardrails.py   injection, PII, size limits
   llm.py          LiteLLM client, deterministic fake
   service.py      composition root shared by API, A2A, MCP, CLI
@@ -173,7 +174,7 @@ docs/adr/         architecture decision records
 
 ## Known limitations & roadmap
 
-- **Conversation state and rate limits are in-process.** With several replicas the Service uses `sessionAffinity: ClientIP` as a stopgap. Next step: LangGraph Postgres/Redis checkpointer and a Redis rate limiter.
+- **Rate limits are in-process.** Conversation state is shared through the Postgres checkpointer (`CHECKPOINTER_BACKEND=postgres`, see ADR 0005), but each replica counts requests on its own, so the Service keeps `sessionAffinity: ClientIP`. Next: a Redis rate limiter, and a retention job that prunes old threads.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.
 - **Retrieval is dense-only.** Hybrid search (BM25 + vectors) and a reranker would help with exact terms like SKUs.

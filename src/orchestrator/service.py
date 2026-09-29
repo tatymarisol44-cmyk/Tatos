@@ -10,6 +10,7 @@ from typing import Any, Literal
 from langchain_core.runnables import RunnableConfig
 
 from orchestrator.catalog import Catalog, load_catalog
+from orchestrator.checkpoint import Checkpointer
 from orchestrator.config import Settings
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
 from orchestrator.graph import build_graph
@@ -113,13 +114,21 @@ class Orchestrator:
         embedder = build_embedder(settings)
         self.router = Router(self.catalog, embedder, build_store(settings), self.llm, settings)
         self.knowledge = KnowledgeBase(embedder, build_chunk_store(settings), settings)
-        self.graph = build_graph(self.catalog, self.router, self.llm, settings, self.knowledge)
+        self.checkpointer = Checkpointer(settings)
+        self.graph = build_graph(
+            self.catalog, self.router, self.llm, settings, self.knowledge, self.checkpointer.saver
+        )
         self.ready = False
 
     async def start(self) -> None:
+        await self.checkpointer.start()
         await self.router.build_index()
         await self.knowledge.start()
         self.ready = True
+
+    async def close(self) -> None:
+        self.ready = False
+        await self.checkpointer.close()
 
     async def route(self, question: str) -> RoutingDecision:
         return await self.router.route(question)

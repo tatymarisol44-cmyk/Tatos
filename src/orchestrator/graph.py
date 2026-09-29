@@ -14,6 +14,7 @@ import operator
 import time
 from typing import Annotated, Any, TypedDict
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -85,6 +86,7 @@ def build_graph(
     llm: LLMClient,
     settings: Settings,
     knowledge_base: KnowledgeBase | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
 ) -> CompiledStateGraph[Any]:
     planner = Planner(catalog, router, llm, settings)
 
@@ -301,4 +303,4 @@ def build_graph(
     builder.add_conditional_edges("join", next_wave, ["worker", "synthesize"])
     builder.add_edge("synthesize", "output_guard")
     builder.add_edge("output_guard", END)
-    return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile(checkpointer=checkpointer or InMemorySaver())

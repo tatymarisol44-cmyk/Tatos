@@ -1,4 +1,4 @@
-# Local production-like stack: API + Qdrant + OpenTelemetry Collector + Jaeger + Prometheus.
+# Local production-like stack: API + Qdrant + Postgres + OpenTelemetry Collector + Jaeger + Prometheus.
 #   cp .env.example .env   # add at least one LLM provider key
 #   docker compose up --build
 # API http://localhost:8000/docs · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
@@ -10,12 +10,16 @@ services:
     environment:
       VECTOR_BACKEND: qdrant
       QDRANT_URL: http://qdrant:6333
+      CHECKPOINTER_BACKEND: postgres
+      POSTGRES_URL: postgresql://agency:agency@postgres:5432/agency
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports: ["8000:8000"]
     depends_on:
       qdrant:
         condition: service_started
+      postgres:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     restart: unless-stopped
@@ -24,6 +28,21 @@ services:
     image: qdrant/qdrant:v1.13.4
     ports: ["6333:6333"]
     volumes: [qdrant-data:/qdrant/storage]
+
+  # Conversation checkpoints (LangGraph). Dev credentials only.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agency
+      POSTGRES_PASSWORD: agency
+      POSTGRES_DB: agency
+    ports: ["5432:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agency -d agency"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.118.0
@@ -43,3 +62,4 @@ services:
 
 volumes:
   qdrant-data:
+  postgres-data:

@@ -37,6 +37,20 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: agency
+          POSTGRES_PASSWORD: agency
+          POSTGRES_DB: agency
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agency -d agency"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      # Enables the checkpointer integration test (thread survives a new instance).
+      TEST_POSTGRES_URL: postgresql://agency:agency@localhost:5432/agency
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

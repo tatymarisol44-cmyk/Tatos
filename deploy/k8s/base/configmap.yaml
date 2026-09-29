@@ -11,6 +11,8 @@ data:
   EMBEDDING_MODEL: openai/text-embedding-3-small
   VECTOR_BACKEND: qdrant
   QDRANT_URL: http://qdrant:6333
+  # POSTGRES_URL comes from the secret (managed Postgres: RDS, Cloud SQL, Azure DB...).
+  CHECKPOINTER_BACKEND: postgres
   OTEL_ENABLED: "true"
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
   RATE_LIMIT_PER_MINUTE: "60"

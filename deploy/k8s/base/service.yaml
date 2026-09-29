@@ -5,6 +5,6 @@ metadata:
 spec:
   selector: {app.kubernetes.io/name: agency-orchestrator}
   ports: [{name: http, port: 80, targetPort: http}]
-  # Conversation checkpoints are in-process for now (see README "Known limitations"),
-  # so pin clients to a replica until a shared checkpointer is configured.
+  # Conversation state lives in Postgres, so any replica can serve any thread. Affinity is
+  # kept only because the rate limiter is still per replica (see README "Known limitations").
   sessionAffinity: ClientIP

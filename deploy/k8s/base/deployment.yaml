@@ -1,6 +1,6 @@
 # Secrets are NOT committed. Create them out-of-band (or via External Secrets / SOPS):
 #   kubectl -n agency create secret generic agency-orchestrator-secrets \
-#     --from-literal=API_KEYS='key1:tenant-a' \
+#     --from-literal=API_KEYS='key1:tenant-a' #     --from-literal=POSTGRES_URL='postgresql://user:pass@host:5432/agency?sslmode=require' \
 #     --from-literal=ANTHROPIC_API_KEY=... --from-literal=OPENAI_API_KEY=...
 apiVersion: apps/v1
 kind: Deployment

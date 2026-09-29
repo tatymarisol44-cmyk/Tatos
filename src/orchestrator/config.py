@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 
+    # --- Conversation state (LangGraph checkpointer) -----------------------
+    # "postgres" makes threads survive restarts and be shared by every replica.
+    checkpointer_backend: Literal["memory", "postgres"] = "memory"
+    postgres_url: SecretStr | None = None
+    postgres_pool_size: int = 10
+
     # --- API / multi-tenancy ----------------------------------------------
     # Comma-separated "key:tenant" pairs. Empty in dev means anonymous access.
     api_keys: SecretStr = SecretStr("")

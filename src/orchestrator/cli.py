@@ -6,6 +6,8 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +15,7 @@ from orchestrator.config import get_settings
 
 if TYPE_CHECKING:
     from orchestrator.evals import EvalReport
+    from orchestrator.service import Orchestrator
 
 
 def _print(data: object) -> None:
@@ -27,33 +30,38 @@ async def _index() -> None:
     _print({"index": orch.router.index_name, "agents": len(orch.catalog), "created": created})
 
 
-async def _route(question: str) -> None:
+@asynccontextmanager
+async def _started() -> AsyncIterator[Orchestrator]:
+    """A started orchestrator whose connections (e.g. the Postgres pool) close on exit."""
     from orchestrator.service import Orchestrator
 
     orch = Orchestrator(get_settings())
     await orch.start()
-    _print((await orch.route(question)).to_dict())
+    try:
+        yield orch
+    finally:
+        await orch.close()
+
+
+async def _route(question: str) -> None:
+    async with _started() as orch:
+        _print((await orch.route(question)).to_dict())
 
 
 async def _ask(question: str, agent_id: str | None, team: list[str] | None) -> None:
-    from orchestrator.service import Orchestrator
-
-    orch = Orchestrator(get_settings())
-    await orch.start()
-    if team is not None:
-        result = await orch.chat(question, mode="team", agent_ids=team or None, tenant="cli")
-    else:
-        result = await orch.chat(question, agent_id=agent_id, tenant="cli")
+    async with _started() as orch:
+        if team is not None:
+            result = await orch.chat(question, mode="team", agent_ids=team or None, tenant="cli")
+        else:
+            result = await orch.chat(question, agent_id=agent_id, tenant="cli")
     _print(result.__dict__)
 
 
 async def _eval(rows: list[dict[str, Any]]) -> EvalReport:
     from orchestrator.evals import run_routing_eval
-    from orchestrator.service import Orchestrator
 
-    orch = Orchestrator(get_settings())
-    await orch.start()
-    return await run_routing_eval(orch, rows)
+    async with _started() as orch:
+        return await run_routing_eval(orch, rows)
 
 
 def _eval_cmd(dataset: Path, min_top1: float, min_recall: float, output: Path | None) -> int:

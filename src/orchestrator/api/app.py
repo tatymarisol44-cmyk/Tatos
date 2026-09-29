@@ -59,7 +59,10 @@ def create_app(
         orch = orchestrator or Orchestrator(settings)
         app.state.orchestrator = orch
         await orch.start()
-        yield
+        try:
+            yield
+        finally:
+            await orch.close()
 
     app = FastAPI(
         title="Agency Orchestrator",
