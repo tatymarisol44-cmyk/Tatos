@@ -1,0 +1,19 @@
+id: retail
+name: Retail store
+description: >-
+  Shops and e-commerce. Finance and paid-media answers go to human review; quarterly
+  win-back of inactive customers.
+review:
+  divisions: [finance, paid-media]
+  clinical: false
+crm:
+  pipeline: [presented, accepted, in_progress, completed, declined]
+  recall_months: 3
+  confirm_yellow_hours: 24
+  confirm_red_hours: 6
+  quote_followup_days: 3
+campaigns:
+  max_messages_per_month: 4
+  max_discount_pct: 40
+  banned_claims: ["guaranteed", "garantizado", "garantizada", "100%"]
+  forbid_clinical_terms: false

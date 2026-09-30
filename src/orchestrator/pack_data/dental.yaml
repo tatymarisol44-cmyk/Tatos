@@ -1,0 +1,33 @@
+id: dental
+name: Dental clinic
+description: >-
+  Dental and oral-health clinics. Clinical advice and healthcare, finance or paid-media
+  answers go to human review; 6-month recalls; marketing may not mention clinical
+  details or promise results (HIPAA marketing rules, LOPDP/GDPR special-category data,
+  health advertising codes).
+review:
+  divisions: [healthcare, finance, paid-media]
+  clinical: true
+memory:
+  allow_clinical: false
+crm:
+  pipeline: [presented, accepted, in_progress, completed, declined]
+  recall_months: 6
+  confirm_yellow_hours: 48
+  confirm_red_hours: 24
+  quote_followup_days: 7
+campaigns:
+  max_messages_per_month: 2
+  max_discount_pct: 15
+  banned_claims:
+    - guaranteed
+    - garantizado
+    - garantizada
+    - painless
+    - sin dolor
+    - perfect smile
+    - sonrisa perfecta
+    - 100%
+    - miracle
+    - milagro
+  forbid_clinical_terms: true

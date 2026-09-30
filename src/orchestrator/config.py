@@ -65,6 +65,42 @@ class Settings(BaseSettings):
     knowledge_chunk_chars: int = 800
     knowledge_chunk_overlap: int = 150
     knowledge_max_doc_chars: int = 200_000
+    # Evidence gating: the best chunk must reach this score for the evidence to count as
+    # "strong"; below it the agents are told the excerpts are only loosely related.
+    knowledge_strong_score: float = 0.25
+    # Retrieval attempts per turn (the retry rewrites a follow-up with the previous turn).
+    knowledge_max_attempts: int = Field(default=2, ge=1, le=3)
+    # A single-agent answer citing sources that do not exist is regenerated this many times
+    # before the bad markers are stripped.
+    citation_max_retries: int = Field(default=1, ge=0, le=2)
+
+    # --- Governance: databases, audit, reviews, consents ---------------------
+    # SQLAlchemy async URL for the governance/CRM tables. SQLite in memory for dev and
+    # tests; postgresql+psycopg://... (sslmode=require) in prod.
+    database_url: SecretStr = SecretStr("sqlite+aiosqlite:///:memory:")
+    # Industry packs: tenant -> pack id (JSON), e.g. {"clinica-sonrisa": "dental"}.
+    tenant_packs: dict[str, str] = Field(default_factory=dict)
+    default_pack: str = "general"
+    # Human review of high-risk answers (LangGraph interrupt + checkpoint).
+    review_enabled: bool = True
+
+    # --- Semantic memory (long-term, per data subject) -----------------------
+    memory_enabled: bool = True
+    memory_collection: str = "memory"
+    memory_top_k: int = 5
+    memory_min_score: float = 0.15
+    # Two facts this similar are the same fact: the newer one replaces the older.
+    memory_dedupe_score: float = 0.8
+    memory_ttl_days: int = Field(default=365, ge=1)
+    memory_max_facts_per_turn: int = 3
+
+    # --- Campaigns and channels ----------------------------------------------
+    # Without a token the Telegram channel runs dry: messages are recorded, not sent.
+    telegram_bot_token: SecretStr | None = None
+    telegram_api_base: str = "https://api.telegram.org"
+    campaign_default_holdout_pct: int = Field(default=20, ge=0, le=50)
+    # A booking this many days after a message counts as a conversion.
+    campaign_conversion_window_days: int = Field(default=30, ge=1)
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
-from orchestrator.api import a2a
+from orchestrator.api import a2a, business
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -25,11 +25,11 @@ from orchestrator.api.schemas import (
     KnowledgeSearchRequest,
     RouteRequest,
 )
-from orchestrator.api.security import build_limiter, require_tenant
+from orchestrator.api.security import build_limiter, request_actor, require_tenant
 from orchestrator.config import Settings, get_settings
 from orchestrator.guardrails import check_input
 from orchestrator.knowledge import KnowledgeRejected
-from orchestrator.service import Orchestrator
+from orchestrator.service import Orchestrator, PendingReviewError
 from orchestrator.telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ def create_app(
     app.state.settings = settings
     app.state.limiter = build_limiter(settings)
     app.include_router(a2a.router, tags=["a2a"])
+    app.include_router(business.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:
@@ -144,8 +145,13 @@ def create_app(
 
     @app.post("/v1/chat", response_model=ChatResponse, tags=["orchestration"])
     async def chat(
-        body: ChatRequest, request: Request, tenant: str = Depends(require_tenant)
+        body: ChatRequest,
+        request: Request,
+        tenant: str = Depends(require_tenant),
+        actor: str = Depends(request_actor),
     ) -> ChatResponse:
+        """Answer a request. `status` is `pending_review` when the answer was held for a
+        human (see /v1/reviews); the thread then accepts no new message until resolved."""
         try:
             result = await orch(request).chat(
                 body.question,
@@ -154,17 +160,26 @@ def create_app(
                 agent_ids=body.agent_ids,
                 mode=body.mode,
                 tenant=tenant,
+                subject_id=body.subject_id,
+                force_review=body.force_review,
+                actor=actor,
             )
+        except PendingReviewError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
         return ChatResponse(**result.__dict__)
 
     @app.post("/v1/chat/stream", tags=["orchestration"])
     async def chat_stream(
-        body: ChatRequest, request: Request, tenant: str = Depends(require_tenant)
+        body: ChatRequest,
+        request: Request,
+        tenant: str = Depends(require_tenant),
+        actor: str = Depends(request_actor),
     ) -> StreamingResponse:
-        """Same as `/v1/chat`, as Server-Sent Events: `start`, `guardrails`, `routing` or
-        `plan`, one `step` per specialist as it finishes, then `done` (or `error`)."""
+        """Same as `/v1/chat`, as Server-Sent Events: `start`, `guardrails`, `evidence`,
+        `routing` or `plan`, one `step` per specialist as it finishes, `review` if held for
+        a human, then `done` (or `error`)."""
         try:
             events = await orch(request).chat_stream(
                 body.question,
@@ -173,7 +188,12 @@ def create_app(
                 agent_ids=body.agent_ids,
                 mode=body.mode,
                 tenant=tenant,
+                subject_id=body.subject_id,
+                force_review=body.force_review,
+                actor=actor,
             )
+        except PendingReviewError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 

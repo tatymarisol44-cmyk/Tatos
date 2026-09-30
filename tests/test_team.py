@@ -238,12 +238,13 @@ async def test_team_blocked_by_guardrails(orchestrator: Orchestrator, fake_llm: 
 async def test_stream_events(orchestrator: Orchestrator) -> None:
     events = await orchestrator.chat_stream("kubernetes docker", mode="team", thread_id="s")
     names = [name async for name, _ in events]
-    assert names[:3] == ["start", "guardrails", "plan"]
+    # Every run grades the evidence (here: none, the tenant has no documents).
+    assert names[:4] == ["start", "guardrails", "evidence", "plan"]
     assert names.count("step") == 2 and names[-1] == "done"
 
     events = await orchestrator.chat_stream("kubernetes docker")
     names = [name async for name, _ in events]
-    assert names == ["start", "guardrails", "routing", "done"]
+    assert names == ["start", "guardrails", "evidence", "routing", "done"]
 
 
 # --- HTTP -------------------------------------------------------------------

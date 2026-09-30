@@ -16,7 +16,8 @@ patches:
       - op: replace
         path: /data/APP_ENV
         value: dev
-      # No database in the dev cluster: in-memory threads (Service affinity keeps them).
+      # No database in the dev cluster: in-memory threads (Service affinity keeps them);
+      # without DATABASE_URL the governance/CRM tables live in per-pod SQLite memory too.
       - op: replace
         path: /data/CHECKPOINTER_BACKEND
         value: memory

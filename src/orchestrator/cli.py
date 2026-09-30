@@ -152,7 +152,9 @@ async def _purge(days: int) -> None:
 
     async with _started() as orch:
         deleted = await orch.purge_threads(timedelta(days=days))
-    _print({"deleted_threads": deleted, "older_than_days": days})
+        # Memory facts carry their own expiry (MEMORY_TTL_DAYS).
+        expired = await orch.purge_memory()
+    _print({"deleted_threads": deleted, "older_than_days": days, "expired_memory_facts": expired})
 
 
 def main(argv: list[str] | None = None) -> int:

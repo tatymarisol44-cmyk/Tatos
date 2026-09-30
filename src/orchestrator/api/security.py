@@ -128,6 +128,18 @@ def resolve_tenant(settings: Settings, api_key: str | None) -> str:
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key")
 
 
+async def request_actor(
+    x_actor: str | None = Header(
+        default=None,
+        max_length=128,
+        pattern=r"^[\w.@-]+$",
+        description="The person acting (e.g. 'dr.lopez'), recorded in the audit trail. "
+        "Declared by the calling application, which authenticates its own users.",
+    ),
+) -> str:
+    return x_actor or "api"
+
+
 async def require_tenant(request: Request, x_api_key: str | None = Header(default=None)) -> str:
     settings: Settings = request.app.state.settings
     tenant = resolve_tenant(settings, x_api_key)

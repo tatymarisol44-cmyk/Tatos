@@ -72,5 +72,48 @@ async def search_knowledge(query: str, k: int = 4) -> list[dict[str, Any]]:
     return [c.to_dict() for c in chunks]
 
 
+@mcp.tool()
+async def list_reviews() -> list[dict[str, Any]]:
+    """Answers waiting for a human decision (draft, risk reasons, sources)."""
+    return [r.to_dict() for r in await (await _get()).reviews.list("mcp")]
+
+
+@mcp.tool()
+async def resolve_review(
+    thread_id: str,
+    approved: bool,
+    reviewer: str,
+    feedback: str | None = None,
+    edited_answer: str | None = None,
+) -> dict[str, Any]:
+    """Approve (optionally with an edited text) or reject a paused answer; the workflow
+    resumes from its checkpoint and returns the final result."""
+    result = await (await _get()).resolve_review(
+        "mcp",
+        thread_id,
+        approved=approved,
+        reviewer=reviewer,
+        feedback=feedback,
+        edited_answer=edited_answer,
+    )
+    return result.__dict__
+
+
+@mcp.tool()
+async def crm_alerts() -> list[dict[str, Any]]:
+    """Traffic-light follow-ups: unconfirmed appointments, unanswered quotes, recalls due."""
+    return [a.to_dict() for a in await (await _get()).crm.alerts("mcp")]
+
+
+@mcp.tool()
+async def insights(question: str | None = None) -> dict[str, Any]:
+    """Business metrics computed with SQL (segments, recalls, no-show risk, pipeline,
+    forecast). With a `question`, an analyst explains them in natural language."""
+    orch = await _get()
+    if question:
+        return await orch.insights.ask("mcp", question)
+    return await orch.insights.summary("mcp")
+
+
 def main() -> None:
     mcp.run()

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 
 from orchestrator import __version__
 from orchestrator.api.security import require_tenant
-from orchestrator.service import Orchestrator
+from orchestrator.service import Orchestrator, PendingReviewError
 
 router = APIRouter()
 
@@ -81,14 +81,19 @@ async def a2a_rpc(
     context_id = str(message.get("contextId") or uuid.uuid4())
     # Callers opt into team orchestration with message metadata {"mode": "team"}.
     team = (message.get("metadata") or {}).get("mode") == "team"
-    result = await orch.chat(
-        text, thread_id=context_id, mode="team" if team else "single", tenant=tenant
-    )
-    reply = (
-        result.answer
-        if not result.blocked
-        else "Request blocked by guardrails: " + ", ".join(result.guardrails["reasons"])
-    )
+    try:
+        result = await orch.chat(
+            text, thread_id=context_id, mode="team" if team else "single", tenant=tenant
+        )
+    except PendingReviewError:
+        return _rpc_error(req_id, -32001, "context is waiting for a human review")
+    if result.blocked:
+        reply = "Request blocked by guardrails: " + ", ".join(result.guardrails["reasons"])
+    elif result.status == "pending_review":
+        # The draft stays inside our boundary until a person approves it.
+        reply = "Your request needs a review by our team; we will get back to you."
+    else:
+        reply = result.answer or ""
     return {
         "jsonrpc": "2.0",
         "id": req_id,
@@ -103,6 +108,7 @@ async def a2a_rpc(
                 "routing": result.routing,
                 "team": result.team["plan"] if result.team else None,
                 "blocked": result.blocked,
+                "status": result.status,
             },
         },
     }

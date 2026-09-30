@@ -1,0 +1,19 @@
+id: general
+name: General business
+description: >-
+  Default for any business. No automatic human review; generic sales pipeline and a
+  yearly recall. Marketing copy may not promise guaranteed results.
+review:
+  divisions: []
+  clinical: false
+crm:
+  pipeline: [presented, accepted, in_progress, completed, declined]
+  recall_months: 12
+  confirm_yellow_hours: 48
+  confirm_red_hours: 24
+  quote_followup_days: 7
+campaigns:
+  max_messages_per_month: 4
+  max_discount_pct: 30
+  banned_claims: ["guaranteed", "garantizado", "garantizada", "100% effective", "100% efectivo"]
+  forbid_clinical_terms: false

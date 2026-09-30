@@ -196,7 +196,7 @@ async def test_stream_emits_knowledge_event(settings: Settings, catalog: Catalog
     orch = await _orch_with_docs(settings, catalog, FakeLLM())
     events = await orch.chat_stream("refund policy 30 days", tenant="acme")
     names = [name async for name, _ in events]
-    assert names == ["start", "guardrails", "knowledge", "routing", "done"]
+    assert names == ["start", "guardrails", "knowledge", "evidence", "routing", "done"]
 
 
 # --- HTTP -------------------------------------------------------------------------

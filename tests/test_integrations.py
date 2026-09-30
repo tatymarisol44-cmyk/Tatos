@@ -143,8 +143,32 @@ async def test_mcp_tools(offline_env: None, monkeypatch: pytest.MonkeyPatch) -> 
     team = await mcp_server.ask_team("kubernetes docker and google seo")
     assert team["mode"] == "team" and len(team["team"]["results"]) == 2
     tools = {t.name for t in await mcp_server.mcp.list_tools()}
-    assert tools == {"list_agents", "route_question", "ask", "ask_team", "search_knowledge"}
+    assert tools == {
+        "list_agents",
+        "route_question",
+        "ask",
+        "ask_team",
+        "search_knowledge",
+        "list_reviews",
+        "resolve_review",
+        "crm_alerts",
+        "insights",
+    }
     orch = await mcp_server._get()
     await orch.knowledge.add("mcp", "Refunds", "Refunds are accepted within 30 days.")
     [hit] = await mcp_server.search_knowledge("refunds within 30 days")
     assert hit["title"] == "Refunds"
+
+    # Human review from the editor: a forced review pauses, the tool resolves it.
+    paused = await orch.chat("hi", tenant="mcp", thread_id="mcp-r", force_review=True)
+    assert paused.status == "pending_review"
+    [pending] = await mcp_server.list_reviews()
+    assert pending["thread_id"] == "mcp-r"
+    done = await mcp_server.resolve_review("mcp-r", approved=True, reviewer="dev")
+    assert done["status"] == "completed" and done["answer"]
+    assert await mcp_server.list_reviews() == []
+    assert await mcp_server.crm_alerts() == []
+    summary = await mcp_server.insights()
+    assert summary["patients"]["total"] == 0
+    explained = await mcp_server.insights("how many patients do we have?")
+    assert explained["answer"].startswith("[insights]")

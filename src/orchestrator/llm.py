@@ -89,13 +89,17 @@ class LiteLLMClient:
 class FakeLLM:
     """Router calls get the first candidate id; planner calls get a two-step sequential
     plan over the first two candidates; judge calls get top scores (override with
-    `judge_reply`); agent and synthesizer calls get an echo answer."""
+    `judge_reply`); the memory extractor keeps the customer's sentences that state a
+    preference; the copywriter and the insights analyst get a fixed text; agent and
+    synthesizer calls get an echo answer (override the first ones with `agent_replies`)."""
 
     calls: list[list[Message]] = field(default_factory=list)
     router_reply: str | None = None
     planner_reply: str | None = None
     fail_synthesis: bool = False
     judge_reply: str | None = None
+    memory_reply: str | None = None
+    agent_replies: list[str] = field(default_factory=list)
 
     async def complete(
         self,
@@ -138,10 +142,29 @@ class FakeLLM:
                 for c in ("relevance", "faithfulness", "completeness")
             }
             return LLMResult(json.dumps(verdict), model, 50, 30)
+        if "MEMORY EXTRACTOR" in system:
+            if self.memory_reply is not None:
+                return LLMResult(self.memory_reply, model, 30, 10)
+            said = re.search(r"CUSTOMER: (.*)", question)
+            sentences = re.split(r"(?<=[.!?])\s+", said.group(1)) if said else []
+            facts = [s for s in sentences if re.search(r"\b(prefer\w*|prefiero)\b", s, re.I)]
+            return LLMResult(json.dumps({"facts": facts}), model, 30, 10)
+        if "COPYWRITER" in system:
+            return LLMResult(
+                "Hola {first_name}, te esperamos para tu control. Agenda tu cita cuando "
+                "quieras respondiendo a este mensaje.",
+                model,
+                40,
+                25,
+            )
+        if "INSIGHTS ANALYST" in system:
+            return LLMResult(f"[insights] {question[:200]}", model, 60, 30)
         if "SYNTHESIZER" in system:
             if self.fail_synthesis:
                 raise RuntimeError("fake synthesizer outage")
             return LLMResult(f"[synthesis] {question}", model, len(question) // 4, 12)
+        if self.agent_replies:
+            return LLMResult(self.agent_replies.pop(0), model, len(question) // 4, 12)
         title = system.splitlines()[0] if system else "agent"
         return LLMResult(f"[{title}] {question}", model, len(question) // 4, 12)
 

@@ -11,8 +11,12 @@ data:
   EMBEDDING_MODEL: openai/text-embedding-3-small
   VECTOR_BACKEND: qdrant
   QDRANT_URL: http://qdrant:6333
-  # POSTGRES_URL comes from the secret (managed Postgres: RDS, Cloud SQL, Azure DB...).
+  # POSTGRES_URL (checkpoints) and DATABASE_URL (audit, reviews, consents, CRM,
+  # campaigns) come from the secret (managed Postgres: RDS, Cloud SQL, Azure DB...).
   CHECKPOINTER_BACKEND: postgres
+  # Industry packs per tenant (JSON), e.g. {"clinica-sonrisa": "dental"}.
+  TENANT_PACKS: '{}'
+  DEFAULT_PACK: general
   # Remote A2A specialists (JSON list of base URLs).
   REMOTE_AGENTS: '["http://jvm-agent:8080"]'
   OTEL_ENABLED: "true"
