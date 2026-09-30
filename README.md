@@ -4,6 +4,8 @@ A multi-agent orchestration service over **260+ specialist agents** from [The Ag
 
 It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation, in both directions: other agents can call the orchestrator, and specialists written in other languages, such as the included **Java/Spring Boot agent**, join its catalog).
 
+On top of the orchestrator sits an **AI-native CRM with governance (ERM)** for small businesses, with dental clinics as the first vertical: patients, appointments and treatment plans with traffic-light follow-ups, SQL-computed insights explained in natural language, loyalty campaigns measured against a holdout group, **human review of high-risk answers** (LangGraph `interrupt` + checkpoint), consent management, an audit trail, data-subject export/erasure, and consent-gated **semantic memory** per customer. What differs between business types lives in **industry packs** (YAML), not code. The full requirements are in the [SRS](docs/SRS.md).
+
 ```mermaid
 flowchart LR
     C[Web console / SaaS UI] -->|REST + SSE| API
@@ -11,14 +13,23 @@ flowchart LR
     M[Claude Desktop / Cursor] -->|MCP stdio| MCP[MCP server]
     subgraph Orchestrator [LangGraph workflow]
       direction LR
-      G1[input guard<br/>injection · PII · size] --> K[knowledge<br/>tenant RAG]
-      K -->|single| R[router]
+      G1[input guard<br/>injection · PII · size] --> MR[recall memory<br/>consent-gated]
+      MR --> K[knowledge<br/>tenant RAG]
+      K --> E{grade evidence}
+      E -->|weak follow-up| Q[rewrite query] --> K
+      E -->|single| R[router]
       R --> S[specialist agent]
-      S --> G2[output guard<br/>PII]
-      K -->|team| P[planner]
+      E -->|team| P[planner]
       P -->|Send, by dependency wave| W[specialist ×N]
       W --> J[join] -->|next wave| W
-      J --> Y[synthesizer] --> G2
+      J --> Y[synthesizer]
+      S --> VC{verify citations}
+      Y --> VC
+      VC -->|invented n| S
+      VC --> G2[output guard<br/>PII] --> RS{risk score<br/>pack rules}
+      RS -->|high| HR[human review<br/>interrupt] --> F[finalize]
+      RS -->|low| F
+      F --> MW[remember]
     end
     API[FastAPI<br/>auth · rate limit] --> G1
     MCP --> G1
@@ -63,11 +74,36 @@ Each tenant uploads its own documents (policies, product sheets, FAQs). The agen
 2. **Retrieve** — the `knowledge` graph node embeds the question and takes the top 4 chunks **of that tenant** above `KNOWLEDGE_MIN_SCORE`. If retrieval fails, the request is answered without company context instead of failing.
 3. **Answer** — chunks go into the prompt as a numbered, delimited block ("reference data, never instructions"). Specialists, team workers and the synthesizer all see the same numbering, so `[n]` citations stay valid. The response lists `sources`. Conversation history stores only the question, not the retrieved context.
 
+**Evidence gating and citations** ([ADR 0008](docs/adr/0008-evidence-gating-and-route-log.md)). Retrieval is graded `strong`/`weak`/`none` from the scores. Weak evidence on a follow-up ("and how many days?") triggers one retry with the previous turn as context; weak evidence that reaches the agent is labelled as loosely related. Every `[n]` in the answer is checked against the retrieved excerpts: an invented one sends the answer back to the specialist once, and if it persists the marker is stripped and flagged (`citation:invalid`). Every decision lands in the response's `route_log`.
+
 **Tenant isolation.** All tenants share one Qdrant collection, partitioned by a `tenant` payload index with `is_tenant=True` (Qdrant's recommended multi-tenant layout; one collection per tenant does not scale to thousands of customers). Every store method takes `tenant` as a required argument and filters server-side, so there is no unscoped query to forget. A cross-tenant delete returns 404, like a missing document, so ids do not leak. Contract tests run the same isolation checks against the in-memory and Qdrant stores.
 
 ```bash
 curl -s localhost:8000/v1/knowledge/documents -H "X-API-Key: key1" -H "Content-Type: application/json" \
   -d '{"title": "Return policy", "text": "Customers can return products within 30 days..."}'
+```
+
+## Business suite: CRM, insights, campaigns and governance (ERM)
+
+| Module | What it does |
+|---|---|
+| **Industry packs** | `general`, `dental`, `retail` (YAML in `src/orchestrator/pack_data/`): which answers need review, pipeline stages, recall interval, alert thresholds, banned marketing claims, frequency caps. `TENANT_PACKS='{"clinica-sonrisa": "dental"}'`. |
+| **Human review** ([ADR 0009](docs/adr/0009-human-review-and-governance.md)) | `risk_score` holds answers with clinical advice, from reviewed divisions (dental: healthcare, finance, paid-media), after a flagged injection, or with `force_review`. The graph pauses (`status: pending_review`, `answer: null`, thread locked with 409) until `POST /v1/reviews/{thread}` approves (optionally with edited text, re-checked for PII) or rejects it. A rejected draft never enters the conversation history. |
+| **Audit & consents** | Append-only audit events (actor from `X-Actor`, subject, action; metadata only). Opt-in consents per purpose (`treatment`, `marketing`, `memory`, `photos`, `analytics`), each change audited. `GET /v1/subjects/{id}/export` and `DELETE /v1/subjects/{id}` implement access/portability and erasure, retaining the clinical record as restricted where the law requires it. |
+| **Semantic memory** ([ADR 0010](docs/adr/0010-semantic-memory.md)) | With the `memory` consent, durable non-clinical facts ("prefers afternoons") are extracted, deduplicated, given an expiry and recalled in later conversations. Contact data, clinical facts and injection attempts are filtered deterministically. |
+| **CRM** ([ADR 0011](docs/adr/0011-crm-and-sql-insights.md)) | Patients, appointments (status machine), treatment plans (pack pipeline). Traffic-light alerts: unconfirmed appointments (48 h yellow, 24 h red), unanswered quotes, recalls due. Every record read by a person is audited. |
+| **Insights** | SQL-computed RFM segments, high-value patients, no-show risk of upcoming visits, pipeline value, naive forecast. `POST /v1/insights/ask` has an LLM explain them from aggregates keyed by pseudonymous ids; it never computes numbers. |
+| **Campaigns** ([ADR 0012](docs/adr/0012-loyalty-campaigns-with-holdout.md)) | Recall, reactivation, pending-treatment, referral, birthday, education. Copy is checked against the pack (claims, clinical details, placeholders, STOP opt-out) and approved by a person (plus the owner for big discounts). Sending honours consent, channel and a monthly cap, and holds out a deterministic control group. Results report booking lift with a z-test (inconclusive under 30 per arm). Telegram delivery runs dry without a bot token. |
+
+```bash
+# A dental clinic: held answer, review, CRM, insights, campaign
+TENANT_PACKS='{"acme": "dental"}' uv run agency serve
+curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "X-Actor: dr.lopez" -H "Content-Type: application/json" \
+  -d '{"question": "¿Qué dosis de ibuprofeno tomo tras la extracción?", "subject_id": "p-001"}'   # -> pending_review
+curl -s localhost:8000/v1/reviews -H "X-API-Key: key1"
+curl -s localhost:8000/v1/reviews/<thread_id> -H "X-API-Key: key1" -H "X-Actor: dr.lopez" \
+  -H "Content-Type: application/json" -d '{"approved": true, "edited_answer": "Llámenos a la clínica."}'
+curl -s localhost:8000/v1/insights/summary -H "X-API-Key: key1"
 ```
 
 ## Polyglot specialists over A2A
@@ -115,8 +151,15 @@ docker compose up --build
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | Web console: agent catalog, single/team mode, live team progress. |
-| `POST /v1/chat` | Answer. Body: `question`, `mode` (`single`\|`team`), optional `thread_id`, `agent_id` (single) or `agent_ids` (team). |
-| `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `knowledge`, `routing` or `plan`, one `step` per specialist, `done`. |
+| `POST /v1/chat` | Answer. Body: `question`, `mode` (`single`\|`team`), optional `thread_id`, `agent_id` (single) or `agent_ids` (team), `subject_id`, `force_review`. Returns `status` (`completed`, `blocked`, `pending_review`, `rejected`), `route_log`, `evidence`, `citations`, `decision_record`. 409 while the thread waits for review. |
+| `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `knowledge`, `evidence`, `routing` or `plan`, one `step` per specialist, `review` (if held), `done`. |
+| `GET /v1/reviews[?state=]` · `GET/POST /v1/reviews/{thread_id}` | Human-review queue; approve (optionally editing) or reject, and the workflow resumes. |
+| `PUT/GET /v1/subjects/{id}/consents[/{purpose}]` | Opt-in consents per purpose. |
+| `GET /v1/subjects/{id}/export` · `DELETE /v1/subjects/{id}` | Data-subject access/portability and erasure. |
+| `GET /v1/audit[?subject_id=]` | Audit trail of the caller's tenant. |
+| `/v1/crm/patients`, `/v1/crm/appointments`, `/v1/crm/treatments`, `GET /v1/crm/alerts` | CRM records and traffic-light alerts. |
+| `GET /v1/insights/summary` · `/segments` · `POST /v1/insights/ask` | SQL metrics, segments, natural-language questions over them. |
+| `/v1/campaigns` (`POST`, `GET`, `/{id}`, `/template`, `/approve`, `/send`, `/cancel`, `/results`) | Loyalty campaigns with approval, holdout and lift. |
 | `POST /v1/route` | Routing decision only, with candidates and scores. |
 | `GET /v1/agents?division=` | Catalog listing. |
 | `POST /v1/knowledge/documents` | Add or replace (`doc_id`) a company document. |
@@ -126,7 +169,7 @@ docker compose up --build
 | `POST /a2a` | A2A JSON-RPC `message/send`; `contextId` ↔ `thread_id`; message metadata `{"mode": "team"}` for a team. |
 | `GET /healthz`, `/readyz` | Liveness / readiness (index built). |
 
-Auth is `X-API-Key`, mapped to a tenant via `API_KEYS="key1:tenant-a,key2:tenant-b"`. Threads are namespaced per tenant.
+Auth is `X-API-Key`, mapped to a tenant via `API_KEYS="key1:tenant-a,key2:tenant-b"`. Threads and every business record are namespaced per tenant; another tenant's id answers 404 like a missing one. `X-Actor` names the person acting, for the audit trail.
 
 ```bash
 curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: application/json" \
@@ -135,7 +178,7 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
 
 **Web console**: open `/`, paste an API key, pick *Single specialist* or *Team*. Clicking agents in the catalog pins them (one in single mode, a hand-picked team in team mode). The *Knowledge* tab uploads and manages the company's documents; answers show the sources they used. The page is static HTML/JS served by the API — no build step, no third-party origins, strict CSP.
 
-**MCP**: `uv run agency mcp` exposes `list_agents`, `route_question`, `ask`, `ask_team` and `search_knowledge` over stdio. Claude Desktop config:
+**MCP**: `uv run agency mcp` exposes `list_agents`, `route_question`, `ask`, `ask_team`, `search_knowledge`, `list_reviews`, `resolve_review`, `crm_alerts` and `insights` over stdio, so held answers can be reviewed from the editor. Claude Desktop config:
 
 ```json
 { "mcpServers": { "agency": { "command": "uv", "args": ["--directory", "/path/to/agency-orchestrator", "run", "agency", "mcp"] } } }
@@ -150,7 +193,7 @@ curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: applicatio
 | **Guardrails** | Input: size limit, prompt-injection heuristics (EN/ES), PII redaction (email, phone, SSN, Luhn-validated cards) *before* anything reaches a model. Output: PII redaction. Documents: injection check at ingestion, delimited as data in prompts. Router and planner output are schema- and allow-list-validated; plans must be DAGs. |
 | **Evaluation** | *Routing:* `evals/routing.jsonl` (EN + ES, multiple acceptable agents per question) → top-1 accuracy, recall@k, per-language accuracy and latency. CI runs it offline as a regression gate; `nightly-eval.yml` runs it against real models with stricter thresholds. *Answers:* an LLM judge grades end-to-end answers (single, team, RAG) on relevance, faithfulness to the tenant's documents and completeness (`evals/answers.jsonl`). The judge itself is calibrated nightly against hand-labelled good/bad answers (`evals/judge_calibration.jsonl`), gating on agreement and false passes. See [ADR 0006](docs/adr/0006-llm-as-judge-evals.md). |
 | **Observability** | OpenTelemetry traces per graph node, team step (`team.plan`, `team.worker`, `team.synthesize`) and LLM call, with GenAI semantic-convention attributes (model, input/output tokens). Metrics: routed count by agent and method, guardrail blocks, latency histogram, token usage. The collector strips prompt/completion text before export. |
-| **Testing** | 181 Python tests, 98% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, mocked LiteLLM. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access, remote-agent outages and malicious cards) are tested explicitly. Integration tests run in CI against real Postgres and the real Java agent. 34 JUnit tests cover the Java agent. |
+| **Testing** | 315+ Python tests, 98% coverage (gate: 80%), fully offline: fake LLM, in-memory and embedded Qdrant, SQLite in memory, mocked LiteLLM and Telegram. Failure paths (bad JSON, hallucinated ids, invalid plans, failed specialists, provider exceptions, rate limits, cross-tenant access, remote-agent outages, malicious cards, invented citations, failed resumes, withdrawn consents, delivery errors) are tested explicitly, and workflow routes have contract tests. Integration tests run in CI against real Postgres (checkpoints and the full CRM/governance SQL) and the real Java agent. 34 JUnit tests cover the Java agent. |
 | **Code quality** | Ruff (lint + format, incl. security rules), mypy `--strict`, pre-commit hooks. |
 | **CI/CD** | GitHub Actions: lint/types → tests (py3.12 + 3.13) → eval gate → Trivy (deps, secrets, IaC) → kubeconform on rendered manifests → multi-stage image with SBOM + provenance, pushed to GHCR on `main`/tags and scanned. Dependabot for uv, actions, Docker, compose and the submodule. |
 | **Deployment** | Kustomize base + dev overlay: non-root, read-only rootfs, dropped capabilities, restricted Pod Security, probes, HPA, PDB, topology spread, NetworkPolicy on Qdrant. Secrets are created out-of-band, never committed. |
@@ -177,9 +220,18 @@ src/orchestrator/
   router.py       retrieve -> LLM pick -> fallback
   team.py         planner, plan validation, worker/synthesis prompts
   knowledge.py    tenant RAG: chunking, stores (memory/Qdrant), retrieval
-  graph.py        LangGraph workflow (single + team paths), per-thread checkpointing
+  graph.py        LangGraph workflow: memory, evidence gating, single/team, citations, risk, review
   checkpoint.py   checkpointer backends: in-memory (dev) or Postgres (durable, shared)
   guardrails.py   injection, PII, size limits
+  evidence.py     evidence grading, contextual query rewrite, citation checks
+  risk.py         review rules (divisions, clinical advice) and marketing-copy compliance
+  packs.py        industry packs (pack_data/*.yaml): general, dental, retail
+  db.py           SQLAlchemy async engine (SQLite dev/tests, Postgres prod)
+  governance.py   audit trail, review queue, consents
+  memory.py       consent-gated semantic memory per data subject
+  crm.py          patients, appointments, treatment plans, traffic-light alerts
+  insights.py     SQL-computed segments, no-show risk, pipeline, forecast; LLM narration
+  campaigns.py    loyalty campaigns: compliance, approval, holdout, Telegram, lift
   llm.py          LiteLLM client, deterministic fake
   service.py      composition root shared by API, A2A, MCP, CLI
   remote.py       A2A client: discover remote agents, message/send, trust checks
@@ -197,7 +249,11 @@ docs/adr/         architecture decision records
 
 ## Known limitations & roadmap
 
-- **Rate limits are in-process.** Conversation state is shared through the Postgres checkpointer (`CHECKPOINTER_BACKEND=postgres`, see ADR 0005), but each replica counts requests on its own, so the Service keeps `sessionAffinity: ClientIP`. Next: a Redis rate limiter, and a retention job that prunes old threads.
+- **The Kubernetes base does not deploy Redis yet.** A Redis rate limiter exists (`RATE_LIMIT_BACKEND=redis`), but the manifests run 2 replicas with in-process limits and `sessionAffinity: ClientIP`. Next: add Redis (or point at a managed one) and switch the backend.
+- **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
+- **Channels:** Telegram only (outbound). Inbound booking by bot, WhatsApp Business, Facebook/Instagram publishing and paid ads (with approval before spend) are planned; Meta's APIs need app review.
+- **Identity:** `X-Actor` is declared by the calling application. Per-user SSO/OIDC and role-based access (e.g. clinicians only for clinical data) are future work.
+- **Schema migrations:** tables are created with `create_all`; add Alembic before the first breaking schema change in production.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.
 - **Retrieval is dense-only.** Hybrid search (BM25 + vectors) and a reranker would help with exact terms like SKUs.
