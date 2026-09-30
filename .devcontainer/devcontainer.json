@@ -1,0 +1,33 @@
+{
+  // GitHub Codespaces / VS Code Dev Containers: the full stack (docker compose) plus the
+  // Python and Java toolchains, without installing anything on the host machine.
+  "name": "agency-orchestrator",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21",
+      "installMaven": "true"
+    }
+  },
+  // The compose stack (API, Java agent, Qdrant, Postgres, OTel, Jaeger, Prometheus)
+  // needs more than the 2-core default.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb"
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "forwardPorts": [8000, 8080, 6333, 16686, 9090],
+  "portsAttributes": {
+    "8000": { "label": "API + console", "onAutoForward": "notify" },
+    "8080": { "label": "Java A2A agent" },
+    "6333": { "label": "Qdrant" },
+    "16686": { "label": "Jaeger" },
+    "9090": { "label": "Prometheus" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff", "vscjava.vscode-java-pack"]
+    }
+  }
+}
