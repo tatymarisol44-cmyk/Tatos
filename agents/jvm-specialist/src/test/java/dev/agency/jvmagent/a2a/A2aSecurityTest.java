@@ -39,6 +39,11 @@ class A2aSecurityTest extends A2aProtocolTest {
         return JSON.readValue(response.body(), Map.class);
     }
 
+    @Override
+    String apiKey() {
+        return "s3cret";
+    }
+
     @Test
     void requiresTheApiKey() throws Exception {
         String body = messageSend(1, "GC pauses", null);

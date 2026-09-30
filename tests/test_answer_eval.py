@@ -102,6 +102,7 @@ async def test_eval_documents_are_cleaned_up(orchestrator: Orchestrator) -> None
     store = orchestrator.knowledge.store
     assert isinstance(store, InMemoryChunkStore)
     assert store._rows == {}
+    assert [k async for k, _ in orchestrator.checkpointer.threads()] == []
 
 
 async def test_low_scores_are_reported_as_failures(orchestrator: Orchestrator) -> None:

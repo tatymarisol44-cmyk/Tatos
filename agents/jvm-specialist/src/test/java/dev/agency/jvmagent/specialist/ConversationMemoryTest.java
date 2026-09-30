@@ -9,7 +9,7 @@ class ConversationMemoryTest {
 
     @Test
     void keepsTheLastMessagesPerContext() {
-        var memory = new ConversationMemory(new AgentProperties(null, null, null, 10, 4));
+        var memory = new ConversationMemory(new AgentProperties(null, null, null, 10, 4, null));
         memory.append("a", "q1", "a1");
         memory.append("a", "q2", "a2");
         memory.append("a", "q3", "a3");
@@ -20,7 +20,7 @@ class ConversationMemoryTest {
 
     @Test
     void evictsLeastRecentlyUsedContexts() {
-        var memory = new ConversationMemory(new AgentProperties(null, null, null, 2, 10));
+        var memory = new ConversationMemory(new AgentProperties(null, null, null, 2, 10, null));
         memory.append("a", "q", "a");
         memory.append("b", "q", "a");
         memory.history("a"); // touch "a" so "b" becomes the eldest
@@ -32,11 +32,12 @@ class ConversationMemoryTest {
 
     @Test
     void defaultsApplyWhenPropertiesAreMissing() {
-        var props = new AgentProperties(null, null, null, null, null);
+        var props = new AgentProperties(null, null, null, null, null, null);
         assertThat(props.publicUrl()).isEmpty();
         assertThat(props.apiKey()).isEmpty();
         assertThat(props.maxInputChars()).isEqualTo(8000);
         assertThat(props.maxContexts()).isEqualTo(1000);
         assertThat(props.maxMessagesPerContext()).isEqualTo(10);
+        assertThat(props.maxBodyBytes()).isEqualTo(262_144L);
     }
 }

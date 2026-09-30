@@ -21,11 +21,16 @@ public class RuleBasedSpecialist implements Specialist {
      * A playbook section. Keywords match at a word start, so prefixes work ("profil" matches
      * "profiler") but "oom" does not match "room".
      */
-    record Topic(String id, List<String> keywords, String advice) {
+    record Topic(String id, List<String> keywords, String advice, List<Pattern> patterns) {
+        Topic(String id, List<String> keywords, String advice) {
+            // Compiled once at class load, not per request.
+            this(id, keywords, advice, keywords.stream()
+                    .map(k -> Pattern.compile("\\b" + Pattern.quote(k)))
+                    .toList());
+        }
+
         long score(String question) {
-            return keywords.stream()
-                    .filter(k -> Pattern.compile("\\b" + Pattern.quote(k)).matcher(question).find())
-                    .count();
+            return patterns.stream().filter(p -> p.matcher(question).find()).count();
         }
     }
 

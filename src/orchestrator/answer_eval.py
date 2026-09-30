@@ -8,7 +8,7 @@ Two datasets, both JSONL:
                agrees with a human before its scores are trusted as a quality gate.
 
 Every answer row runs under its own throwaway tenant, so documents never leak between
-rows or into real tenants, and they are deleted afterwards."""
+rows or into real tenants; its documents and conversation are deleted afterwards."""
 
 from __future__ import annotations
 
@@ -221,6 +221,8 @@ async def run_answer_eval(
         finally:
             for doc_id in doc_ids:
                 await orch.knowledge.delete(tenant, doc_id)
+            # Nothing of the throwaway tenant survives: not even its conversation.
+            await orch.delete_tenant_threads(tenant)
     return report
 
 

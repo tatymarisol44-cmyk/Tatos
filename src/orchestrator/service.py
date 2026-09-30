@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -24,6 +26,8 @@ from orchestrator.llm import LLMClient, build_llm
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
+
+log = logging.getLogger(__name__)
 
 Mode = Literal["single", "team"]
 
@@ -137,7 +141,14 @@ class Orchestrator:
         if self.remote is not None:
             # Before indexing: remote agents are routed like local ones.
             specs = await discover_all(self.remote, self.settings.remote_agents)
-            self.catalog.add_remote(specs)
+            added = {s.id for s in self.catalog.add_remote(specs)}
+            for spec in specs:
+                if spec.id not in added:  # same id as a local agent: it would be unroutable
+                    log.error(
+                        "remote agent %s NOT registered: id %s is taken by a local agent",
+                        spec.path,
+                        spec.id,
+                    )
         await self.router.build_index()
         await self.knowledge.start()
         self.ready = True
@@ -147,6 +158,34 @@ class Orchestrator:
         if self.remote is not None:
             await self.remote.close()
         await self.checkpointer.close()
+
+    @staticmethod
+    def thread_key(tenant: str, thread_id: str) -> str:
+        return f"{tenant}:{thread_id}"
+
+    async def delete_thread(self, tenant: str, thread_id: str) -> bool:
+        """Erase one conversation of this tenant. False if it did not exist."""
+        key = self.thread_key(tenant, thread_id)
+        if not await self.checkpointer.exists(key):
+            return False
+        await self.checkpointer.delete(key)
+        return True
+
+    async def delete_tenant_threads(self, tenant: str) -> int:
+        """Erase every conversation of a tenant (right to erasure / offboarding)."""
+        prefix = self.thread_key(tenant, "")
+        keys = [k async for k, _ in self.checkpointer.threads() if k.startswith(prefix)]
+        for key in keys:
+            await self.checkpointer.delete(key)
+        return len(keys)
+
+    async def purge_threads(self, older_than: timedelta) -> int:
+        """Retention: delete threads whose latest activity is older than `older_than`."""
+        cutoff = datetime.now(UTC) - older_than
+        keys = [k async for k, ts in self.checkpointer.threads() if ts is not None and ts < cutoff]
+        for key in keys:
+            await self.checkpointer.delete(key)
+        return len(keys)
 
     async def route(self, question: str) -> RoutingDecision:
         return await self.router.route(question)
@@ -166,7 +205,7 @@ class Orchestrator:
         thread_id = thread_id or str(uuid.uuid4())
         # Threads are namespaced by tenant so one tenant can never read another's history.
         config: RunnableConfig = {
-            "configurable": {"thread_id": f"{tenant}:{thread_id}"},
+            "configurable": {"thread_id": self.thread_key(tenant, thread_id)},
             "max_concurrency": self.settings.team_max_concurrency,
         }
         inputs = {

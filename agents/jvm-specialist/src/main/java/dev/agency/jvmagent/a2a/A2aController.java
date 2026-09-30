@@ -129,9 +129,18 @@ public class A2aController {
                 .strip();
     }
 
-    /** Malformed JSON is a JSON-RPC parse error, not an HTTP 400. */
+    /**
+     * Malformed JSON is a JSON-RPC parse error, not an HTTP 400; a body cut off by {@link
+     * BodySizeLimitFilter} is HTTP 413.
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Map<String, Object>> parseError() {
+    public ResponseEntity<Map<String, Object>> parseError(HttpMessageNotReadableException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof BodySizeLimitFilter.PayloadTooLargeException) {
+                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                        .body(error(null, -32600, "Request body too large"));
+            }
+        }
         return ResponseEntity.ok(error(null, -32700, "Parse error"));
     }
 }

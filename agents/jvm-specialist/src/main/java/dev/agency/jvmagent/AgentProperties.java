@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxInputChars longest accepted question
  * @param maxContexts conversations kept in memory (least recently used are evicted)
  * @param maxMessagesPerContext messages kept per conversation for the LLM mode
+ * @param maxBodyBytes largest accepted {@code /a2a} request body
  */
 @ConfigurationProperties(prefix = "agent")
 public record AgentProperties(
@@ -18,7 +19,8 @@ public record AgentProperties(
         String apiKey,
         Integer maxInputChars,
         Integer maxContexts,
-        Integer maxMessagesPerContext) {
+        Integer maxMessagesPerContext,
+        Long maxBodyBytes) {
 
     public AgentProperties {
         publicUrl = publicUrl == null ? "" : publicUrl.strip();
@@ -26,5 +28,6 @@ public record AgentProperties(
         maxInputChars = maxInputChars == null ? 8000 : maxInputChars;
         maxContexts = maxContexts == null ? 1000 : maxContexts;
         maxMessagesPerContext = maxMessagesPerContext == null ? 10 : maxMessagesPerContext;
+        maxBodyBytes = maxBodyBytes == null ? 262_144L : maxBodyBytes;
     }
 }

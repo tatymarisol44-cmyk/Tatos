@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_TENANT = re.compile(r"[\w.-]{1,64}")
 
 
 class Settings(BaseSettings):
@@ -92,11 +95,18 @@ class Settings(BaseSettings):
     checkpointer_backend: Literal["memory", "postgres"] = "memory"
     postgres_url: SecretStr | None = None
     postgres_pool_size: int = 10
+    # Only for a private network that is already encrypted (e.g. a service mesh with mTLS).
+    postgres_allow_insecure: bool = False
+    # Conversations inactive for longer are deleted by `agency purge-threads` (CronJob).
+    thread_retention_days: int = Field(default=90, ge=1)
 
     # --- API / multi-tenancy ----------------------------------------------
     # Comma-separated "key:tenant" pairs. Empty in dev means anonymous access.
     api_keys: SecretStr = SecretStr("")
     rate_limit_per_minute: int = 60
+    # "redis" shares each tenant's budget across replicas (required with >1 replica).
+    rate_limit_backend: Literal["memory", "redis"] = "memory"
+    redis_url: SecretStr | None = None
     public_base_url: str = "http://localhost:8000"
 
     # --- Observability -----------------------------------------------------
@@ -111,7 +121,12 @@ class Settings(BaseSettings):
             if not raw:
                 continue
             key, _, tenant = raw.partition(":")
-            pairs[key] = tenant or "default"
+            tenant = tenant or "default"
+            # Tenants prefix thread keys ("tenant:thread"): a ":" in a name would let one
+            # tenant's prefix match another's (erasure of "acme" hitting "acme:beta").
+            if not _TENANT.fullmatch(tenant):
+                raise ValueError(f"invalid tenant name {tenant!r}: use letters, digits, _ . -")
+            pairs[key] = tenant
         return pairs
 
 

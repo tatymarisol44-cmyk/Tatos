@@ -22,6 +22,9 @@ jobs:
       ROUTER_USE_LLM: "true"
       EMBEDDING_BACKEND: litellm
       ROUTER_TOP_K: "10"
+      # Deterministic specialists, so nightly scores are comparable run to run
+      # (the router, planner and judge already run at temperature 0).
+      LLM_TEMPERATURE: "0"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

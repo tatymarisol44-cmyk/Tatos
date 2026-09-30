@@ -34,7 +34,7 @@ class LlmSpecialistTest {
         when(spec.call()).thenReturn(call);
         ChatClient.Builder builder = mock(ChatClient.Builder.class);
         when(builder.build()).thenReturn(chat);
-        memory = new ConversationMemory(new AgentProperties(null, null, null, 10, 10));
+        memory = new ConversationMemory(new AgentProperties(null, null, null, 10, 10, null));
         specialist = new LlmSpecialist(builder, new RuleBasedSpecialist(), memory);
     }
 

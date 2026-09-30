@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Path as FastAPIPath
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -24,7 +25,7 @@ from orchestrator.api.schemas import (
     KnowledgeSearchRequest,
     RouteRequest,
 )
-from orchestrator.api.security import RateLimiter, require_tenant
+from orchestrator.api.security import build_limiter, require_tenant
 from orchestrator.config import Settings, get_settings
 from orchestrator.guardrails import check_input
 from orchestrator.knowledge import KnowledgeRejected
@@ -52,17 +53,22 @@ def create_app(
     settings: Settings | None = None, orchestrator: Orchestrator | None = None
 ) -> FastAPI:
     settings = settings or get_settings()
+    # Fail fast: a prod deployment without API keys would otherwise start and answer 503s
+    # (resolve_tenant also refuses per request, as defence in depth).
+    if settings.app_env == "prod" and not settings.tenant_keys():
+        raise RuntimeError("APP_ENV=prod requires API_KEYS; refusing to start without auth")
     setup_telemetry(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         orch = orchestrator or Orchestrator(settings)
         app.state.orchestrator = orch
-        await orch.start()
         try:
+            await orch.start()  # inside try: a failed start still releases pools
             yield
         finally:
             await orch.close()
+            await app.state.limiter.close()
 
     app = FastAPI(
         title="Agency Orchestrator",
@@ -71,7 +77,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = settings
-    app.state.limiter = RateLimiter(settings.rate_limit_per_minute)
+    app.state.limiter = build_limiter(settings)
     app.include_router(a2a.router, tags=["a2a"])
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
@@ -224,6 +230,24 @@ def create_app(
         # Another tenant's doc_id looks exactly like a missing one: no existence leak.
         if not await orch(request).knowledge.delete(tenant, doc_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+
+    @app.delete("/v1/threads/{thread_id}", status_code=204, tags=["privacy"])
+    async def delete_thread(
+        request: Request,
+        thread_id: str = FastAPIPath(max_length=128, pattern=r"^[\w-]+$"),
+        tenant: str = Depends(require_tenant),
+    ) -> None:
+        """Erase one conversation (its full checkpoint history) of the calling tenant."""
+        if not await orch(request).delete_thread(tenant, thread_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found")
+
+    @app.delete("/v1/threads", tags=["privacy"])
+    async def delete_all_threads(
+        request: Request, tenant: str = Depends(require_tenant)
+    ) -> dict[str, int]:
+        """Erase every conversation of the calling tenant (right to erasure, offboarding).
+        Documents are erased separately via /v1/knowledge/documents."""
+        return {"deleted": await orch(request).delete_tenant_threads(tenant)}
 
     @app.post("/v1/knowledge/search", tags=["knowledge"])
     async def search_knowledge(

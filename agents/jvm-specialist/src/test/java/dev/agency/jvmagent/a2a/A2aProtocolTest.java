@@ -128,6 +128,28 @@ class A2aProtocolTest {
     }
 
     @Test
+    void oversizedBodiesAreRejected() throws Exception {
+        String huge = messageSend(10, "x".repeat(300_000), null);
+        // Declared Content-Length over the cap: rejected before reading.
+        assertThat(send("POST", "/a2a", huge, apiKey()).statusCode()).isEqualTo(413);
+        // Chunked (no Content-Length): cut off while reading.
+        var chunked = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/a2a"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofInputStream(
+                        () -> new java.io.ByteArrayInputStream(huge.getBytes())));
+        if (apiKey() != null) {
+            chunked.header("X-API-Key", apiKey());
+        }
+        var response = HTTP.send(chunked.build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(413);
+    }
+
+    /** Key the subclass configures, if any. */
+    String apiKey() {
+        return null;
+    }
+
+    @Test
     void healthProbeIsExposed() throws Exception {
         var response = send("GET", "/actuator/health/readiness", null, null);
         assertThat(response.statusCode()).isEqualTo(200);

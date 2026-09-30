@@ -26,6 +26,7 @@ agent:
   max-input-chars: 8000
   max-contexts: 1000
   max-messages-per-context: 10
+  max-body-bytes: 262144
 
 management:
   endpoints:

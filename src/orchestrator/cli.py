@@ -1,5 +1,5 @@
 """`agency` command line: index, route, ask (single or --team), eval, eval-answers,
-eval-judge, serve, mcp."""
+eval-judge, purge-threads, serve, mcp."""
 
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ async def _started() -> AsyncIterator[Orchestrator]:
     from orchestrator.service import Orchestrator
 
     orch = Orchestrator(get_settings())
-    await orch.start()
     try:
+        await orch.start()
         yield orch
     finally:
         await orch.close()
@@ -147,6 +147,14 @@ def _eval_judge_cmd(
     return _gate(failures)
 
 
+async def _purge(days: int) -> None:
+    from datetime import timedelta
+
+    async with _started() as orch:
+        deleted = await orch.purge_threads(timedelta(days=days))
+    _print({"deleted_threads": deleted, "older_than_days": days})
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -181,6 +189,12 @@ def main(argv: list[str] | None = None) -> int:
         "--max-false-pass", type=int, default=None, help="Max bad answers the judge may pass"
     )
     p_judge.add_argument("--output", type=Path)
+    p_purge = sub.add_parser(
+        "purge-threads", help="Retention: delete conversations inactive for N days"
+    )
+    p_purge.add_argument(
+        "--older-than-days", type=int, default=None, help="Default: THREAD_RETENTION_DAYS"
+    )
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -200,6 +214,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "eval-judge":
         max_fp = args.max_false_pass if args.max_false_pass is not None else sys.maxsize
         return _eval_judge_cmd(args.dataset, args.min_agreement, max_fp, args.output)
+    elif args.cmd == "purge-threads":
+        days = args.older_than_days or get_settings().thread_retention_days
+        if days < 1:
+            parser.error("--older-than-days must be >= 1")
+        asyncio.run(_purge(days))
     elif args.cmd == "serve":
         import uvicorn
 

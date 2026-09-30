@@ -124,15 +124,24 @@ class A2AClient:
 
     async def _json(self, method: str, url: str, **kwargs: Any) -> Any:
         body = bytearray()
+        deadline = self.settings.remote_agent_timeout_s
         try:
-            async with self._http.stream(method, url, **kwargs) as resp:
-                if resp.status_code != 200:
-                    raise RemoteAgentError(f"HTTP {resp.status_code} from {url}")
-                # Stop reading as soon as the cap is passed instead of buffering it all.
-                async for chunk in resp.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > _MAX_BYTES:
-                        raise RemoteAgentError(f"response from {url} exceeds {_MAX_BYTES} bytes")
+            # httpx timeouts apply per operation (connect, each read...): a server that
+            # trickles a byte just under the read timeout would never time out. The
+            # deadline bounds the whole exchange.
+            async with asyncio.timeout(deadline):
+                async with self._http.stream(method, url, **kwargs) as resp:
+                    if resp.status_code != 200:
+                        raise RemoteAgentError(f"HTTP {resp.status_code} from {url}")
+                    # Stop reading as soon as the cap is passed instead of buffering it all.
+                    async for chunk in resp.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > _MAX_BYTES:
+                            raise RemoteAgentError(
+                                f"response from {url} exceeds {_MAX_BYTES} bytes"
+                            )
+        except TimeoutError as exc:
+            raise RemoteAgentError(f"no complete response from {url} in {deadline}s") from exc
         except httpx.HTTPError as exc:
             raise RemoteAgentError(f"{type(exc).__name__} calling {url}") from exc
         try:
@@ -225,7 +234,7 @@ async def discover_all(client: A2AClient, urls: list[str]) -> list[AgentSpec]:
         if spec is None:
             continue
         if spec.id in specs:
-            log.warning("skipping remote agent %s: duplicate id %s", url, spec.id)
+            log.error("remote agent %s NOT registered: duplicate id %s", url, spec.id)
             continue
         specs[spec.id] = spec
         log.info("registered remote agent %s at %s", spec.id, spec.remote_url)

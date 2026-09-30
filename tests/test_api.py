@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -87,12 +88,12 @@ def test_rate_limit(settings: Settings, catalog: Catalog) -> None:
         assert c.get("/v1/agents", headers={"X-API-Key": "other-key"}).status_code == 200
 
 
-def test_rate_limiter_refills() -> None:
-    limiter = RateLimiter(per_minute=60)
-    limiter._buckets["t"] = (
-        limiter._buckets.get("t") or type("B", (), {"tokens": 0.0, "updated": 0.0})()
-    )
-    assert limiter.allow("t")  # large elapsed time since `updated=0` refills the bucket
+async def test_rate_limiter_refills() -> None:
+    limiter = RateLimiter(per_minute=1)
+    assert await limiter.allow("t")
+    assert not await limiter.allow("t")  # budget spent
+    limiter._buckets["t"].updated -= 60  # a minute later
+    assert await limiter.allow("t")
 
 
 def test_dev_mode_without_keys_is_anonymous(settings: Settings, catalog: Catalog) -> None:
@@ -103,12 +104,67 @@ def test_dev_mode_without_keys_is_anonymous(settings: Settings, catalog: Catalog
         assert c.get("/v1/agents").status_code == 200
 
 
-def test_prod_without_keys_refuses(settings: Settings, catalog: Catalog) -> None:
+def test_prod_without_keys_refuses_to_start(settings: Settings) -> None:
     settings.api_keys = SecretStr("")
     settings.app_env = "prod"
-    orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
-    with TestClient(create_app(settings, orch)) as c:
-        assert c.get("/v1/agents").status_code == 503
+    with pytest.raises(RuntimeError, match="requires API_KEYS"):
+        create_app(settings)
+
+
+def test_prod_without_keys_refuses_requests_too(settings: Settings) -> None:
+    # Defence in depth if the startup check were ever bypassed.
+    from orchestrator.api.security import resolve_tenant
+
+    settings.api_keys = SecretStr("")
+    settings.app_env = "prod"
+    with pytest.raises(HTTPException) as exc:
+        resolve_tenant(settings, None)
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/v1/agents", None),
+        ("POST", "/v1/route", {"question": "q"}),
+        ("POST", "/v1/chat", {"question": "q"}),
+        ("POST", "/v1/chat/stream", {"question": "q"}),
+        ("POST", "/a2a", {"jsonrpc": "2.0", "id": 1, "method": "message/send"}),
+        ("GET", "/v1/knowledge/documents", None),
+        ("POST", "/v1/knowledge/documents", {"title": "t", "text": "x"}),
+        ("DELETE", "/v1/knowledge/documents/abc", None),
+        ("POST", "/v1/knowledge/search", {"query": "q"}),
+        ("DELETE", "/v1/threads/abc", None),
+        ("DELETE", "/v1/threads", None),
+    ],
+)
+def test_every_tenant_endpoint_requires_a_key(
+    client: TestClient, method: str, path: str, body: dict[str, object] | None
+) -> None:
+    assert client.request(method, path, json=body).status_code == 401
+    bad = client.request(method, path, json=body, headers={"X-API-Key": "nope"})
+    assert bad.status_code == 401
+
+
+@pytest.mark.parametrize("raw", ["k:acme:beta", "k:a b", "k:" + "x" * 65, "k:ñ/../"])
+def test_tenant_names_are_validated(settings: Settings, raw: str) -> None:
+    settings.api_keys = SecretStr(raw)
+    with pytest.raises(ValueError, match="invalid tenant name"):
+        settings.tenant_keys()
+
+
+def test_thread_erasure_endpoints(client: TestClient) -> None:
+    for tid in ("t1", "t2"):
+        client.post("/v1/chat", json={"question": "hello", "thread_id": tid}, headers=AUTH)
+    other = {"X-API-Key": "other-key"}
+    client.post("/v1/chat", json={"question": "hello", "thread_id": "t1"}, headers=other)
+
+    assert client.delete("/v1/threads/t1", headers=AUTH).status_code == 204
+    assert client.delete("/v1/threads/t1", headers=AUTH).status_code == 404
+    assert client.delete("/v1/threads/..%2Fx", headers=AUTH).status_code in (404, 422)
+    assert client.delete("/v1/threads", headers=AUTH).json() == {"deleted": 1}  # only t2
+    # The other tenant's thread with the same id is untouched.
+    assert client.delete("/v1/threads", headers=other).json() == {"deleted": 1}
 
 
 def test_a2a_agent_card(client: TestClient) -> None:
