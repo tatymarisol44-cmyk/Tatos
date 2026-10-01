@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +11,7 @@ from fastapi.testclient import TestClient
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
+from orchestrator.db import Database
 from orchestrator.embeddings import HashingEmbedder
 from orchestrator.knowledge import (
     Chunk,
@@ -70,8 +73,11 @@ def store(request: pytest.FixtureRequest) -> ChunkStore:
 
 
 @pytest.fixture
-def kb(store: ChunkStore, settings: Settings) -> KnowledgeBase:
-    return KnowledgeBase(HashingEmbedder(), store, settings)
+async def kb(store: ChunkStore, settings: Settings) -> AsyncIterator[KnowledgeBase]:
+    db = Database(settings)  # the live-version pointers
+    await db.start()
+    yield KnowledgeBase(HashingEmbedder(), store, settings, db)
+    await db.close()
 
 
 async def test_ingest_search_list_delete(kb: KnowledgeBase) -> None:
@@ -244,3 +250,81 @@ def test_knowledge_endpoint_validation(client: TestClient, settings: Settings) -
     bad_id = {"title": "x", "text": "ok", "doc_id": "../etc"}
     assert client.post("/v1/knowledge/documents", json=bad_id, headers=ACME).status_code == 422
     assert client.get("/v1/knowledge/documents").status_code == 401
+
+
+# --- A22: replacing a document never leaves it missing or half-published ---------------
+OLD = "Old policy: refunds within 30 days of purchase, store credit afterwards."
+NEW = "New policy: refunds within 60 days of purchase, no questions asked."
+
+
+async def _visible(kb: KnowledgeBase) -> list[str]:
+    return [c.text for c in await kb.search("acme", "refunds within days of purchase", k=10)]
+
+
+@pytest.mark.parametrize("failing", ["embed", "upsert", "activate"])
+async def test_a22_a_failed_replacement_keeps_the_old_version(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch, failing: str
+) -> None:
+    # Prueba 21: the upsert failed after the delete and the document was gone.
+    await kb.start()
+    await kb.add("acme", "Refunds", OLD, doc_id="refunds")
+
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"{failing} failed")
+
+    target = {"embed": kb.embedder, "upsert": kb.store, "activate": kb}[failing]
+    monkeypatch.setattr(
+        target, {"embed": "embed", "upsert": "upsert", "activate": "_activate"}[failing], boom
+    )
+    with pytest.raises(RuntimeError):
+        await kb.add("acme", "Refunds v2", NEW, doc_id="refunds")
+    monkeypatch.undo()
+    assert [d.title for d in await kb.documents("acme")] == ["Refunds"]
+    assert await _visible(kb) == [OLD]
+    # The abandoned upload is cleaned up once it is clearly not in progress any more.
+    await kb.reconcile(stale_after=timedelta(0))
+    assert await _visible(kb) == [OLD]
+
+
+async def test_a22_failed_cleanup_never_shows_two_versions(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await kb.start()
+    await kb.add("acme", "Refunds", OLD, doc_id="refunds")
+    original = kb.store.delete
+
+    async def down(*args: object, **kwargs: object) -> int:
+        raise RuntimeError("vector store unreachable")
+
+    monkeypatch.setattr(kb.store, "delete", down)
+    await kb.add("acme", "Refunds v2", NEW, doc_id="refunds")  # live; old chunks remain
+    assert await _visible(kb) == [NEW]
+    monkeypatch.setattr(kb.store, "delete", original)
+    assert await kb.reconcile() >= 1  # the retired version is removed later
+    assert await _visible(kb) == [NEW]
+
+
+async def test_a22_readers_never_see_a_partial_upload(
+    kb: KnowledgeBase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await kb.start()
+    await kb.add("acme", "Refunds", OLD, doc_id="refunds")
+    halfway, resume = asyncio.Event(), asyncio.Event()
+    original = kb.store.upsert
+
+    async def slow_upsert(tenant: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        await original(tenant, chunks[:1], vectors[:1])  # part of the new version is in
+        halfway.set()
+        await resume.wait()
+        await original(tenant, chunks, vectors)
+
+    monkeypatch.setattr(kb.store, "upsert", slow_upsert)
+    long_new = "\n\n".join(f"{NEW} Section {i}. " + "detail " * 120 for i in range(4))
+    upload = asyncio.create_task(kb.add("acme", "Refunds v2", long_new, doc_id="refunds"))
+    await halfway.wait()
+    assert await _visible(kb) == [OLD]  # mid-upload: still the whole old version
+    assert [d.title for d in await kb.documents("acme")] == ["Refunds"]
+    resume.set()
+    await upload
+    visible = await _visible(kb)
+    assert visible and all(NEW in text for text in visible)

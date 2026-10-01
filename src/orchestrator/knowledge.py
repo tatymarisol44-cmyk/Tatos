@@ -4,19 +4,42 @@ tenant. At question time the top chunks *of that tenant only* are given to the a
 as cited reference material.
 
 Every store method takes `tenant` as a required argument and filters on it server-side,
-so no code path can search, list or delete across tenants."""
+so no code path can search, list or delete across tenants.
+
+Which version of a document is live lives in SQL (`knowledge_documents`), not in the
+vector store: see `KnowledgeBase` for the copy-on-write replacement."""
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import timedelta
 from typing import Any, Protocol
 
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Integer,
+    String,
+    Table,
+    and_,
+    delete,
+    insert,
+    or_,
+    select,
+    update,
+)
+from sqlalchemy.exc import IntegrityError
+
 from orchestrator.config import Settings
+from orchestrator.db import Database, metadata, utcnow
 from orchestrator.embeddings import Embedder
 from orchestrator.guardrails import detect_injection
 from orchestrator.telemetry import tracer
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -26,6 +49,7 @@ class Chunk:
     index: int
     text: str
     score: float = 0.0
+    version: str = ""  # which upload of the document this chunk belongs to
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,6 +96,9 @@ def chunk_text(text: str, size: int = 800, overlap: int = 150) -> list[str]:
 
 
 class ChunkStore(Protocol):
+    """Vector storage of chunks. It holds every version of a document side by side; which
+    one is live is decided by the SQL pointer in KnowledgeBase, never by the store."""
+
     async def ensure(self, name: str, dim: int) -> None: ...
 
     async def upsert(
@@ -80,47 +107,35 @@ class ChunkStore(Protocol):
 
     async def search(self, tenant: str, vector: list[float], k: int) -> list[Chunk]: ...
 
-    async def documents(self, tenant: str) -> list[DocumentInfo]: ...
-
-    async def delete(self, tenant: str, doc_id: str) -> int: ...
+    async def delete(self, tenant: str, doc_id: str, version: str | None = None) -> int: ...
 
 
 class InMemoryChunkStore:
     def __init__(self) -> None:
-        self._rows: dict[tuple[str, str, int], tuple[Chunk, list[float]]] = {}
+        self._rows: dict[tuple[str, str, str, int], tuple[Chunk, list[float]]] = {}
 
     async def ensure(self, name: str, dim: int) -> None:
         return None
 
     async def upsert(self, tenant: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         for chunk, vector in zip(chunks, vectors, strict=True):
-            self._rows[(tenant, chunk.doc_id, chunk.index)] = (chunk, vector)
+            self._rows[(tenant, chunk.doc_id, chunk.version, chunk.index)] = (chunk, vector)
 
     async def search(self, tenant: str, vector: list[float], k: int) -> list[Chunk]:
         scored = [
-            Chunk(
-                c.doc_id,
-                c.title,
-                c.index,
-                c.text,
-                sum(a * b for a, b in zip(vector, v, strict=True)),
-            )
-            for (t, _, _), (c, v) in self._rows.items()
+            replace(c, score=sum(a * b for a, b in zip(vector, v, strict=True)))
+            for (t, _, _, _), (c, v) in self._rows.items()
             if t == tenant
         ]
         scored.sort(key=lambda c: (-c.score, c.doc_id, c.index))
         return scored[:k]
 
-    async def documents(self, tenant: str) -> list[DocumentInfo]:
-        docs: dict[str, DocumentInfo] = {}
-        for (t, doc_id, _), (chunk, _) in self._rows.items():
-            if t == tenant:
-                prev = docs.get(doc_id)
-                docs[doc_id] = DocumentInfo(doc_id, chunk.title, (prev.chunks if prev else 0) + 1)
-        return sorted(docs.values(), key=lambda d: d.title.lower())
-
-    async def delete(self, tenant: str, doc_id: str) -> int:
-        keys = [key for key in self._rows if key[0] == tenant and key[1] == doc_id]
+    async def delete(self, tenant: str, doc_id: str, version: str | None = None) -> int:
+        keys = [
+            key
+            for key in self._rows
+            if key[0] == tenant and key[1] == doc_id and (version is None or key[2] == version)
+        ]
         for key in keys:
             del self._rows[key]
         return len(keys)
@@ -161,17 +176,20 @@ class QdrantChunkStore:
             "tenant",
             field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
         )
-        await self._client.create_payload_index(
-            name, "doc_id", field_schema=PayloadSchemaType.KEYWORD
-        )
+        for field in ("doc_id", "version"):
+            await self._client.create_payload_index(
+                name, field, field_schema=PayloadSchemaType.KEYWORD
+            )
 
     @staticmethod
-    def _filter(tenant: str, doc_id: str | None = None) -> Any:
+    def _filter(tenant: str, doc_id: str | None = None, version: str | None = None) -> Any:
         from qdrant_client.models import FieldCondition, Filter, MatchValue
 
         must = [FieldCondition(key="tenant", match=MatchValue(value=tenant))]
         if doc_id is not None:
             must.append(FieldCondition(key="doc_id", match=MatchValue(value=doc_id)))
+        if version is not None:
+            must.append(FieldCondition(key="version", match=MatchValue(value=version)))
         return Filter(must=must)  # type: ignore[arg-type]
 
     async def upsert(self, tenant: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:
@@ -179,7 +197,10 @@ class QdrantChunkStore:
 
         points = [
             PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant}/{c.doc_id}/{c.index}")),
+                # The version is part of the id: a new upload never overwrites the old one.
+                id=str(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"{tenant}/{c.doc_id}/{c.version}/{c.index}")
+                ),
                 vector=v,
                 payload={"tenant": tenant, **asdict(c)},
             )
@@ -192,40 +213,55 @@ class QdrantChunkStore:
             self._name, query=vector, query_filter=self._filter(tenant), limit=k
         )
         return [
-            Chunk(p["doc_id"], p["title"], p["index"], p["text"], float(point.score))
+            Chunk(
+                p["doc_id"],
+                p["title"],
+                p["index"],
+                p["text"],
+                float(point.score),
+                p.get("version", ""),
+            )
             for point in result.points
             if (p := point.payload or {})
         ]
 
-    async def documents(self, tenant: str) -> list[DocumentInfo]:
-        docs: dict[str, list[Any]] = {}
-        offset = None
-        while True:
-            points, offset = await self._client.scroll(
-                self._name,
-                scroll_filter=self._filter(tenant),
-                limit=256,
-                offset=offset,
-                with_payload=["doc_id", "title"],
-            )
-            for point in points:
-                p = point.payload or {}
-                docs.setdefault(p["doc_id"], [p["title"], 0])[1] += 1
-            if offset is None:
-                break
-        infos = [DocumentInfo(d, title, n) for d, (title, n) in docs.items()]
-        return sorted(infos, key=lambda d: d.title.lower())
-
-    async def delete(self, tenant: str, doc_id: str) -> int:
+    async def delete(self, tenant: str, doc_id: str, version: str | None = None) -> int:
         from qdrant_client.models import FilterSelector
 
-        selector = self._filter(tenant, doc_id)
+        selector = self._filter(tenant, doc_id, version)
         count = (await self._client.count(self._name, count_filter=selector)).count
         if count:
             await self._client.delete(
                 self._name, points_selector=FilterSelector(filter=selector), wait=True
             )
         return count
+
+
+# The live version of each document. Readers see only this version, so a replacement
+# becomes visible at once and whole, by a single-row update.
+knowledge_documents = Table(
+    "knowledge_documents",
+    metadata,
+    Column("tenant", String(64), primary_key=True),
+    Column("doc_id", String(64), primary_key=True),
+    Column("version", String(32), nullable=False),
+    Column("title", String(200), nullable=False),
+    Column("chunks", Integer, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+# Every version written to the vector store and where it is in its life:
+# uploading -> active -> retired (then removed). Lets `reconcile` find what a crash
+# left behind: uploads that never went live, and retired versions not yet deleted.
+knowledge_versions = Table(
+    "knowledge_versions",
+    metadata,
+    Column("tenant", String(64), primary_key=True),
+    Column("doc_id", String(64), primary_key=True),
+    Column("version", String(32), primary_key=True),
+    Column("state", String(16), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
 
 
 def knowledge_block(chunks: list[Chunk]) -> str:
@@ -241,10 +277,17 @@ def knowledge_block(chunks: list[Chunk]) -> str:
 
 
 class KnowledgeBase:
-    def __init__(self, embedder: Embedder, store: ChunkStore, settings: Settings) -> None:
+    """Documents are replaced copy-on-write (audit finding A22): the new version is
+    written next to the old one, the pointer moves only once it is complete, and the old
+    version is deleted afterwards. A failure at any step leaves one whole version live."""
+
+    def __init__(
+        self, embedder: Embedder, store: ChunkStore, settings: Settings, db: Database
+    ) -> None:
         self.embedder = embedder
         self.store = store
         self.settings = settings
+        self.db = db
 
     @property
     def collection(self) -> str:
@@ -255,6 +298,70 @@ class KnowledgeBase:
     async def start(self) -> None:
         [probe] = await self.embedder.embed(["probe"])
         await self.store.ensure(self.collection, len(probe))
+        await self.reconcile()
+
+    async def _activate(
+        self, tenant: str, doc_id: str, version: str, title: str, chunks: int
+    ) -> str | None:
+        """Point the document at `version`; return the version it replaced. A
+        compare-and-swap on the pointer, so two concurrent uploads of the same document
+        each retire exactly the version they replaced."""
+        key = and_(knowledge_documents.c.tenant == tenant, knowledge_documents.c.doc_id == doc_id)
+        values = {"version": version, "title": title, "chunks": chunks, "updated_at": utcnow()}
+        for _ in range(5):
+            async with self.db.engine.begin() as conn:
+                old = (
+                    await conn.execute(select(knowledge_documents.c.version).where(key))
+                ).scalar_one_or_none()
+                if old is None:
+                    try:
+                        await conn.execute(
+                            insert(knowledge_documents).values(
+                                tenant=tenant, doc_id=doc_id, **values
+                            )
+                        )
+                    except IntegrityError:
+                        continue  # another upload created it first: read it again
+                else:
+                    swapped = await conn.execute(
+                        update(knowledge_documents)
+                        .where(and_(key, knowledge_documents.c.version == old))
+                        .values(**values)
+                    )
+                    if swapped.rowcount != 1:
+                        continue
+                mine = and_(
+                    knowledge_versions.c.tenant == tenant, knowledge_versions.c.doc_id == doc_id
+                )
+                await conn.execute(
+                    update(knowledge_versions)
+                    .where(and_(mine, knowledge_versions.c.version == version))
+                    .values(state="active")
+                )
+                if old is not None:
+                    await conn.execute(
+                        update(knowledge_versions)
+                        .where(and_(mine, knowledge_versions.c.version == old))
+                        .values(state="retired")
+                    )
+                return old
+        raise RuntimeError(f"document {doc_id} is being replaced concurrently; try again")
+
+    async def _drop(self, tenant: str, doc_id: str, version: str) -> int:
+        """Delete one version's chunks, then its row (in that order: if the delete fails
+        the row stays and `reconcile` retries it)."""
+        removed = await self.store.delete(tenant, doc_id, version)
+        async with self.db.engine.begin() as conn:
+            await conn.execute(
+                delete(knowledge_versions).where(
+                    and_(
+                        knowledge_versions.c.tenant == tenant,
+                        knowledge_versions.c.doc_id == doc_id,
+                        knowledge_versions.c.version == version,
+                    )
+                )
+            )
+        return removed
 
     async def add(
         self, tenant: str, title: str, text: str, doc_id: str | None = None
@@ -267,25 +374,105 @@ class KnowledgeBase:
         if not pieces:
             raise KnowledgeRejected("document is empty")
         doc_id = doc_id or uuid.uuid4().hex[:12]
+        version = uuid.uuid4().hex
         with tracer().start_as_current_span("knowledge.ingest") as span:
             span.set_attribute("knowledge.chunks", len(pieces))
             # Embed title + chunk: the title often carries context the chunk lacks.
             vectors = await self.embedder.embed([f"{title}\n{p}" for p in pieces])
-            await self.store.delete(tenant, doc_id)  # re-upload replaces the document
-            chunks = [Chunk(doc_id, title, i, p) for i, p in enumerate(pieces)]
-            await self.store.upsert(tenant, chunks, vectors)
+            async with self.db.engine.begin() as conn:
+                await conn.execute(
+                    insert(knowledge_versions).values(
+                        tenant=tenant,
+                        doc_id=doc_id,
+                        version=version,
+                        state="uploading",
+                        created_at=utcnow(),
+                    )
+                )
+            chunks = [Chunk(doc_id, title, i, p, version=version) for i, p in enumerate(pieces)]
+            await self.store.upsert(tenant, chunks, vectors)  # invisible until activated
+            old = await self._activate(tenant, doc_id, version, title, len(chunks))
+            if old is not None:
+                try:
+                    await self._drop(tenant, doc_id, old)
+                except Exception:  # the new version is live; reconcile removes the old one
+                    log.warning("knowledge: old version of %s not deleted yet", doc_id)
         return DocumentInfo(doc_id, title, len(chunks))
 
+    async def _live(self, tenant: str) -> dict[str, str]:
+        query = select(knowledge_documents.c.doc_id, knowledge_documents.c.version).where(
+            knowledge_documents.c.tenant == tenant
+        )
+        async with self.db.engine.connect() as conn:
+            return {d: v for d, v in (await conn.execute(query)).all()}
+
     async def search(self, tenant: str, query: str, k: int | None = None) -> list[Chunk]:
+        k = k or self.settings.knowledge_top_k
         with tracer().start_as_current_span("knowledge.search") as span:
             [vector] = await self.embedder.embed([query])
-            hits = await self.store.search(tenant, vector, k or self.settings.knowledge_top_k)
-            relevant = [h for h in hits if h.score >= self.settings.knowledge_min_score]
+            live = await self._live(tenant)
+            # Over-fetch: chunks of versions being uploaded or retired are skipped.
+            hits = await self.store.search(tenant, vector, k * 3)
+            relevant = [
+                h
+                for h in hits
+                if live.get(h.doc_id) == h.version and h.score >= self.settings.knowledge_min_score
+            ][:k]
             span.set_attribute("knowledge.hits", len(relevant))
             return relevant
 
     async def documents(self, tenant: str) -> list[DocumentInfo]:
-        return await self.store.documents(tenant)
+        query = select(
+            knowledge_documents.c.doc_id, knowledge_documents.c.title, knowledge_documents.c.chunks
+        ).where(knowledge_documents.c.tenant == tenant)
+        async with self.db.engine.connect() as conn:
+            rows = (await conn.execute(query)).all()
+        infos = [DocumentInfo(d, title, n) for d, title, n in rows]
+        return sorted(infos, key=lambda d: d.title.lower())
 
     async def delete(self, tenant: str, doc_id: str) -> int:
-        return await self.store.delete(tenant, doc_id)
+        """The document disappears for readers at once (its pointer goes); its chunks
+        are deleted afterwards, by this call or, if that fails, by `reconcile`."""
+        key = and_(knowledge_documents.c.tenant == tenant, knowledge_documents.c.doc_id == doc_id)
+        async with self.db.engine.begin() as conn:
+            row = (await conn.execute(select(knowledge_documents).where(key))).mappings().first()
+            if row is None:
+                return 0
+            await conn.execute(delete(knowledge_documents).where(key))
+            await conn.execute(
+                update(knowledge_versions)
+                .where(
+                    and_(
+                        knowledge_versions.c.tenant == tenant,
+                        knowledge_versions.c.doc_id == doc_id,
+                        knowledge_versions.c.version == row["version"],
+                    )
+                )
+                .values(state="retired")
+            )
+        await self._drop(tenant, doc_id, row["version"])
+        return int(row["chunks"])
+
+    async def reconcile(self, stale_after: timedelta = timedelta(hours=1)) -> int:
+        """Remove what a failure left in the vector store: retired versions, and uploads
+        that never went live and are older than `stale_after` (younger ones may still be
+        in progress on another replica). Runs at startup; safe to run any time."""
+        cutoff = utcnow() - stale_after
+        query = select(knowledge_versions).where(
+            or_(
+                knowledge_versions.c.state == "retired",
+                and_(
+                    knowledge_versions.c.state == "uploading",
+                    knowledge_versions.c.created_at < cutoff,
+                ),
+            )
+        )
+        async with self.db.engine.connect() as conn:
+            leftovers = (await conn.execute(query)).mappings().all()
+        removed = 0
+        for row in leftovers:
+            try:
+                removed += await self._drop(row["tenant"], row["doc_id"], row["version"])
+            except Exception:
+                log.warning("knowledge: could not remove version %s yet", row["version"])
+        return removed

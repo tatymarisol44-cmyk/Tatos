@@ -72,7 +72,7 @@ class Database:
 
     async def start(self) -> None:
         # Imported for their side effect: each module registers its tables on `metadata`.
-        from orchestrator import auth, campaigns, crm, governance  # noqa: F401
+        from orchestrator import auth, campaigns, crm, governance, knowledge  # noqa: F401
 
         async with self.engine.begin() as conn:
             await conn.run_sync(metadata.create_all)
