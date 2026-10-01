@@ -26,5 +26,7 @@ data:
   # no credentials; the NetworkPolicy lets only the API pods reach it.
   RATE_LIMIT_BACKEND: redis
   REDIS_URL: redis://redis:6379/0
+  # If Redis is down: each replica falls back to its own bucket (no outage, bounded spend).
+  RATE_LIMIT_ON_OUTAGE: local
   # Use the pricing map bundled with the pinned LiteLLM instead of fetching it at startup.
   LITELLM_LOCAL_MODEL_COST_MAP: "True"

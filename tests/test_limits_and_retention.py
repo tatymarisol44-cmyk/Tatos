@@ -56,10 +56,35 @@ class _BrokenRedis:
         return None
 
 
-async def test_redis_outage_fails_open(caplog: pytest.LogCaptureFixture) -> None:
-    limiter = RedisRateLimiter(_BrokenRedis(), per_minute=1)
-    assert await limiter.allow("t") and await limiter.allow("t")
-    assert "rate limiter unavailable (ConnectionError)" in caplog.text
+async def test_redis_outage_degrades_to_a_local_bucket(caplog: pytest.LogCaptureFixture) -> None:
+    # Default policy (A30): no outage of the API, and no unlimited spend either.
+    limiter = RedisRateLimiter(_BrokenRedis(), per_minute=2)
+    assert [await limiter.allow("t") for _ in range(3)] == [True, True, False]
+    assert "rate limiter unavailable (ConnectionError); policy local" in caplog.text
+
+
+@pytest.mark.parametrize(("policy", "allowed"), [("open", True), ("closed", False)])
+async def test_redis_outage_explicit_policies(policy: str, allowed: bool) -> None:
+    limiter = RedisRateLimiter(_BrokenRedis(), per_minute=1, on_outage=policy)
+    assert [await limiter.allow("t") for _ in range(3)] == [allowed] * 3
+
+
+def test_prod_refuses_an_ephemeral_profile(settings: Settings, catalog: Catalog) -> None:
+    # A33: defaults that lose state on restart (or split it between replicas) are refused.
+    settings.app_env = "prod"
+    with pytest.raises(RuntimeError) as exc:
+        Orchestrator(settings, catalog=catalog, llm=FakeLLM())
+    message = str(exc.value)
+    for problem in (
+        "DATABASE_URL is SQLite",
+        "CHECKPOINTER_BACKEND=memory",
+        "VECTOR_BACKEND=memory",
+        "RATE_LIMIT_BACKEND=memory",
+    ):
+        assert problem in message
+    settings.prod_allow_ephemeral = True  # explicit acceptance for a demo...
+    settings.database_url = SecretStr("postgresql+psycopg://u:p@db/agency?sslmode=require")
+    Orchestrator(settings, catalog=catalog, llm=FakeLLM())  # ...that still needs Postgres
 
 
 def test_build_limiter(settings: Settings) -> None:

@@ -175,6 +175,15 @@ class Orchestrator:
         remote: A2AClient | None = None,
     ) -> None:
         self.settings = settings
+        problems = settings.production_problems()
+        if problems and not settings.prod_allow_ephemeral:
+            raise RuntimeError(
+                "APP_ENV=prod with a non-durable configuration:\n- "
+                + "\n- ".join(problems)
+                + "\nFix these, or set PROD_ALLOW_EPHEMERAL=true for a throwaway demo."
+            )
+        for problem in problems:
+            log.warning("prod running ephemeral (PROD_ALLOW_EPHEMERAL): %s", problem)
         self.catalog = catalog or load_catalog(settings.agents_dir)
         self.llm = llm or build_llm(settings)
         embedder = build_embedder(settings)

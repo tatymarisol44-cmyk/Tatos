@@ -158,12 +158,46 @@ class Settings(BaseSettings):
     # "redis" shares each tenant's budget across replicas (required with >1 replica).
     rate_limit_backend: Literal["memory", "redis"] = "memory"
     redis_url: SecretStr | None = None
+    # If Redis is unreachable (A30): "local" falls back to a per-replica bucket (degraded:
+    # at most N replicas x the budget, never unlimited and never an outage), "open" lets
+    # everything through, "closed" refuses requests (429) until Redis is back.
+    rate_limit_on_outage: Literal["local", "open", "closed"] = "local"
     public_base_url: str = "http://localhost:8000"
 
     # --- Observability -----------------------------------------------------
     otel_enabled: bool = False
     otel_service_name: str = "agency-orchestrator"
     otel_exporter_otlp_endpoint: str | None = None
+
+    # APP_ENV=prod refuses to start with state kept in process memory (A33), unless the
+    # operator explicitly accepts it for a throwaway demo.
+    prod_allow_ephemeral: bool = False
+
+    def production_problems(self) -> list[str]:
+        """Why this configuration is not a durable, multi-replica production profile."""
+        if self.app_env != "prod":
+            return []
+        problems = []
+        if not self.api_keys.get_secret_value().strip():
+            problems.append("API_KEYS is empty: no tenant can authenticate")
+        if self.database_url.get_secret_value().startswith("sqlite"):
+            problems.append("DATABASE_URL is SQLite: use Postgres")
+        if self.checkpointer_backend == "memory":
+            problems.append(
+                "CHECKPOINTER_BACKEND=memory: conversations are lost on restart and not "
+                "shared between replicas (use postgres)"
+            )
+        if self.vector_backend == "memory":
+            problems.append(
+                "VECTOR_BACKEND=memory: documents, semantic memory and the routing index "
+                "live in one process (use qdrant)"
+            )
+        if self.rate_limit_backend == "memory":
+            problems.append(
+                "RATE_LIMIT_BACKEND=memory: every replica gives each tenant its own budget "
+                "(use redis)"
+            )
+        return problems
 
     def tenant_keys(self) -> dict[str, str]:
         pairs: dict[str, str] = {}

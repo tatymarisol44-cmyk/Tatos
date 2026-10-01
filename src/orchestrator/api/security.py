@@ -4,8 +4,10 @@ role checks, and a per-tenant token-bucket rate limiter.
 - memory: in-process buckets. Right for dev and single-replica deployments only: with N
   replicas a tenant would get N times its budget.
 - redis:  one bucket per tenant shared by every replica, updated atomically by a Lua
-  script that uses Redis' clock (replica clocks do not matter). If Redis is unreachable
-  the limiter fails open and logs: rate limiting must not take the API down."""
+  script that uses Redis' clock (replica clocks do not matter). If Redis is unreachable,
+  RATE_LIMIT_ON_OUTAGE decides (A30): `local` (default) degrades to this replica's own
+  bucket, so an outage neither takes the API down nor lifts every limit; `open` allows
+  everything; `closed` refuses."""
 
 from __future__ import annotations
 
@@ -82,11 +84,19 @@ return allowed
 class RedisRateLimiter:
     """Token bucket shared by all replicas. Same semantics as `RateLimiter`."""
 
-    def __init__(self, redis: Any, per_minute: int, prefix: str = "agency:ratelimit:") -> None:
+    def __init__(
+        self,
+        redis: Any,
+        per_minute: int,
+        prefix: str = "agency:ratelimit:",
+        on_outage: str = "local",
+    ) -> None:
         self.redis = redis
         self.capacity = per_minute
         self.rate_per_ms = per_minute / 60_000.0
         self.prefix = prefix
+        self.on_outage = on_outage
+        self._local = RateLimiter(per_minute)  # this replica's bucket while Redis is down
         self._script = redis.register_script(_BUCKET_SCRIPT)
 
     async def allow(self, key: str) -> bool:
@@ -94,9 +104,15 @@ class RedisRateLimiter:
             allowed = await self._script(
                 keys=[self.prefix + key], args=[self.capacity, self.rate_per_ms]
             )
-        except Exception as exc:  # fail open: an outage of the limiter is not an outage
-            log.warning("rate limiter unavailable (%s); allowing request", type(exc).__name__)
-            return True
+        except Exception as exc:
+            log.warning(
+                "rate limiter unavailable (%s); policy %s", type(exc).__name__, self.on_outage
+            )
+            if self.on_outage == "open":
+                return True
+            if self.on_outage == "closed":
+                return False
+            return await self._local.allow(key)
         return bool(allowed)
 
     async def close(self) -> None:
@@ -114,7 +130,9 @@ def build_limiter(settings: Settings) -> Limiter:
             socket_timeout=0.5,  # a slow limiter must not slow every request
             socket_connect_timeout=0.5,
         )
-        return RedisRateLimiter(client, settings.rate_limit_per_minute)
+        return RedisRateLimiter(
+            client, settings.rate_limit_per_minute, on_outage=settings.rate_limit_on_outage
+        )
     return RateLimiter(settings.rate_limit_per_minute)
 
 
