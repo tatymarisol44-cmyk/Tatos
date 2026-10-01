@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from orchestrator.auth import Role
+
 # Pseudonymous data-subject id (patient/customer number): never a name or an e-mail.
 SUBJECT_ID = r"^[\w.-]{1,64}$"
 
@@ -161,10 +163,21 @@ class CampaignTemplateIn(BaseModel):
     template: str = Field(min_length=1, max_length=1000)
 
 
-class CampaignApproveIn(BaseModel):
-    owner_approval: bool = Field(
-        default=False, description="Required when a discount exceeds the pack's cap."
+class StaffKeyIn(BaseModel):
+    name: str = Field(
+        pattern=r"^[\w.@-]{1,64}$",
+        description="The person's login name (e.g. 'dr.lopez'); recorded as the actor.",
     )
+    roles: list[Role] = Field(min_length=1)
+
+
+class PatientChatIn(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    thread_id: str | None = Field(default=None, pattern=r"^[\w-]{1,64}$")
+
+
+class PatientConsentIn(BaseModel):
+    granted: bool
 
 
 class DocumentIn(BaseModel):

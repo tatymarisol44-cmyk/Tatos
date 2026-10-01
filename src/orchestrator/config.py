@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     default_pack: str = "general"
     # Human review of high-risk answers (LangGraph interrupt + checkpoint).
     review_enabled: bool = True
+    # Patient access keys (the /v1/me link sent to a patient) expire after this many days.
+    patient_access_ttl_days: int = Field(default=90, ge=1, le=730)
 
     # --- Semantic memory (long-term, per data subject) -----------------------
     memory_enabled: bool = True

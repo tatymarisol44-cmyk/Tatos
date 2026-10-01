@@ -81,6 +81,9 @@ class OrchestratorState(TypedDict, total=False):
     agent_ids: list[str] | None
     subject_id: str | None
     force_review: bool
+    subject_context: str
+    # PII the service redacted before the run (the raw input never enters state).
+    redaction_flags: list[str]
     messages: Annotated[list[dict[str, str]], operator.add]
     sanitized: str
     blocked: bool
@@ -163,6 +166,8 @@ def build_graph(
     def context_block(state: OrchestratorState) -> str:
         """Recalled memory and knowledge excerpts (graded), as delimited untrusted data."""
         parts: list[str] = []
+        if state.get("subject_context"):
+            parts.append(state["subject_context"])
         facts = [MemoryFact(**m) for m in state.get("memories", [])]
         if facts:
             parts.append(memory_block(facts))
@@ -176,6 +181,11 @@ def build_graph(
                 )
             parts.append(block)
         return "\n\n".join(parts)
+
+    def scrub(text: str) -> str:
+        """Redact model output where it is produced: intermediate results are
+        checkpointed and streamed (team steps) before the final output guard runs."""
+        return check_output(text, redact=settings.redact_pii).text
 
     def with_context(block: str, text: str) -> str:
         """Prepend the context block (if any) to a user message."""
@@ -215,7 +225,7 @@ def build_graph(
             "sanitized": result.text,
             "blocked": not result.allowed,
             "guardrail_reasons": result.reasons,
-            "guardrail_flags": result.flags,
+            "guardrail_flags": sorted({*state.get("redaction_flags", []), *result.flags}),
             "memories": [],
             "retrieval_query": result.text,
             "retrieval_attempts": 0,
@@ -337,7 +347,7 @@ def build_graph(
                 agent, messages, with_context(shared, state["sanitized"]), config
             )
         _count_tokens(result)
-        update: dict[str, Any] = {"answer": result.text, "answer_usage": result.usage()}
+        update: dict[str, Any] = {"answer": scrub(result.text), "answer_usage": result.usage()}
         if remote_info:
             update["decision"] = {**decision, "remote": remote_info}
         return update
@@ -410,7 +420,7 @@ def build_graph(
                 out["error"] = type(exc).__name__
             else:
                 _count_tokens(result)
-                out["output"] = result.text
+                out["output"] = scrub(result.text)
                 out["usage"] = result.usage()
                 if remote_info:
                     out["remote"] = remote_info
@@ -447,7 +457,7 @@ def build_graph(
                     text = fallback_synthesis(results)
                 else:
                     _count_tokens(result)
-                    text, usage = result.text, result.usage()
+                    text, usage = scrub(result.text), result.usage()
         return {"answer": text, "answer_usage": usage}
 
     # --- citations: an [n] must point to a retrieved excerpt -------------------
@@ -539,24 +549,33 @@ def build_graph(
         decision = state.get("review")
         status = "completed"
         flags = list(state.get("guardrail_flags", []))
+        citations = state.get("citations")
         if decision is not None:
             if not decision.get("approved"):
                 text, status = WITHHELD, "rejected"
             elif decision.get("edited_answer"):
-                # The reviewer's text goes through the same output checks as the model's.
+                # The reviewer's text goes through the same output checks as the model's,
+                # citations included: the metadata must describe the text actually shown.
                 checked = check_output(decision["edited_answer"], redact=settings.redact_pii)
                 text, flags = checked.text, [*flags, *checked.flags]
+                n_sources = len(state.get("knowledge", []))
+                used, invalid = evidence.check_citations(text, n_sources)
+                if invalid:
+                    text = evidence.strip_citations(text, invalid)
+                    flags.append("citation:invalid")
+                citations = {"used": used, "invalid": invalid}
         record = {
             "status": status,
             "risk": state.get("risk"),
             "review": decision,
             "agents": [a.id for a in agents_used(state)],
             "evidence": state.get("evidence"),
-            "citations": state.get("citations"),
+            "citations": citations,
         }
         return {
             "answer": text,
             "status": status,
+            "citations": citations,
             "guardrail_flags": flags,
             "decision_record": record,
             # History keeps what the user was actually shown, not a rejected draft.

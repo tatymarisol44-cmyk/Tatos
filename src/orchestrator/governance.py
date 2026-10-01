@@ -32,6 +32,7 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from orchestrator.db import Database, aware, metadata, utcnow
 
@@ -114,26 +115,47 @@ class AuditLog:
         subject_id: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
+        """Audit an action that has no write of its own (reads, exports)."""
         async with self.db.engine.begin() as conn:
-            await conn.execute(
-                insert(audit_events).values(
-                    ts=utcnow(),
-                    tenant=tenant,
-                    actor=actor,
-                    action=action,
-                    resource=resource,
-                    subject_id=subject_id,
-                    details=details or {},
-                )
+            await self.record_in(
+                conn, tenant, actor, action, resource, subject_id=subject_id, details=details
             )
 
+    async def record_in(
+        self,
+        conn: AsyncConnection,
+        tenant: str,
+        actor: str,
+        action: str,
+        resource: str,
+        *,
+        subject_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Audit inside the caller's transaction: the business write and its event
+        commit or roll back together (no change without its audit event)."""
+        await conn.execute(
+            insert(audit_events).values(
+                ts=utcnow(),
+                tenant=tenant,
+                actor=actor,
+                action=action,
+                resource=resource,
+                subject_id=subject_id,
+                details=details or {},
+            )
+        )
+
     async def list(
-        self, tenant: str, *, subject_id: str | None = None, limit: int = 100
+        self, tenant: str, *, subject_id: str | None = None, limit: int | None = 100
     ) -> list[AuditEvent]:
+        """Newest first. `limit=None` returns every event (subject exports)."""
         query = select(audit_events).where(audit_events.c.tenant == tenant)
         if subject_id is not None:
             query = query.where(audit_events.c.subject_id == subject_id)
-        query = query.order_by(audit_events.c.id.desc()).limit(limit)
+        query = query.order_by(audit_events.c.id.desc())
+        if limit is not None:
+            query = query.limit(limit)
         async with self.db.engine.connect() as conn:
             rows = (await conn.execute(query)).mappings().all()
         return [

@@ -1,4 +1,5 @@
-"""API-key auth (key -> tenant) and a per-tenant token-bucket rate limiter.
+"""API-key authentication (key -> principal: service, staff or patient; see auth.py),
+role checks, and a per-tenant token-bucket rate limiter.
 
 - memory: in-process buckets. Right for dev and single-replica deployments only: with N
   replicas a tenant would get N times its budget.
@@ -11,11 +12,13 @@ from __future__ import annotations
 import logging
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Annotated, Any, Protocol
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
+from orchestrator.auth import PATIENT, Principal, PrincipalStore, Role, service_principal
 from orchestrator.config import Settings
 
 log = logging.getLogger(__name__)
@@ -115,7 +118,9 @@ def build_limiter(settings: Settings) -> Limiter:
     return RateLimiter(settings.rate_limit_per_minute)
 
 
-def resolve_tenant(settings: Settings, api_key: str | None) -> str:
+def resolve_tenant(settings: Settings, api_key: str | None) -> str | None:
+    """Tenant of a service key from API_KEYS, "anonymous" in dev without keys, or None
+    when the key is not a service key (it may still be a staff or patient key)."""
     keys = settings.tenant_keys()
     if not keys:
         if settings.app_env == "prod":
@@ -125,27 +130,58 @@ def resolve_tenant(settings: Settings, api_key: str | None) -> str:
         for known, tenant in keys.items():
             if secrets.compare_digest(api_key, known):
                 return tenant
-    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key")
+    return None
 
 
-async def request_actor(
-    x_actor: str | None = Header(
-        default=None,
-        max_length=128,
-        pattern=r"^[\w.@-]+$",
-        description="The person acting (e.g. 'dr.lopez'), recorded in the audit trail. "
-        "Declared by the calling application, which authenticates its own users.",
-    ),
-) -> str:
-    return x_actor or "api"
-
-
-async def require_tenant(request: Request, x_api_key: str | None = Header(default=None)) -> str:
+async def authenticate(request: Request, x_api_key: str | None = Header(default=None)) -> Principal:
+    """Any authenticated caller (service, staff or patient), rate-limited per tenant."""
     settings: Settings = request.app.state.settings
     tenant = resolve_tenant(settings, x_api_key)
+    principal: Principal | None
+    if tenant is not None:
+        principal = service_principal(tenant)
+    elif x_api_key:
+        store: PrincipalStore = request.app.state.orchestrator.principals
+        principal = await store.resolve(x_api_key)
+    else:
+        principal = None
+    if principal is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key")
     limiter: Limiter = request.app.state.limiter
-    if not await limiter.allow(tenant):
+    if not await limiter.allow(principal.tenant):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit exceeded", headers={"Retry-After": "60"}
         )
-    return tenant
+    return principal
+
+
+async def require_staff(principal: Annotated[Principal, Depends(authenticate)]) -> Principal:
+    """Service or staff keys only: patient keys open nothing but /v1/me."""
+    if principal.kind == PATIENT:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "patient keys only open /v1/me")
+    return principal
+
+
+async def require_patient(
+    principal: Annotated[Principal, Depends(authenticate)],
+) -> Principal:
+    if principal.kind != PATIENT or principal.subject_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "this endpoint needs a patient key")
+    return principal
+
+
+def requires(*roles: Role) -> Callable[..., Awaitable[Principal]]:
+    """Dependency: a staff/service principal holding any of `roles` (admin holds all)."""
+
+    async def check(principal: Annotated[Principal, Depends(require_staff)]) -> Principal:
+        if not principal.has(*roles):
+            names = ", ".join(r.value for r in roles)
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"requires role: {names}")
+        return principal
+
+    return check
+
+
+async def require_tenant(principal: Annotated[Principal, Depends(require_staff)]) -> str:
+    """Any staff/service caller; returns the tenant (endpoints with no role check)."""
+    return principal.tenant

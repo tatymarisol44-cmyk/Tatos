@@ -151,12 +151,12 @@ async def test_approve_with_edit_resumes_the_workflow(dental: Orchestrator) -> N
     ]
     assert done.route_log[-1]["decision"] == "approved"
     # History holds what the patient was shown, and the thread is usable again.
-    follow = await dental.chat("gracias", tenant="acme", thread_id="t1")
+    follow = await dental.chat("gracias", tenant="acme", thread_id="t1", subject_id="p-1")
     assert follow.status == "completed"
     reviewed = await dental.reviews.get("acme", "t1")
     assert reviewed is not None and reviewed.status == "approved"
     actions = [e.action for e in await dental.audit.list("acme", subject_id="p-1")]
-    assert actions[:2] == ["review.approved", "chat.pending_review"]
+    assert actions[:3] == ["chat.completed", "review.approved", "chat.pending_review"]
 
 
 async def test_reject_withholds_the_draft(dental: Orchestrator, fake_llm: FakeLLM) -> None:

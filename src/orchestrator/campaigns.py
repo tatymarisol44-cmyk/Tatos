@@ -43,7 +43,7 @@ from sqlalchemy import (
 )
 
 from orchestrator.config import Settings
-from orchestrator.crm import CrmService, appointments
+from orchestrator.crm import CrmService, appointments, patients
 from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog, ConsentRegistry, Purpose
 from orchestrator.insights import InsightsService
@@ -564,6 +564,53 @@ class CampaignService:
                 "significant at 5%" if p_value is not None and p_value < 0.05 else "not significant"
             ),
         }
+
+    async def offers_for(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:
+        """Messages actually delivered to this patient (the patient's own view). Dry runs
+        and held-out members received nothing, so they are not listed."""
+        query = (
+            select(
+                campaigns.c.kind,
+                campaigns.c.name,
+                campaigns.c.template,
+                recipients.c.sent_at,
+                patients.c.display_name,
+            )
+            .select_from(
+                recipients.join(
+                    campaigns,
+                    and_(
+                        campaigns.c.tenant == recipients.c.tenant,
+                        campaigns.c.id == recipients.c.campaign_id,
+                    ),
+                ).join(
+                    patients,
+                    and_(
+                        patients.c.tenant == recipients.c.tenant,
+                        patients.c.id == recipients.c.patient_id,
+                    ),
+                )
+            )
+            .where(
+                and_(
+                    recipients.c.tenant == tenant,
+                    recipients.c.patient_id == patient_id,
+                    recipients.c.status == "sent",
+                )
+            )
+            .order_by(recipients.c.sent_at.desc())
+        )
+        async with self.db.engine.connect() as conn:
+            rows = (await conn.execute(query)).mappings().all()
+        return [
+            {
+                "kind": r["kind"],
+                "campaign": r["name"],
+                "text": render(r["template"], r["display_name"]),
+                "sent_at": (aware(r["sent_at"]) or utcnow()).isoformat(),
+            }
+            for r in rows
+        ]
 
     # --- data-subject rights -------------------------------------------------
     async def export_subject(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:

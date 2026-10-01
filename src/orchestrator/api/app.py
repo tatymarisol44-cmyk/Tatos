@@ -7,7 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
-from orchestrator.api import a2a, business
+from orchestrator.api import a2a, business, patients
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -25,14 +25,19 @@ from orchestrator.api.schemas import (
     KnowledgeSearchRequest,
     RouteRequest,
 )
-from orchestrator.api.security import build_limiter, request_actor, require_tenant
+from orchestrator.api.security import build_limiter, require_staff, require_tenant, requires
+from orchestrator.api.views import staff_view, stream_event
+from orchestrator.auth import Principal, Role
 from orchestrator.config import Settings, get_settings
 from orchestrator.guardrails import check_input
 from orchestrator.knowledge import KnowledgeRejected
-from orchestrator.service import Orchestrator, PendingReviewError
+from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 from orchestrator.telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
+Staff = Annotated[Principal, Depends(require_staff)]
+AdminDep = Annotated[Principal, Depends(requires(Role.ADMIN))]
+PrivacyDep = Annotated[Principal, Depends(requires(Role.PRIVACY))]
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # The console is fully self-contained: no third-party origins, no inline script.
 UI_HEADERS = {
@@ -80,6 +85,7 @@ def create_app(
     app.state.limiter = build_limiter(settings)
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
+    app.include_router(patients.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:
@@ -147,11 +153,11 @@ def create_app(
     async def chat(
         body: ChatRequest,
         request: Request,
-        tenant: str = Depends(require_tenant),
-        actor: str = Depends(request_actor),
+        principal: Staff,
     ) -> ChatResponse:
-        """Answer a request. `status` is `pending_review` when the answer was held for a
-        human (see /v1/reviews); the thread then accepts no new message until resolved."""
+        """Answer a request (staff). `status` is `pending_review` when the answer was held
+        for a human (see /v1/reviews); the thread then accepts no new message until
+        resolved. Only reviewers see the held draft."""
         try:
             result = await orch(request).chat(
                 body.question,
@@ -159,27 +165,26 @@ def create_app(
                 agent_id=body.agent_id,
                 agent_ids=body.agent_ids,
                 mode=body.mode,
-                tenant=tenant,
+                tenant=principal.tenant,
                 subject_id=body.subject_id,
                 force_review=body.force_review,
-                actor=actor,
+                actor=principal.id,
             )
-        except PendingReviewError as exc:
+        except (PendingReviewError, ThreadSubjectError) as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-        return ChatResponse(**result.__dict__)
+        return ChatResponse(**staff_view(result.__dict__, principal))
 
     @app.post("/v1/chat/stream", tags=["orchestration"])
     async def chat_stream(
         body: ChatRequest,
         request: Request,
-        tenant: str = Depends(require_tenant),
-        actor: str = Depends(request_actor),
+        principal: Staff,
     ) -> StreamingResponse:
         """Same as `/v1/chat`, as Server-Sent Events: `start`, `guardrails`, `evidence`,
-        `routing` or `plan`, one `step` per specialist as it finishes, `review` if held for
-        a human, then `done` (or `error`)."""
+        `routing` or `plan`, one `step` per specialist as it finishes (text only for
+        reviewers), `review` if held for a human, then `done` (or `error`)."""
         try:
             events = await orch(request).chat_stream(
                 body.question,
@@ -187,12 +192,12 @@ def create_app(
                 agent_id=body.agent_id,
                 agent_ids=body.agent_ids,
                 mode=body.mode,
-                tenant=tenant,
+                tenant=principal.tenant,
                 subject_id=body.subject_id,
                 force_review=body.force_review,
-                actor=actor,
+                actor=principal.id,
             )
-        except PendingReviewError as exc:
+        except (PendingReviewError, ThreadSubjectError) as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
@@ -200,7 +205,7 @@ def create_app(
         async def body_iter() -> AsyncIterator[str]:
             try:
                 async for event, data in events:
-                    yield _sse(event, data)
+                    yield _sse(event, stream_event(event, data, principal))
             except Exception:
                 log.exception("stream failed")
                 yield _sse("error", {"message": "orchestration failed"})
@@ -218,9 +223,8 @@ def create_app(
         status_code=status.HTTP_201_CREATED,
         tags=["knowledge"],
     )
-    async def add_document(
-        body: DocumentIn, request: Request, tenant: str = Depends(require_tenant)
-    ) -> DocumentOut:
+    async def add_document(body: DocumentIn, request: Request, admin: AdminDep) -> DocumentOut:
+        tenant = admin.tenant
         if len(body.text) > settings.knowledge_max_doc_chars:
             raise HTTPException(
                 status.HTTP_413_CONTENT_TOO_LARGE,
@@ -244,30 +248,26 @@ def create_app(
         status_code=status.HTTP_204_NO_CONTENT,
         tags=["knowledge"],
     )
-    async def delete_document(
-        doc_id: str, request: Request, tenant: str = Depends(require_tenant)
-    ) -> None:
+    async def delete_document(doc_id: str, request: Request, admin: AdminDep) -> None:
         # Another tenant's doc_id looks exactly like a missing one: no existence leak.
-        if not await orch(request).knowledge.delete(tenant, doc_id):
+        if not await orch(request).knowledge.delete(admin.tenant, doc_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
 
     @app.delete("/v1/threads/{thread_id}", status_code=204, tags=["privacy"])
     async def delete_thread(
         request: Request,
-        thread_id: str = FastAPIPath(max_length=128, pattern=r"^[\w-]+$"),
-        tenant: str = Depends(require_tenant),
+        thread_id: Annotated[str, FastAPIPath(max_length=128, pattern=r"^[\w-]+$")],
+        dpo: PrivacyDep,
     ) -> None:
         """Erase one conversation (its full checkpoint history) of the calling tenant."""
-        if not await orch(request).delete_thread(tenant, thread_id):
+        if not await orch(request).delete_thread(dpo.tenant, thread_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found")
 
     @app.delete("/v1/threads", tags=["privacy"])
-    async def delete_all_threads(
-        request: Request, tenant: str = Depends(require_tenant)
-    ) -> dict[str, int]:
+    async def delete_all_threads(request: Request, dpo: PrivacyDep) -> dict[str, int]:
         """Erase every conversation of the calling tenant (right to erasure, offboarding).
         Documents are erased separately via /v1/knowledge/documents."""
-        return {"deleted": await orch(request).delete_tenant_threads(tenant)}
+        return {"deleted": await orch(request).delete_tenant_threads(dpo.tenant)}
 
     @app.post("/v1/knowledge/search", tags=["knowledge"])
     async def search_knowledge(

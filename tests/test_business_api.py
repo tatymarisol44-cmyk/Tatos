@@ -15,7 +15,7 @@ from orchestrator.db import utcnow
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 
-ACME = {"X-API-Key": "test-key", "X-Actor": "dr.lopez"}
+ACME = {"X-API-Key": "test-key"}
 GLOBEX = {"X-API-Key": "other-key"}
 CLINICAL = "¿Qué dosis de ibuprofeno tomo?"
 GOOD = "Hola {first_name}, te esperamos para tu control. Responde STOP para salir."
@@ -30,19 +30,36 @@ def client(settings: Settings, catalog: Catalog) -> Iterator[TestClient]:
         yield c
 
 
+def _staff(client: TestClient, name: str, *roles: str) -> dict[str, str]:
+    """Create a personal staff key (as the clinic's admin service key) and return headers."""
+    resp = client.post("/v1/admin/staff", json={"name": name, "roles": list(roles)}, headers=ACME)
+    assert resp.status_code == 201, resp.text
+    return {"X-API-Key": resp.json()["key"]}
+
+
 def test_review_flow_over_http(client: TestClient) -> None:
+    reception = _staff(client, "maria", "reception")
+    doctor = _staff(client, "dr.lopez", "reviewer")
     paused = client.post(
         "/v1/chat",
         json={"question": CLINICAL, "thread_id": "t1", "subject_id": "p-1"},
-        headers=ACME,
+        headers=reception,
     ).json()
     assert paused["status"] == "pending_review" and paused["answer"] is None
+    # Reception sees that it is held and why, never the draft (A02).
+    assert set(paused["review"]) == {"risk"}
     assert paused["review"]["risk"]["reasons"] == ["clinical_advice"]
 
-    busy = client.post("/v1/chat", json={"question": "hola", "thread_id": "t1"}, headers=ACME)
+    busy = client.post(
+        "/v1/chat",
+        json={"question": "hola", "thread_id": "t1", "subject_id": "p-1"},
+        headers=reception,
+    )
     assert busy.status_code == 409
+    # Reviews are for reviewers only.
+    assert client.get("/v1/reviews", headers=reception).status_code == 403
 
-    [pending] = client.get("/v1/reviews", headers=ACME).json()
+    [pending] = client.get("/v1/reviews", headers=doctor).json()
     assert pending["thread_id"] == "t1"
     assert client.get("/v1/reviews", headers=GLOBEX).json() == []
     assert client.get("/v1/reviews/t1", headers=GLOBEX).status_code == 404
@@ -51,26 +68,133 @@ def test_review_flow_over_http(client: TestClient) -> None:
     done = client.post(
         "/v1/reviews/t1",
         json={"approved": True, "edited_answer": "Llámenos a la clínica, por favor."},
-        headers=ACME,
+        headers=doctor,
     ).json()
     assert done["status"] == "completed" and done["answer"] == "Llámenos a la clínica, por favor."
-    assert client.post("/v1/reviews/t1", json={"approved": True}, headers=ACME).status_code == 404
-    assert client.get("/v1/reviews?state=approved", headers=ACME).json()[0]["status"] == "approved"
+    assert client.post("/v1/reviews/t1", json={"approved": True}, headers=doctor).status_code == 404
+    approved = client.get("/v1/reviews?state=approved", headers=doctor).json()
+    assert approved[0]["status"] == "approved"
 
     audit = client.get("/v1/audit?subject_id=p-1", headers=ACME).json()
+    # The actor is the authenticated person, not a header anyone can set (A01).
     assert [(e["action"], e["actor"]) for e in audit][:2] == [
         ("review.approved", "dr.lopez"),
-        ("chat.pending_review", "dr.lopez"),
+        ("chat.pending_review", "maria"),
     ]
 
 
-def test_invalid_actor_header_is_rejected(client: TestClient) -> None:
-    resp = client.post(
+def test_x_actor_header_is_ignored(client: TestClient) -> None:
+    client.post(
         "/v1/chat",
-        json={"question": "hola"},
-        headers={"X-API-Key": "test-key", "X-Actor": "<script>"},
+        json={"question": "hola", "subject_id": "p-9"},
+        headers={**ACME, "X-Actor": "dr.someone-else"},
     )
-    assert resp.status_code == 422
+    audit = client.get("/v1/audit?subject_id=p-9", headers=ACME).json()
+    assert audit and all(e["actor"] == "service:acme" for e in audit)
+
+
+def test_unknown_and_revoked_keys_are_rejected(client: TestClient) -> None:
+    assert client.get("/v1/reviews", headers={"X-API-Key": "sk_nope"}).status_code == 401
+    created = client.post(
+        "/v1/admin/staff", json={"name": "temp", "roles": ["reviewer"]}, headers=ACME
+    ).json()
+    key = {"X-API-Key": created["key"]}
+    assert client.get("/v1/reviews", headers=key).status_code == 200
+    listed = client.get("/v1/admin/principals", headers=ACME).json()
+    assert listed and all("key" not in p and "key_hash" not in p for p in listed)
+    assert client.delete(f"/v1/admin/principals/{created['id']}", headers=ACME).status_code == 204
+    assert client.get("/v1/reviews", headers=key).status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("role", "method", "path", "allowed"),
+    [
+        ("reception", "GET", "/v1/reviews", False),
+        ("reception", "GET", "/v1/admin/principals", False),
+        ("reception", "GET", "/v1/insights/summary", False),
+        ("reception", "GET", "/v1/crm/patients", True),
+        ("marketing", "GET", "/v1/crm/patients", False),
+        ("marketing", "GET", "/v1/campaigns", True),
+        ("reviewer", "POST", "/v1/admin/staff", False),
+        ("reviewer", "GET", "/v1/reviews", True),
+        ("owner", "GET", "/v1/audit", False),
+        ("privacy", "GET", "/v1/audit", True),
+    ],
+)
+def test_role_matrix(client: TestClient, role: str, method: str, path: str, allowed: bool) -> None:
+    headers = _staff(client, f"user-{role}", role)
+    body = {"name": "x", "roles": ["reception"]} if method == "POST" else None
+    resp = client.request(method, path, json=body, headers=headers)
+    assert (resp.status_code != 403) is allowed, (resp.status_code, resp.text)
+
+
+def _patient_key(client: TestClient, patient_id: str) -> dict[str, str]:
+    client.post(
+        "/v1/crm/patients",
+        json={"id": patient_id, "display_name": f"Paciente {patient_id}"},
+        headers=ACME,
+    )
+    resp = client.post(f"/v1/crm/patients/{patient_id}/access", headers=ACME)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["key"].startswith("pk_")
+    return {"X-API-Key": resp.json()["key"]}
+
+
+def test_patient_portal_is_scoped_to_its_own_records(client: TestClient) -> None:
+    ana = _patient_key(client, "p-ana")
+    _patient_key(client, "p-luis")
+    starts = (utcnow() + timedelta(days=3)).isoformat()
+    for pid in ("p-ana", "p-luis"):
+        client.post(
+            "/v1/crm/appointments",
+            json={"patient_id": pid, "starts_at": starts, "kind": "limpieza", "price": 35},
+            headers=ACME,
+        )
+
+    me = client.get("/v1/me", headers=ana).json()
+    assert me["profile"]["id"] == "p-ana"
+    upcoming = client.get("/v1/me/appointments", headers=ana).json()["upcoming"]
+    assert len(upcoming) == 1 and "patient_id" not in upcoming[0]
+    assert "offers" in client.get("/v1/me/loyalty", headers=ana).json()
+    assert client.get("/v1/me/treatments", headers=ana).status_code == 200
+
+    # A patient key opens nothing outside /v1/me (A01).
+    for path in ("/v1/crm/patients", "/v1/crm/patients/p-luis", "/v1/reviews", "/v1/audit"):
+        assert client.get(path, headers=ana).status_code == 403, path
+    assert client.post("/v1/chat", json={"question": "hola"}, headers=ana).status_code == 403
+    # Staff keys do not open the patient portal either.
+    assert client.get("/v1/me", headers=ACME).status_code == 403
+
+
+def test_patient_chat_never_sees_drafts(client: TestClient) -> None:
+    ana = _patient_key(client, "p-ana")
+    held = client.post(
+        "/v1/me/chat", json={"question": CLINICAL, "thread_id": "c1"}, headers=ana
+    ).json()
+    assert held["status"] == "pending_review" and held["answer"] is None
+    assert set(held) == {"thread_id", "status", "answer", "message", "sources"}
+    again = client.post("/v1/me/chat", json={"question": "hola", "thread_id": "c1"}, headers=ana)
+    assert again.status_code == 409
+    assert client.get("/v1/me/chat/c1", headers=ana).json()["answer"] is None
+    # Thread ids are namespaced per patient: another patient's "c1" is a different thread.
+    luis = _patient_key(client, "p-luis")
+    other = client.get("/v1/me/chat/c1", headers=luis)
+    assert other.status_code == 404 or other.json()["answer"] is None
+
+
+def test_patient_consent_self_service(client: TestClient) -> None:
+    ana = _patient_key(client, "p-ana")
+    resp = client.put("/v1/me/consents/marketing", json={"granted": False}, headers=ana)
+    assert resp.status_code == 200
+    refused = client.put("/v1/me/consents/treatment", json={"granted": False}, headers=ana)
+    assert refused.status_code in (400, 422)
+
+
+def test_erasure_revokes_patient_keys(client: TestClient) -> None:
+    ana = _patient_key(client, "p-ana")
+    assert client.get("/v1/me", headers=ana).status_code == 200
+    assert client.delete("/v1/subjects/p-ana", headers=ACME).status_code in (200, 204)
+    assert client.get("/v1/me", headers=ana).status_code == 401
 
 
 def test_consents_export_and_erasure(client: TestClient) -> None:

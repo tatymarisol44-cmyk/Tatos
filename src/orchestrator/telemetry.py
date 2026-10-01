@@ -3,12 +3,40 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from opentelemetry import metrics, trace
 
 from orchestrator.config import Settings
 
 _configured = False
+
+# Telegram puts the bot token in the URL path (/bot<id>:<secret>/sendMessage), and HTTP
+# client libraries log request URLs at INFO.
+_BOT_TOKEN = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
+
+
+class SecretRedactingFilter(logging.Filter):
+    """Rewrites log records so credentials embedded in URLs never reach a handler."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if _BOT_TOKEN.search(message):
+            record.msg = _BOT_TOKEN.sub("bot<redacted>", message)
+            record.args = None
+        return True
+
+
+def install_log_redaction() -> None:
+    """Attach the filter to the loggers of the HTTP clients we use. Logger-level filters
+    run for every record of that logger, whichever handlers are configured."""
+    for name in ("httpx", "httpcore", "httpx2", "httpcore2"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, SecretRedactingFilter) for f in logger.filters):
+            logger.addFilter(SecretRedactingFilter())
+
+
+install_log_redaction()
 
 
 def setup_telemetry(settings: Settings) -> None:
