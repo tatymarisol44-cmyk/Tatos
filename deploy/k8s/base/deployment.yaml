@@ -33,6 +33,24 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels: {app.kubernetes.io/name: agency-orchestrator}
+      # Migrate the schema before the API starts (Alembic takes a Postgres advisory lock,
+      # so pods starting together migrate one at a time). The API itself only checks.
+      initContainers:
+        - name: migrate
+          image: agency-orchestrator
+          command: ["agency", "db", "upgrade"]
+          envFrom:
+            - configMapRef: {name: agency-orchestrator-config}
+            - secretRef: {name: agency-orchestrator-secrets}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
       containers:
         - name: api
           image: agency-orchestrator

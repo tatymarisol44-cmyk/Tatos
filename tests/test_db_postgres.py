@@ -32,6 +32,7 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
     tenant = f"pg-{uuid.uuid4().hex[:8]}"  # the database outlives the test run
     settings.tenant_packs = {tenant: "dental"}
     settings.campaign_default_holdout_pct = 0
+    settings.db_auto_migrate = True  # Postgres schemas are versioned (A33)
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     await orch.start()
     try:

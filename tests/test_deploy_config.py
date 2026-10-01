@@ -118,3 +118,12 @@ def test_retention_runs_on_a_schedule_and_alerts() -> None:
     rules = yaml.safe_load((ROOT / "deploy" / "monitoring" / "alerts.yml").read_text("utf-8"))
     names = {r["alert"] for g in rules["groups"] for r in g["rules"]}
     assert {"RetentionJobFailed", "RetentionJobNotRunning"} <= names
+
+
+def test_schema_is_migrated_before_the_api_starts() -> None:
+    # A33: an init container runs the migrations; the API only checks the revision.
+    pod = _k8s("Deployment", "agency-orchestrator")["spec"]["template"]["spec"]
+    [init] = pod["initContainers"]
+    assert init["command"] == ["agency", "db", "upgrade"]
+    config = _k8s("ConfigMap", "agency-orchestrator-config")["data"]
+    assert config.get("DB_AUTO_MIGRATE", "false") == "false"

@@ -146,6 +146,9 @@ class Settings(BaseSettings):
     checkpointer_backend: Literal["memory", "postgres"] = "memory"
     postgres_url: SecretStr | None = None
     postgres_pool_size: int = 10
+    # Migrate DATABASE_URL to the latest schema at startup. Handy for local Compose; in
+    # Kubernetes an init container runs `agency db upgrade` once, and the API only checks.
+    db_auto_migrate: bool = False
     # Only for a private network that is already encrypted (e.g. a service mesh with mTLS).
     postgres_allow_insecure: bool = False
     # Conversations inactive for longer are deleted by `agency retention` (CronJob).

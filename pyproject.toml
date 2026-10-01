@@ -25,6 +25,7 @@ dependencies = [
     "redis>=5.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "aiosqlite>=0.20",
+    "alembic>=1.14",
 ]
 
 [project.scripts]

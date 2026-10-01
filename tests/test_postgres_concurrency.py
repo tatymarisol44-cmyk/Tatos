@@ -44,6 +44,7 @@ async def replicas(settings: Settings, catalog: Catalog) -> AsyncIterator[tuple[
     settings.tenant_packs = {tenant: "dental"}
     settings.campaign_default_holdout_pct = 0
     settings.telegram_bot_token = SecretStr("123:test-token")
+    settings.db_auto_migrate = True  # Postgres schemas are versioned (A33)
     pods = [Orchestrator(settings, catalog=catalog, llm=FakeLLM()) for _ in range(2)]
     for pod in pods:
         await pod.start()

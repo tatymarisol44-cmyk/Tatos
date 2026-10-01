@@ -16,6 +16,7 @@ services:
       POSTGRES_URL: postgresql://agency:agency@postgres:5432/agency
       # Audit trail, reviews, consents, CRM and campaigns (same Postgres, own tables).
       DATABASE_URL: postgresql+psycopg://agency:agency@postgres:5432/agency
+      DB_AUTO_MIGRATE: "true"  # local only; Kubernetes migrates in an init container
       REMOTE_AGENTS: '["http://jvm-agent:8080"]'
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318

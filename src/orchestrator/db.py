@@ -2,8 +2,10 @@
 
 One SQLAlchemy async Core engine and one `MetaData`, so the same SQL runs on SQLite (dev,
 tests: `sqlite+aiosqlite:///:memory:`) and on Postgres in prod
-(`postgresql+psycopg://...?sslmode=require`). Tables are created at startup with
-`create_all` (idempotent); schema migrations are out of scope for this version.
+(`postgresql+psycopg://...?sslmode=require`). SQLite (dev, tests) gets its tables from
+`create_all`; every other database is versioned with Alembic (orchestrator.migrate): it
+is migrated by `agency db upgrade` (or DB_AUTO_MIGRATE) and the service refuses to start
+on a schema that is not at the latest revision.
 
 Every table that holds customer data has a `tenant` column and every query filters on it:
 tenant isolation is enforced in the data layer, not left to the callers."""
@@ -72,14 +74,20 @@ def build_engine(settings: Settings) -> AsyncEngine:
 
 class Database:
     def __init__(self, settings: Settings) -> None:
+        self.settings = settings
         self.engine = build_engine(settings)
 
     async def start(self) -> None:
         # Imported for their side effect: each module registers its tables on `metadata`.
-        from orchestrator import auth, campaigns, crm, governance, knowledge  # noqa: F401
+        from orchestrator import auth, campaigns, crm, governance, knowledge, migrate  # noqa: F401
 
-        async with self.engine.begin() as conn:
-            await conn.run_sync(metadata.create_all)
+        if self.engine.dialect.name == "sqlite":
+            async with self.engine.begin() as conn:
+                await conn.run_sync(metadata.create_all)
+        elif self.settings.db_auto_migrate:
+            await migrate.upgrade(self.engine)
+        else:
+            await migrate.require_head(self.engine)
 
     async def close(self) -> None:
         await self.engine.dispose()

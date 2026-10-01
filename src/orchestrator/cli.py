@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -29,6 +29,14 @@ async def _index() -> None:
     orch = Orchestrator(get_settings())
     created = await orch.router.build_index()
     _print({"index": orch.router.index_name, "agents": len(orch.catalog), "created": created})
+
+
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
+    """asyncio.run with the selector loop on Windows: psycopg's async mode (Postgres)
+    cannot use the default Proactor loop there. Linux is unaffected."""
+    if sys.platform == "win32":
+        return asyncio.run(coro, loop_factory=asyncio.SelectorEventLoop)
+    return asyncio.run(coro)
 
 
 @asynccontextmanager
@@ -68,7 +76,7 @@ async def _eval(rows: list[dict[str, Any]]) -> EvalReport:
 def _eval_cmd(dataset: Path, min_top1: float, min_recall: float, output: Path | None) -> int:
     from orchestrator.evals import load_dataset
 
-    report = asyncio.run(_eval(load_dataset(dataset)))
+    report = _run(_eval(load_dataset(dataset)))
     summary = report.summary()
     _print({k: v for k, v in summary.items() if k != "failures"})
     if output:
@@ -108,7 +116,7 @@ def _eval_answers_cmd(
 ) -> int:
     from orchestrator.answer_eval import load_rows
 
-    summary = asyncio.run(_answers(load_rows(dataset)))
+    summary = _run(_answers(load_rows(dataset)))
     _print({k: v for k, v in summary.items() if k != "failures"})
     _write(summary, output)
     failures = []
@@ -136,7 +144,7 @@ def _eval_judge_cmd(
 ) -> int:
     from orchestrator.answer_eval import load_rows
 
-    summary = asyncio.run(_calibrate(load_rows(dataset, calibration=True)))
+    summary = _run(_calibrate(load_rows(dataset, calibration=True)))
     _print({k: v for k, v in summary.items() if k != "disagreements"})
     _write(summary, output)
     failures = []
@@ -195,6 +203,26 @@ async def _audit_verify(anchors: list[dict[str, Any]], tenant: str | None) -> in
     return 0 if all(r["ok"] for r in results.values()) else 1
 
 
+async def _db(action: str, revision: str | None, message: str | None) -> None:
+    from alembic import command
+
+    from orchestrator import migrate
+    from orchestrator.db import build_engine
+
+    engine = build_engine(get_settings())
+    try:
+        if action == "upgrade":
+            await migrate.upgrade(engine, revision or "head")
+        elif action == "stamp":  # a database created before migrations existed
+            async with engine.begin() as conn:
+                await conn.run_sync(lambda c: command.stamp(migrate._config(c), revision or "head"))
+        elif action == "revision":
+            await migrate.autogenerate(engine, message or "schema change")
+        _print({"current": await migrate.current(engine), "head": migrate.head()})
+    finally:
+        await engine.dispose()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -245,6 +273,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_verify.add_argument("--anchors", type=Path, help="JSON lines from audit-anchor")
     p_verify.add_argument("--tenant")
+    p_db = sub.add_parser("db", help="Schema migrations (Alembic)")
+    p_db.add_argument("action", choices=["upgrade", "current", "stamp", "revision"])
+    p_db.add_argument("revision", nargs="?", help="Target revision (default: head)")
+    p_db.add_argument("-m", "--message", help="revision: what changed")
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -252,11 +284,11 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.cmd == "index":
-        asyncio.run(_index())
+        _run(_index())
     elif args.cmd == "route":
-        asyncio.run(_route(args.question))
+        _run(_route(args.question))
     elif args.cmd == "ask":
-        asyncio.run(_ask(args.question, args.agent_id, args.team))
+        _run(_ask(args.question, args.agent_id, args.team))
     elif args.cmd == "eval":
         return _eval_cmd(args.dataset, args.min_top1, args.min_recall, args.output)
     elif args.cmd == "eval-answers":
@@ -268,16 +300,18 @@ def main(argv: list[str] | None = None) -> int:
         days = args.older_than_days or get_settings().thread_retention_days
         if days < 1:
             parser.error("--older-than-days must be >= 1")
-        asyncio.run(_retention(days, args.dry_run))
+        _run(_retention(days, args.dry_run))
+    elif args.cmd == "db":
+        _run(_db(args.action, args.revision, args.message))
     elif args.cmd == "audit-anchor":
-        asyncio.run(_audit_anchor())
+        _run(_audit_anchor())
     elif args.cmd == "audit-verify":
         anchors = (
             [json.loads(x) for x in args.anchors.read_text("utf-8").splitlines() if x.strip()]
             if args.anchors
             else []
         )
-        return asyncio.run(_audit_verify(anchors, args.tenant))
+        return _run(_audit_verify(anchors, args.tenant))
     elif args.cmd == "serve":
         import uvicorn
 
