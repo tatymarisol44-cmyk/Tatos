@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     postgres_pool_size: int = 10
     # Only for a private network that is already encrypted (e.g. a service mesh with mTLS).
     postgres_allow_insecure: bool = False
-    # Conversations inactive for longer are deleted by `agency purge-threads` (CronJob).
+    # Conversations inactive for longer are deleted by `agency retention` (CronJob).
     thread_retention_days: int = Field(default=90, ge=1)
 
     # --- API / multi-tenancy ----------------------------------------------

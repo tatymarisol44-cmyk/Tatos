@@ -101,6 +101,10 @@ class ChunkStore(Protocol):
 
     async def ensure(self, name: str, dim: int) -> None: ...
 
+    def attach(self, name: str) -> None:
+        """Use an existing collection without creating it (maintenance jobs)."""
+        ...
+
     async def upsert(
         self, tenant: str, chunks: list[Chunk], vectors: list[list[float]]
     ) -> None: ...
@@ -115,6 +119,9 @@ class InMemoryChunkStore:
         self._rows: dict[tuple[str, str, str, int], tuple[Chunk, list[float]]] = {}
 
     async def ensure(self, name: str, dim: int) -> None:
+        return None
+
+    def attach(self, name: str) -> None:
         return None
 
     async def upsert(self, tenant: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:
@@ -225,9 +232,14 @@ class QdrantChunkStore:
             if (p := point.payload or {})
         ]
 
+    def attach(self, name: str) -> None:
+        self._name = name
+
     async def delete(self, tenant: str, doc_id: str, version: str | None = None) -> int:
         from qdrant_client.models import FilterSelector
 
+        if not await self._client.collection_exists(self._name):
+            return 0
         selector = self._filter(tenant, doc_id, version)
         count = (await self._client.count(self._name, count_filter=selector)).count
         if count:
@@ -294,6 +306,10 @@ class KnowledgeBase:
         # Vectors from different embedding models are not comparable, so the embedder is
         # part of the name; switching models means re-ingesting into a new collection.
         return f"{self.settings.knowledge_collection}_{self.embedder.signature}"
+
+    def attach(self) -> None:
+        """For maintenance jobs: no embedding call, no collection created."""
+        self.store.attach(self.collection)
 
     async def start(self) -> None:
         [probe] = await self.embedder.embed(["probe"])
@@ -453,10 +469,13 @@ class KnowledgeBase:
         await self._drop(tenant, doc_id, row["version"])
         return int(row["chunks"])
 
-    async def reconcile(self, stale_after: timedelta = timedelta(hours=1)) -> int:
+    async def reconcile(
+        self, stale_after: timedelta = timedelta(hours=1), dry_run: bool = False
+    ) -> int:
         """Remove what a failure left in the vector store: retired versions, and uploads
         that never went live and are older than `stale_after` (younger ones may still be
-        in progress on another replica). Runs at startup; safe to run any time."""
+        in progress on another replica). Runs at startup and in the retention job.
+        Returns the number of versions removed (or that would be, with `dry_run`)."""
         cutoff = utcnow() - stale_after
         query = select(knowledge_versions).where(
             or_(
@@ -469,10 +488,13 @@ class KnowledgeBase:
         )
         async with self.db.engine.connect() as conn:
             leftovers = (await conn.execute(query)).mappings().all()
+        if dry_run:
+            return len(leftovers)
         removed = 0
         for row in leftovers:
             try:
-                removed += await self._drop(row["tenant"], row["doc_id"], row["version"])
+                await self._drop(row["tenant"], row["doc_id"], row["version"])
+                removed += 1
             except Exception:
                 log.warning("knowledge: could not remove version %s yet", row["version"])
         return removed

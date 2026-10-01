@@ -192,27 +192,34 @@ async def test_threads_report_real_checkpoint_times(orchestrator: Orchestrator) 
     assert before - timedelta(seconds=5) <= ts <= datetime.now(UTC)
 
 
-def test_cli_purge_threads(
+def test_cli_retention_needs_no_model_provider(
     settings: Settings, catalog: Catalog, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
+    # A31: the scheduled job starts the databases only. Any embedding or indexing call
+    # (a paid provider in prod) would fail this test.
     from orchestrator import cli
+    from orchestrator.embeddings import HashingEmbedder
+    from orchestrator.router import Router
 
-    calls: list[timedelta] = []
+    async def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the retention job must not call models or index the catalog")
 
-    async def fake_purge(self: Orchestrator, older_than: timedelta) -> int:
-        calls.append(older_than)
-        return 3
-
-    monkeypatch.setattr(Orchestrator, "purge_threads", fake_purge)
-    monkeypatch.setattr(Orchestrator, "start", lambda self: _noop())
+    monkeypatch.setattr(HashingEmbedder, "embed", forbidden)
+    monkeypatch.setattr(Router, "build_index", forbidden)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    settings.thread_retention_days = 30
     monkeypatch.setattr("orchestrator.service.load_catalog", lambda _path: catalog, raising=True)
-    assert cli.main(["purge-threads"]) == 0
-    assert cli.main(["purge-threads", "--older-than-days", "7"]) == 0
-    assert calls == [timedelta(days=30), timedelta(days=7)]
-    assert '"deleted_threads": 3' in capsys.readouterr().out
+    settings.thread_retention_days = 30
+    assert cli.main(["retention", "--dry-run"]) == 0
+    assert cli.main(["purge-threads", "--older-than-days", "7"]) == 0  # the old name
+    out = capsys.readouterr().out
+    assert '"dry_run": true' in out and '"older_than_days": 30' in out
+    assert '"older_than_days": 7' in out and '"knowledge_leftover_versions": 0' in out
 
 
-async def _noop() -> None:
-    return None
+async def test_retention_dry_run_only_counts(orchestrator: Orchestrator) -> None:
+    await orchestrator.chat("deploy with docker", tenant="acme", thread_id="old")
+    counted = await orchestrator.retention(timedelta(seconds=-1), dry_run=True)
+    assert counted["threads"] == 1
+    assert await orchestrator.checkpointer.exists("acme:old")
+    done = await orchestrator.retention(timedelta(seconds=-1))
+    assert done["threads"] == 1 and not await orchestrator.checkpointer.exists("acme:old")

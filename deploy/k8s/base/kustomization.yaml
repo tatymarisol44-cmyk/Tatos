@@ -16,6 +16,7 @@ resources:
   - qdrant.yaml
   - jvm-agent.yaml
   - redis.yaml
+  - retention-cronjob.yaml
 images:
   - name: agency-orchestrator
     newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator

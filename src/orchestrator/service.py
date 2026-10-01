@@ -21,7 +21,7 @@ from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
-from orchestrator.db import Database
+from orchestrator.db import Database, utcnow
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
 from orchestrator.governance import (
     AuditLog,
@@ -308,10 +308,33 @@ class Orchestrator:
             await self.subject_threads.unlink(tenant, key.removeprefix(prefix))
         return len(keys)
 
-    async def purge_threads(self, older_than: timedelta) -> int:
-        """Retention: delete threads whose latest activity is older than `older_than`."""
+    async def start_maintenance(self) -> None:
+        """Start only what scheduled jobs (retention) need: the databases. No catalog
+        indexing, no remote-agent discovery, no model or embedding call (A31), so the
+        job neither costs money nor fails because a provider is down."""
+        packs.validate_config(self.settings)
+        await self.db.start()
+        await self.checkpointer.start()
+        self.knowledge.attach()
+        self.memory.attach()
+
+    async def retention(self, older_than: timedelta, dry_run: bool = False) -> dict[str, Any]:
+        """One retention pass over every store with an expiry; `dry_run` only counts."""
+        return {
+            "dry_run": dry_run,
+            "older_than_days": older_than.days,
+            "threads": await self.purge_threads(older_than, dry_run=dry_run),
+            "memory_facts": await self.memory.store.purge_expired(utcnow(), dry_run=dry_run),
+            "knowledge_leftover_versions": await self.knowledge.reconcile(dry_run=dry_run),
+        }
+
+    async def purge_threads(self, older_than: timedelta, dry_run: bool = False) -> int:
+        """Retention: delete threads whose latest activity is older than `older_than`
+        (clinical ones are archived to the clinical record first)."""
         cutoff = datetime.now(UTC) - older_than
         keys = [k async for k, ts in self.checkpointer.threads() if ts is not None and ts < cutoff]
+        if dry_run:
+            return len(keys)
         for key in keys:
             # Keys are "tenant:thread"; tenant names cannot contain ":" (config check).
             tenant, _, thread_id = key.partition(":")
@@ -320,10 +343,6 @@ class Orchestrator:
             await self.reviews.delete_thread(tenant, thread_id)  # no orphaned drafts
             await self.subject_threads.unlink(tenant, thread_id)
         return len(keys)
-
-    async def purge_memory(self) -> int:
-        """Retention: delete memory facts past their expiry date."""
-        return await self.memory.purge_expired()
 
     # --- data-subject rights (GDPR Art. 15/17/20, HIPAA access, LOPDP) ------------
     async def _subject_conversations(self, tenant: str, subject_id: str) -> list[dict[str, Any]]:

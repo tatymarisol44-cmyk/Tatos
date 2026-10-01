@@ -100,6 +100,10 @@ class MemoryFact:
 class MemoryStore(Protocol):
     async def ensure(self, name: str, dim: int) -> None: ...
 
+    def attach(self, name: str) -> None:
+        """Use an existing collection without creating it (maintenance jobs)."""
+        ...
+
     async def upsert(self, facts: list[MemoryFact], vectors: list[list[float]]) -> None: ...
 
     async def search(
@@ -110,7 +114,7 @@ class MemoryStore(Protocol):
 
     async def delete_subject(self, tenant: str, subject_id: str) -> int: ...
 
-    async def purge_expired(self, now: datetime) -> int: ...
+    async def purge_expired(self, now: datetime, dry_run: bool = False) -> int: ...
 
 
 def _expired(fact: MemoryFact, now: datetime) -> bool:
@@ -122,6 +126,9 @@ class InMemoryMemoryStore:
         self._rows: dict[str, tuple[MemoryFact, list[float]]] = {}
 
     async def ensure(self, name: str, dim: int) -> None:
+        return None
+
+    def attach(self, name: str) -> None:
         return None
 
     async def upsert(self, facts: list[MemoryFact], vectors: list[list[float]]) -> None:
@@ -155,10 +162,11 @@ class InMemoryMemoryStore:
             del self._rows[i]
         return len(ids)
 
-    async def purge_expired(self, now: datetime) -> int:
+    async def purge_expired(self, now: datetime, dry_run: bool = False) -> int:
         ids = [i for i, (f, _) in self._rows.items() if _expired(f, now)]
-        for i in ids:
-            del self._rows[i]
+        if not dry_run:
+            for i in ids:
+                del self._rows[i]
         return len(ids)
 
 
@@ -272,12 +280,17 @@ class QdrantMemoryStore:
             )
         return count
 
-    async def purge_expired(self, now: datetime) -> int:
+    def attach(self, name: str) -> None:
+        self._name = name
+
+    async def purge_expired(self, now: datetime, dry_run: bool = False) -> int:
         from qdrant_client.models import FieldCondition, Filter, FilterSelector, Range
 
+        if not await self._client.collection_exists(self._name):
+            return 0  # nothing was ever remembered
         flt = Filter(must=[FieldCondition(key="expires_ts", range=Range(lte=now.timestamp()))])
         count = (await self._client.count(self._name, count_filter=flt)).count
-        if count:
+        if count and not dry_run:
             await self._client.delete(
                 self._name, points_selector=FilterSelector(filter=flt), wait=True
             )
@@ -334,6 +347,10 @@ class SemanticMemory:
     @property
     def collection(self) -> str:
         return f"{self.settings.memory_collection}_{self.embedder.signature}"
+
+    def attach(self) -> None:
+        """For maintenance jobs: no embedding call, no collection created."""
+        self.store.attach(self.collection)
 
     async def start(self) -> None:
         [probe] = await self.embedder.embed(["probe"])

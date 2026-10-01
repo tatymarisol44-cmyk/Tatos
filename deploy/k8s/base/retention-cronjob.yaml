@@ -1,0 +1,73 @@
+# Retention (audit finding A31), every night:
+# - conversations inactive for THREAD_RETENTION_DAYS (clinical ones are archived to the
+#   clinical record first);
+# - memory facts past their expiry;
+# - document versions left behind by a failed upload.
+# Starts the databases only: no model or embedding calls. A failed run is a failed Job,
+# which the alerts in deploy/monitoring/alerts.yml page on, together with "no
+# successful run in 26 hours".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agency-retention
+  labels: {app.kubernetes.io/name: agency-retention}
+spec:
+  schedule: "17 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          # Its own name: the API Service must not route traffic to these pods.
+          labels: {app.kubernetes.io/name: agency-retention}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: retention
+              image: agency-orchestrator
+              command: ["agency", "retention"]
+              envFrom:
+                - configMapRef: {name: agency-orchestrator-config}
+                - secretRef: {name: agency-orchestrator-secrets}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - {name: tmp, emptyDir: {}}
+---
+# The job talks to Qdrant and Postgres only (plus DNS, from allow-dns).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: retention-egress
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: agency-retention}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: qdrant}
+      ports: [{port: 6333}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32, 169.254.170.2/32]
+      ports: [{port: 5432}]

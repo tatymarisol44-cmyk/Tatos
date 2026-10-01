@@ -1,0 +1,24 @@
+# Prometheus alerting rules. Load with `rule_files` (see deploy/prometheus.yml), or wrap in
+# a PrometheusRule if the cluster runs the Prometheus Operator. The Kubernetes rules need
+# kube-state-metrics.
+groups:
+  - name: agency-retention
+    rules:
+      - alert: RetentionJobFailed
+        expr: kube_job_status_failed{namespace="agency", job_name=~"agency-retention-.*"} > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: The nightly retention job failed
+          description: >-
+            Conversations, expired memory facts or abandoned document versions were not
+            removed. Check `kubectl -n agency logs job/{{ $labels.job_name }}`.
+      - alert: RetentionJobNotRunning
+        expr: >-
+          time() - kube_cronjob_status_last_successful_time{namespace="agency",
+          cronjob="agency-retention"} > 26 * 3600
+        for: 15m
+        labels: {severity: page}
+        annotations:
+          summary: No successful retention run in 26 hours
+          description: The CronJob is suspended, cannot be scheduled, or keeps failing.

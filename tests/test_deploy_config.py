@@ -104,3 +104,17 @@ def test_images_are_scanned_before_anything_is_pushed() -> None:
     for step in steps[:first_push]:
         if "build-push-action" in step.get("uses", ""):
             assert step["with"]["push"] is False and step["with"]["load"] is True
+
+
+def test_retention_runs_on_a_schedule_and_alerts() -> None:
+    # A31: retention is scheduled, not left to an operator, and its failure pages.
+    job = _k8s("CronJob", "agency-retention")
+    pod = job["spec"]["jobTemplate"]["spec"]["template"]
+    assert pod["spec"]["containers"][0]["command"] == ["agency", "retention"]
+    assert job["spec"]["concurrencyPolicy"] == "Forbid"
+    # Not selected by the API Service (it must not receive traffic).
+    api = _k8s("Service", "agency-orchestrator")["spec"]["selector"]
+    assert pod["metadata"]["labels"]["app.kubernetes.io/name"] != api["app.kubernetes.io/name"]
+    rules = yaml.safe_load((ROOT / "deploy" / "monitoring" / "alerts.yml").read_text("utf-8"))
+    names = {r["alert"] for g in rules["groups"] for r in g["rules"]}
+    assert {"RetentionJobFailed", "RetentionJobNotRunning"} <= names
