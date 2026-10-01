@@ -59,6 +59,14 @@ Owners asked to compare the two curves day by day. The curves are descriptive. T
 - Profiling a person does depend on consent: the RFM segment, the high-value ranking and therefore campaign targeting require the `analytics` consent, opt-in, where no record means no.
 - The summary states both population sizes.
 
+**Asking for consent.**
+- The patient app asks once, on first sign-in or before booking (`GET /v1/me/consents`). It lists only the purposes not answered yet. A "no" is an answer and is not asked again; the patient can change any choice in their profile.
+- Each pack writes its own pitch: what the patient gains, in plain words. The pitch is checked against the pack's banned advertising claims.
+- Some rules are not configurable:
+  - nothing is pre-selected;
+  - "yes" and "no" are shown with equal weight;
+  - a fixed footer says that care and appointments never depend on the answer. Consent tied to the service is not freely given (GDPR Art. 7(4)).
+
 ## Consequences
 
 - Lift now estimates the effect of *assigning* the campaign among eligible patients. That is what an owner can decide on. It is smaller than the effect of *receiving* it when many deliveries fail, and the attrition table shows that gap.
