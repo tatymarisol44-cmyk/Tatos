@@ -1,0 +1,87 @@
+name: Deploy
+
+# Continuous delivery with a health gate and automatic rollback (second audit).
+# - rehearsal: on every green CI run on main, deploy the real manifests to a throwaway
+#   kind cluster with deploy/scripts/rollout.sh, then deploy a broken image on purpose
+#   and check that the script rolls it back while the old pods keep serving.
+# - production: manual, behind the `production` environment (required reviewers), with
+#   the same script and the image CI pushed for that commit.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image to deploy to production (ghcr.io/...:sha-xxxxxxx)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SMOKE_API_KEY: ci-key
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          submodules: recursive
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          cluster_name: rehearsal
+      - name: Build the image and load it into kind
+        run: |
+          docker build -t agency-orchestrator:ci .
+          kind load docker-image agency-orchestrator:ci --name rehearsal
+      - name: First deploy (schema migrated by the init container)
+        run: |
+          kubectl apply -k deploy/k8s/overlays/ci
+          kubectl -n agency rollout status deploy/postgres --timeout=180s
+          kubectl -n agency rollout status statefulset/qdrant --timeout=180s
+          kubectl -n agency rollout status deploy/redis --timeout=180s
+          bash deploy/scripts/rollout.sh agency agency-orchestrator:ci 300s
+      - name: Broken release is rolled back, service stays up
+        run: |
+          set +e
+          bash deploy/scripts/rollout.sh agency agency-orchestrator:does-not-exist 90s
+          code=$?
+          set -e
+          test "$code" -eq 1 || { echo "a broken release must fail the deploy"; exit 1; }
+          image=$(kubectl -n agency get deploy/agency-orchestrator \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')
+          test "$image" = "agency-orchestrator:ci" || { echo "not rolled back: $image"; exit 1; }
+          kubectl -n agency rollout status deploy/agency-orchestrator --timeout=120s
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl -n agency get pods -o wide
+          kubectl -n agency describe deploy/agency-orchestrator
+          kubectl -n agency logs deploy/agency-orchestrator --all-containers --tail=200 || true
+
+  production:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production # configure required reviewers in the repository settings
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Cluster credentials
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          test -n "$KUBECONFIG_DATA" || { echo "set the KUBECONFIG secret of the production environment"; exit 1; }
+          mkdir -p ~/.kube && printf '%s' "$KUBECONFIG_DATA" > ~/.kube/config && chmod 600 ~/.kube/config
+      - name: Health-gated rollout with automatic rollback
+        env:
+          SMOKE_API_KEY: ${{ secrets.SMOKE_API_KEY }}
+        run: bash deploy/scripts/rollout.sh agency "${{ inputs.image }}" 600s

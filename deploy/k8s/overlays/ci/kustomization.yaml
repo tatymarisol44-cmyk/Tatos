@@ -1,0 +1,39 @@
+# Deploy rehearsal on a throwaway kind cluster (.github/workflows/deploy.yml): the real
+# base manifests, plus an in-cluster Postgres, fake models and no Java agent, so it needs
+# no provider keys. APP_ENV stays prod: the durable-profile and schema checks run.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - postgres.yaml
+images:
+  # The base already renamed the image to its GHCR name; the rehearsal loads a locally
+  # built image into kind under this name instead.
+  - name: ghcr.io/tatymarisol44-cmyk/agency-orchestrator
+    newName: agency-orchestrator
+    newTag: ci
+secretGenerator:
+  - name: agency-orchestrator-secrets
+    options: {disableNameSuffixHash: true}
+    literals:
+      - API_KEYS=ci-key:ci
+      - DATABASE_URL=postgresql+psycopg://agency:agency@postgres:5432/agency
+      - POSTGRES_URL=postgresql://agency:agency@postgres:5432/agency
+      # In-cluster, throwaway: no TLS inside the kind network.
+      - POSTGRES_ALLOW_INSECURE=true
+patches:
+  - target: {kind: ConfigMap, name: agency-orchestrator-config}
+    patch: |-
+      - {op: replace, path: /data/LLM_BACKEND, value: fake}
+      - {op: replace, path: /data/EMBEDDING_BACKEND, value: hashing}
+      - {op: replace, path: /data/REMOTE_AGENTS, value: "[]"}
+      - {op: replace, path: /data/OTEL_ENABLED, value: "false"}
+  - target: {kind: Deployment, name: jvm-agent}
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: jvm-agent}
+  - target: {kind: Deployment, name: agency-orchestrator}
+    patch: |-
+      - {op: replace, path: /spec/template/spec/containers/0/imagePullPolicy, value: IfNotPresent}

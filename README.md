@@ -254,7 +254,7 @@ docs/adr/         architecture decision records
 
 ## Known limitations & roadmap
 
-- **No deployment pipeline (CD) yet.** CI scans images before pushing them to GHCR, but nothing deploys them with health checks and rollback. See docs/load-test.md for the load test and deploy/backup for the verified backup/restore drill.
+- **Production deploy needs a cluster.** `deploy.yml` rehearses every green `main` on a kind cluster (healthy rollout, then a broken image rolled back automatically); the production job is manual behind the `production` environment and needs its `KUBECONFIG` secret. Load and backup/restore evidence: [docs/load-test.md](docs/load-test.md), `deploy/backup/`.
 - **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
 - **Channels:** Telegram only (outbound). Inbound booking by bot, WhatsApp Business, Facebook/Instagram publishing and paid ads (with approval before spend) are planned; Meta's APIs need app review.
 - **Identity:** per-person API keys (`sk_` staff keys with roles, `pk_` patient keys bound to one subject); `X-Actor` is ignored. SSO/OIDC is future work.

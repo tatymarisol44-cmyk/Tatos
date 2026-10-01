@@ -127,3 +127,16 @@ def test_schema_is_migrated_before_the_api_starts() -> None:
     assert init["command"] == ["agency", "db", "upgrade"]
     config = _k8s("ConfigMap", "agency-orchestrator-config")["data"]
     assert config.get("DB_AUTO_MIGRATE", "false") == "false"
+
+
+def test_deploys_are_health_gated_and_roll_back() -> None:
+    # Second audit: CD with a health check and rollback, rehearsed on every push.
+    flow = yaml.safe_load((WORKFLOWS / "deploy.yml").read_text(encoding="utf-8"))
+    steps = " ".join(str(s.get("run", "")) for s in flow["jobs"]["rehearsal"]["steps"])
+    assert "rollout.sh agency agency-orchestrator:ci" in steps
+    assert "does-not-exist" in steps  # a broken release is rehearsed too
+    assert flow["jobs"]["production"]["environment"] == "production"
+    script = (ROOT / "deploy" / "scripts" / "rollout.sh").read_text(encoding="utf-8")
+    assert "rollout undo" in script and "rollout status" in script
+    strategy = _k8s("Deployment", "agency-orchestrator")["spec"]["strategy"]
+    assert strategy["rollingUpdate"]["maxUnavailable"] == 0  # old pods serve meanwhile

@@ -1,0 +1,55 @@
+# Throwaway Postgres for the deploy rehearsal only. Production uses a managed database
+# (RDS, Cloud SQL, Azure Database...) reached through DATABASE_URL in the secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels: {app.kubernetes.io/name: postgres}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: postgres}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: postgres}
+    spec:
+      automountServiceAccountToken: false
+      # The namespace enforces the restricted Pod Security profile: run as the image's
+      # postgres user (uid 70 in the Alpine image), no privilege escalation.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          env:
+            - {name: POSTGRES_USER, value: agency}
+            - {name: POSTGRES_PASSWORD, value: agency}
+            - {name: POSTGRES_DB, value: agency}
+          ports: [{name: pg, containerPort: 5432}]
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "agency", "-d", "agency"]}
+            periodSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: run, mountPath: /var/run/postgresql}
+      volumes:
+        - {name: data, emptyDir: {}}
+        - {name: run, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app.kubernetes.io/name: postgres}
+  ports: [{name: pg, port: 5432, targetPort: pg}]
