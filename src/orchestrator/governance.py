@@ -22,7 +22,7 @@ import builtins
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -42,6 +42,8 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -174,16 +176,23 @@ def event_hash(
     details: dict[str, Any],
 ) -> str:
     body = json.dumps(
-        [prev_hash, seq, ts.isoformat(), tenant, actor, action, resource, subject_id, details],
+        # Always the UTC form: the hash must not depend on the reader's time zone.
+        [
+            prev_hash,
+            seq,
+            ts.astimezone(UTC).isoformat(),
+            tenant,
+            actor,
+            action,
+            resource,
+            subject_id,
+            details,
+        ],
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
     )
     return hashlib.sha256(body.encode()).hexdigest()
-
-
-class AuditChainBusyError(RuntimeError):
-    """Two writers created the first event of a tenant at the same time; retry."""
 
 
 class AuditLog:
@@ -219,6 +228,16 @@ class AuditLog:
     ) -> None:
         """Audit inside the caller's transaction: the business write and its event
         commit or roll back together (no change without its audit event)."""
+        # The head row exists before anyone increments it. ON CONFLICT DO NOTHING lets
+        # concurrent first writers of a new tenant wait for each other instead of
+        # failing (found by the Postgres concurrency tests).
+        dialect_insert = pg_insert if conn.dialect.name == "postgresql" else sqlite_insert
+        await conn.execute(
+            dialect_insert(audit_heads)
+            .values(tenant=tenant, seq=0, hash=GENESIS)
+            .on_conflict_do_nothing(index_elements=["tenant"])
+        )
+        # Row-locking increment: concurrent writers of a tenant take turns here.
         head = (
             await conn.execute(
                 update(audit_heads)
@@ -226,15 +245,8 @@ class AuditLog:
                 .values(seq=audit_heads.c.seq + 1)
                 .returning(audit_heads.c.seq, audit_heads.c.hash)
             )
-        ).first()
-        if head is None:  # first event of this tenant
-            seq, prev = 1, GENESIS
-            try:
-                await conn.execute(insert(audit_heads).values(tenant=tenant, seq=1, hash=prev))
-            except IntegrityError as exc:  # the whole transaction rolls back; retry it
-                raise AuditChainBusyError(tenant) from exc
-        else:
-            seq, prev = int(head.seq), str(head.hash)
+        ).one()
+        seq, prev = int(head.seq), str(head.hash)
         ts = utcnow()
         body = _canonical(details)
         digest = event_hash(prev, seq, ts, tenant, actor, action, resource, subject_id, body)

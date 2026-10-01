@@ -38,3 +38,19 @@ async def test_insecure_postgres_needs_an_explicit_opt_out(settings: Settings) -
     settings.app_env = "prod"
     settings.postgres_allow_insecure = True
     await build_engine(settings).dispose()
+
+
+def test_timestamps_read_back_are_utc() -> None:
+    # Postgres returns timestamptz in the session's TimeZone; the audit hashes (and every
+    # API date) need one canonical form whatever that zone is.
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from orchestrator.db import aware
+
+    quito = datetime(2026, 10, 1, 10, 0, tzinfo=timezone(timedelta(hours=-5)))
+    utc = aware(quito)
+    assert utc is not None and utc == quito and utc.tzinfo == UTC
+    assert utc.isoformat() == "2026-10-01T15:00:00+00:00"
+    naive = aware(datetime(2026, 10, 1, 15, 0))
+    assert naive is not None and naive.isoformat() == "2026-10-01T15:00:00+00:00"
+    assert aware(None) is None

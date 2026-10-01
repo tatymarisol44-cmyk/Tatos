@@ -52,6 +52,8 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
         [alert] = await orch.crm.alerts(tenant, now)
         assert alert.kind == "recall_due" and alert.level == "red"
 
+        # Segments profile people: only with the analytics consent (A19).
+        await orch.consents.record(tenant, "p1", Purpose.ANALYTICS, True, source="f", actor="r")
         summary = await orch.insights.summary(tenant, now)
         assert summary["segments"]["dormant"] == 1
         assert summary["high_value"]["patients"] == ["p1"]

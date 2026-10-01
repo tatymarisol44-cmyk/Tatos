@@ -30,11 +30,15 @@ def utcnow() -> datetime:
 
 
 def aware(value: datetime | None) -> datetime | None:
-    """SQLite returns naive datetimes for timezone-aware columns; every timestamp we
-    store is UTC, so a naive value read back is UTC too."""
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
+    """Every timestamp read back, in UTC. SQLite returns naive datetimes (we store UTC);
+    Postgres returns them in the session's TimeZone, which on a managed database may be
+    local time: the same instant, but a different ISO string, which broke the audit
+    chain's hashes there (found on a Postgres in UTC-5)."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def build_engine(settings: Settings) -> AsyncEngine:

@@ -49,8 +49,12 @@ jobs:
           --health-cmd "pg_isready -U agency -d agency"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      # Enables the checkpointer integration test (thread survives a new instance).
+      # Enables the Postgres tests: checkpointer, business flow, concurrency across two
+      # replicas (tests/test_postgres_concurrency.py).
       TEST_POSTGRES_URL: postgresql://agency:agency@localhost:5432/agency
+      # Sessions in a non-UTC zone, like many managed databases: this once broke the
+      # audit-chain hashes (timestamps came back as -05:00).
+      PGTZ: America/Guayaquil
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0

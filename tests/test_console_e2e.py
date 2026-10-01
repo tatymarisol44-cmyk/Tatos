@@ -7,7 +7,9 @@ rejected answer never reaches the receptionist's page. Needs Playwright and Chro
 
 from __future__ import annotations
 
+import asyncio
 import socket
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -52,6 +54,21 @@ def server(settings: Settings, catalog: Catalog) -> Iterator[str]:
     thread.join(timeout=10)
 
 
+@pytest.fixture
+def subprocess_loop() -> Iterator[None]:
+    """Playwright starts a driver process: on Windows that needs the Proactor loop, which
+    conftest swaps for the selector loop (psycopg). Restore it for this test only."""
+    if sys.platform != "win32":
+        yield
+        return
+    previous = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    try:
+        yield
+    finally:
+        asyncio.set_event_loop_policy(previous)
+
+
 def _key(base: str, name: str, *roles: str) -> str:
     resp = httpx.post(
         f"{base}/v1/admin/staff", json={"name": name, "roles": list(roles)}, headers=SERVICE
@@ -74,7 +91,9 @@ def _ask(page: Any, question: str) -> None:
     page.press("#question", "Enter")
 
 
-def test_a32_held_answer_is_shown_reviewed_and_never_leaked(server: str) -> None:
+def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
+    server: str, subprocess_loop: None
+) -> None:
     reception = _key(server, "maria", "reception")
     dentist = _key(server, "dr.lopez", "reviewer")
     errors: list[str] = []

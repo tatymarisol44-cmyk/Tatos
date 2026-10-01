@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -12,6 +14,15 @@ from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 
 FIXTURES = Path(__file__).parent / "fixtures" / "agents"
+
+
+@pytest.fixture(scope="session")
+def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    """psycopg's async mode cannot run on Windows' default Proactor loop; Linux (CI,
+    production) uses the selector loop anyway."""
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.DefaultEventLoopPolicy()
 
 
 @pytest.fixture
