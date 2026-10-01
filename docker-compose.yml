@@ -2,6 +2,8 @@
 #   cp .env.example .env   # add at least one LLM provider key
 #   docker compose up --build
 # API http://localhost:8000/docs · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
+# Every published port is bound to 127.0.0.1: nothing (least of all Postgres with dev
+# credentials) is reachable from other machines on the network. Images are pinned by digest.
 services:
   api:
     build:
@@ -17,7 +19,7 @@ services:
       REMOTE_AGENTS: '["http://jvm-agent:8080"]'
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     depends_on:
       qdrant:
         condition: service_started
@@ -30,8 +32,8 @@ services:
     restart: unless-stopped
 
   qdrant:
-    image: qdrant/qdrant:v1.13.4
-    ports: ["6333:6333"]
+    image: qdrant/qdrant:v1.13.4@sha256:318c11b72aaab96b36e9662ad244de3cabd0653a1b942d4e8191f18296c81af0
+    ports: ["127.0.0.1:6333:6333"]
     volumes: [qdrant-data:/qdrant/storage]
 
   # Remote specialist in Java/Spring Boot, spoken to over A2A. Rule-based by default;
@@ -43,17 +45,17 @@ services:
       AGENT_PUBLIC_URL: http://jvm-agent:8080
       AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-none}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     restart: unless-stopped
 
   # Conversation checkpoints (LangGraph). Dev credentials only.
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_USER: agency
       POSTGRES_PASSWORD: agency
       POSTGRES_DB: agency
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [postgres-data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agency -d agency"]
@@ -62,20 +64,20 @@ services:
       retries: 10
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.118.0
+    image: otel/opentelemetry-collector-contrib:0.118.0@sha256:3f6274fe609da4f9964fbc2ef36b83d08d47964fbb11629251393590d3924072
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes: [./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro]
     depends_on: [jaeger]
 
   jaeger:
-    image: jaegertracing/jaeger:2.2.0
-    ports: ["16686:16686"]
+    image: jaegertracing/jaeger:2.2.0@sha256:1dedb5660e77c8505ca2a40eeca957feabaaebeccf7bcf583965326176abc40d
+    ports: ["127.0.0.1:16686:16686"]
 
   prometheus:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes: [./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
-    ports: ["9090:9090"]
+    ports: ["127.0.0.1:9090:9090"]
 
 volumes:
   qdrant-data:

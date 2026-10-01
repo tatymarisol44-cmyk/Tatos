@@ -1,0 +1,106 @@
+"""Regression tests for the deployment configuration (external audit, production step).
+
+These read the files that ship (Dockerfiles, compose, Kubernetes, workflows) and pin the
+properties the audit asked for, so a later edit cannot silently undo them."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+K8S = ROOT / "deploy" / "k8s" / "base"
+WORKFLOWS = ROOT / ".github" / "workflows"
+DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+
+
+def _docs(path: Path) -> list[dict[str, Any]]:
+    return [d for d in yaml.safe_load_all(path.read_text(encoding="utf-8")) if d]
+
+
+def _k8s(kind: str, name: str) -> dict[str, Any]:
+    for path in K8S.glob("*.yaml"):
+        for doc in _docs(path):
+            if doc.get("kind") == kind and doc["metadata"]["name"] == name:
+                return doc
+    raise AssertionError(f"{kind}/{name} not found")
+
+
+def test_base_images_are_pinned_by_digest() -> None:
+    dockerfiles = [ROOT / "Dockerfile", ROOT / "agents" / "jvm-specialist" / "Dockerfile"]
+    for path in dockerfiles:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("FROM "):
+                assert DIGEST.search(line.split()[1]), f"{path.name}: {line}"
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    for name, svc in compose["services"].items():
+        if "image" in svc:
+            assert DIGEST.search(svc["image"]), name
+    for path in K8S.glob("*.yaml"):
+        for doc in _docs(path):
+            pod = doc.get("spec", {}).get("template", {}).get("spec", {})
+            for container in pod.get("containers", []):
+                image = container["image"]
+                # Our own images are pinned by kustomize `images:`; third-party ones by digest.
+                if "/" in image or ":" in image:
+                    assert DIGEST.search(image), f"{path.name}: {image}"
+
+
+def test_compose_publishes_ports_on_localhost_only() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    for name, svc in compose["services"].items():
+        for port in svc.get("ports", []):
+            assert str(port).startswith("127.0.0.1:"), f"{name}: {port}"
+
+
+def test_replicated_api_uses_the_shared_rate_limiter() -> None:
+    replicas = _k8s("Deployment", "agency-orchestrator")["spec"]["replicas"]
+    max_replicas = _k8s("HorizontalPodAutoscaler", "agency-orchestrator")["spec"]["maxReplicas"]
+    assert max(replicas, max_replicas) > 1
+    config = _k8s("ConfigMap", "agency-orchestrator-config")["data"]
+    assert config["RATE_LIMIT_BACKEND"] == "redis"
+    assert config["REDIS_URL"].startswith("redis://redis:")
+    _k8s("Service", "redis")
+
+
+def test_namespace_denies_by_default_and_api_egress_is_scoped() -> None:
+    deny = _k8s("NetworkPolicy", "default-deny-all")["spec"]
+    assert deny["podSelector"] == {}
+    assert set(deny["policyTypes"]) == {"Ingress", "Egress"}
+    assert "ingress" not in deny and "egress" not in deny
+    egress = _k8s("NetworkPolicy", "api-egress")["spec"]["egress"]
+    for rule in egress:
+        assert rule.get("ports"), "every egress rule names its ports"
+        for peer in rule["to"]:
+            if "ipBlock" in peer:
+                assert "169.254.169.254/32" in peer["ipBlock"]["except"]
+
+
+def test_workflow_actions_are_pinned_to_commit_shas() -> None:
+    for path in WORKFLOWS.glob("*.yml"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"uses:\s*(\S+)", line)
+            if match:
+                assert re.search(r"@[0-9a-f]{40}$", match.group(1)), f"{path.name}: {line}"
+
+
+def test_images_are_scanned_before_anything_is_pushed() -> None:
+    ci = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+    steps = ci["jobs"]["image"]["steps"]
+
+    def is_push(step: dict[str, Any]) -> bool:
+        return "build-push-action" in step.get("uses", "") and step["with"].get("push") is True
+
+    def is_scan(step: dict[str, Any]) -> bool:
+        return "trivy-action" in step.get("uses", "")
+
+    first_push = next(i for i, s in enumerate(steps) if is_push(s))
+    scans = [i for i, s in enumerate(steps) if is_scan(s)]
+    assert len(scans) == 2
+    assert all(i < first_push for i in scans)
+    for step in steps[:first_push]:
+        if "build-push-action" in step.get("uses", ""):
+            assert step["with"]["push"] is False and step["with"]["load"] is True

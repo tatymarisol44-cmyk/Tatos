@@ -21,5 +21,5 @@ GDPR Art. 22 also restricts decisions with significant effects taken solely by a
 
 - Reviews add latency measured in human time, by design. The latency metric still measures machine time.
 - The same review queue is reachable from REST, MCP (from the developer's editor) and A2A (a remote caller gets a neutral "under review" reply).
-- `X-Actor` is trusted as declared. Per-user SSO/OIDC in the orchestrator itself is future work; until then, the API key identifies the application and the application vouches for the person.
+- *(Superseded by `auth.py`, audit finding A01: the actor now comes from a per-person key and `X-Actor` is ignored.)* `X-Actor` is trusted as declared. Per-user SSO/OIDC in the orchestrator itself is future work; until then, the API key identifies the application and the application vouches for the person.
 - Schema changes rely on `create_all` (idempotent). A migration tool (Alembic) is needed before the first breaking schema change in production.

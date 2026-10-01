@@ -249,10 +249,10 @@ docs/adr/         architecture decision records
 
 ## Known limitations & roadmap
 
-- **The Kubernetes base does not deploy Redis yet.** A Redis rate limiter exists (`RATE_LIMIT_BACKEND=redis`), but the manifests run 2 replicas with in-process limits and `sessionAffinity: ClientIP`. Next: add Redis (or point at a managed one) and switch the backend.
+- **No deployment pipeline (CD) yet.** CI scans images before pushing them to GHCR, but nothing deploys them with health checks and rollback. Load tests, backup/restore drills and Alembic migrations are also pending.
 - **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
 - **Channels:** Telegram only (outbound). Inbound booking by bot, WhatsApp Business, Facebook/Instagram publishing and paid ads (with approval before spend) are planned; Meta's APIs need app review.
-- **Identity:** `X-Actor` is declared by the calling application. Per-user SSO/OIDC and role-based access (e.g. clinicians only for clinical data) are future work.
+- **Identity:** per-person API keys (staff keys with roles, patient keys bound to one subject; see `auth.py`); `X-Actor` is ignored. SSO/OIDC is future work.
 - **Schema migrations:** tables are created with `create_all`; add Alembic before the first breaking schema change in production.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.

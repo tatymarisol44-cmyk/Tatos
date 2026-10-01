@@ -22,7 +22,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: qdrant
-          image: qdrant/qdrant:v1.13.4
+          image: qdrant/qdrant:v1.13.4@sha256:318c11b72aaab96b36e9662ad244de3cabd0653a1b942d4e8191f18296c81af0
           ports: [{name: http, containerPort: 6333}]
           resources:
             requests: {cpu: 100m, memory: 256Mi}

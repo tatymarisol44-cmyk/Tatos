@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage, reproducible build: dependencies come from uv.lock (--frozen),
-# the runtime image has no build tools and runs as a non-root user.
+# Multi-stage, reproducible build: base images are pinned by digest (Dependabot bumps them),
+# dependencies come from uv.lock (--frozen), the runtime image has no build tools and
+# runs as a non-root user.
 
-FROM ghcr.io/astral-sh/uv:0.12.19 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
 
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS builder
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -16,7 +17,7 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS runtime
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="agency-orchestrator" \
       org.opencontainers.image.version="${VERSION}" \

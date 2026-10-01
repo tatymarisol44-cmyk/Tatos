@@ -30,4 +30,4 @@ The API must be stateless so the HPA can add and remove pods freely.
 - Postgres becomes a runtime dependency in docker-compose and k8s (`POSTGRES_URL` via the secret). Startup fails fast if it is unreachable.
 - Each node adds a write per checkpoint. That is milliseconds, against LLM calls that take seconds.
 - Threads grow without bound. A retention job (for example `adelete_thread` for threads older than N days, or on tenant request for GDPR) is future work.
-- Rate limiting is still per replica, so session affinity stays until that moves to Redis.
+- Rate limiting was still per replica, so session affinity stayed until the limiter moved to Redis (the Kubernetes base now deploys it; only the dev overlay, with in-memory threads, keeps affinity).

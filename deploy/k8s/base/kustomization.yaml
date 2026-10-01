@@ -15,6 +15,7 @@ resources:
   - networkpolicy.yaml
   - qdrant.yaml
   - jvm-agent.yaml
+  - redis.yaml
 images:
   - name: agency-orchestrator
     newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator

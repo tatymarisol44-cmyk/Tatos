@@ -5,6 +5,5 @@ metadata:
 spec:
   selector: {app.kubernetes.io/name: agency-orchestrator}
   ports: [{name: http, port: 80, targetPort: http}]
-  # Conversation state lives in Postgres, so any replica can serve any thread. Affinity is
-  # kept only because the rate limiter is still per replica (see README "Known limitations").
-  sessionAffinity: ClientIP
+  # No session affinity: conversation state lives in Postgres and the rate limiter in Redis,
+  # so any replica can serve any request.
