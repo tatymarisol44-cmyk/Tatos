@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -43,7 +43,7 @@ from sqlalchemy import (
 )
 
 from orchestrator.config import Settings
-from orchestrator.db import Database, aware, metadata, utcnow
+from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.packs import pack_for
 
@@ -131,7 +131,12 @@ def money(value: Any) -> float:
 
 
 def _utc(value: datetime) -> datetime:
-    return aware(value) or value
+    """The same instant in UTC (A24). Every timestamp is stored in UTC, so a stored value
+    means the same on SQLite (which drops offsets) and Postgres. The API only accepts
+    times with an offset; a naive value here comes from our own code and is UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -360,13 +365,22 @@ class CrmService:
         current = await self.get_appointment(tenant, appointment_id)
         if status not in _TRANSITIONS.get(current["status"], set()):
             raise CrmError(f"cannot move an appointment from {current['status']} to {status}")
+        # Conditional on the status just checked (A23): if another request moved the
+        # appointment meanwhile, this one changes nothing and gets a conflict.
         query = (
             update(appointments)
-            .where(and_(appointments.c.tenant == tenant, appointments.c.id == appointment_id))
+            .where(
+                and_(
+                    appointments.c.tenant == tenant,
+                    appointments.c.id == appointment_id,
+                    appointments.c.status == current["status"],
+                )
+            )
             .values(status=status, updated_at=utcnow())
         )
         async with self.db.engine.begin() as conn:
-            await conn.execute(query)
+            if (await conn.execute(query)).rowcount != 1:
+                raise CrmError("the appointment changed meanwhile; reload it")
             await self.audit.record_in(
                 conn,
                 tenant,
@@ -439,11 +453,18 @@ class CrmService:
         current = await self.get_treatment(tenant, treatment_id)
         query = (
             update(treatments)
-            .where(and_(treatments.c.tenant == tenant, treatments.c.id == treatment_id))
+            .where(
+                and_(
+                    treatments.c.tenant == tenant,
+                    treatments.c.id == treatment_id,
+                    treatments.c.stage == current["stage"],
+                )
+            )
             .values(stage=stage, updated_at=utcnow())
         )
         async with self.db.engine.begin() as conn:
-            await conn.execute(query)
+            if (await conn.execute(query)).rowcount != 1:
+                raise CrmError("the treatment plan changed meanwhile; reload it")
             await self.audit.record_in(
                 conn,
                 tenant,

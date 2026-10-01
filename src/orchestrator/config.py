@@ -115,6 +115,10 @@ class Settings(BaseSettings):
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000
+    # Whole request body, enforced as it arrives (413). Document upload gets more room:
+    # KNOWLEDGE_MAX_DOC_CHARS of text can take up to ~4 bytes per character in JSON.
+    max_body_bytes: int = Field(default=256 * 1024, ge=1024)
+    max_document_body_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 

@@ -16,11 +16,11 @@ Role matrix:
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
+from pydantic import AwareDatetime
 
 from orchestrator.api.schemas import (
     SUBJECT_ID,
@@ -302,8 +302,8 @@ async def create_appointment(body: AppointmentIn, request: Request, p: Reception
 async def list_appointments(
     request: Request,
     p: CareReader,
-    start: datetime | None = None,
-    end: datetime | None = None,
+    start: AwareDatetime | None = None,
+    end: AwareDatetime | None = None,
     patient_id: str | None = Query(default=None, pattern=SUBJECT_ID),
 ) -> list[dict[str, Any]]:
     return await orch(request).crm.list_appointments(

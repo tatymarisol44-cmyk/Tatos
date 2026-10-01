@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -25,6 +25,7 @@ from orchestrator.campaigns import (
     recipients,
 )
 from orchestrator.config import Settings
+from orchestrator.crm import CrmError
 from orchestrator.db import utcnow
 from orchestrator.governance import Purpose, ThreadBusyError, audit_events, reviews
 from orchestrator.llm import FakeLLM
@@ -951,3 +952,133 @@ async def test_retention_purge_archives_clinical_conversations(o: Orchestrator) 
     assert [n["thread_id"] for n in await o.crm.clinical_notes("acme", "p1")] == ["old"]
     [note] = await o.crm.clinical_notes("acme", "p1")
     assert note["reason"] == "retention" and note["review"]["status"] == "rejected"
+
+
+# --- step 5: contracts --------------------------------------------------------------------
+async def test_a23_concurrent_transitions_one_wins(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Prueba 27: a cancel that read "scheduled" overwrote a completion made meanwhile.
+    await _patient(o)
+    appt = await o.crm.create_appointment(
+        "acme", "p1", starts_at=utcnow(), duration_min=30, kind="x", price=50, actor="r"
+    )
+    read, resume = asyncio.Event(), asyncio.Event()
+    original = o.crm.get_appointment
+    first = True
+
+    async def slow_read(*args: object, **kwargs: object) -> dict[str, object]:
+        nonlocal first
+        result = await original(*args, **kwargs)  # type: ignore[arg-type]
+        if first:
+            first = False
+            read.set()
+            await resume.wait()
+        return result
+
+    monkeypatch.setattr(o.crm, "get_appointment", slow_read)
+    cancel = asyncio.create_task(o.crm.set_appointment_status("acme", appt["id"], "cancelled", "r"))
+    await read.wait()
+    await o.crm.set_appointment_status("acme", appt["id"], "completed", "dr")
+    resume.set()
+    with pytest.raises(CrmError, match="changed meanwhile"):
+        await cancel
+    assert (await original("acme", appt["id"]))["status"] == "completed"
+
+
+@pytest.mark.parametrize(
+    ("sent", "utc_hour"),
+    [
+        ("2026-10-01T10:00:00-05:00", 15),
+        ("2026-10-01T10:00:00+09:00", 1),
+        ("2026-07-01T10:00:00-04:00", 14),
+    ],
+)
+async def test_a24_appointment_keeps_the_instant(
+    o: Orchestrator, c: httpx.AsyncClient, sent: str, utc_hour: int
+) -> None:
+    # Prueba 31: 10:00-05:00 came back as 10:00+00:00 on SQLite.
+    await _patient(o)
+    resp = await c.post(
+        "/v1/crm/appointments", json={"patient_id": "p1", "starts_at": sent}, headers=SERVICE
+    )
+    assert resp.status_code == 201, resp.text
+    stored = datetime.fromisoformat(resp.json()["starts_at"])
+    assert stored == datetime.fromisoformat(sent)  # the same instant...
+    assert stored.astimezone(UTC).hour == utc_hour  # ...kept in UTC
+
+
+async def test_a24_time_without_offset_is_rejected(o: Orchestrator, c: httpx.AsyncClient) -> None:
+    await _patient(o)
+    bare = {"patient_id": "p1", "starts_at": "2026-10-01T10:00:00"}
+    assert (await c.post("/v1/crm/appointments", json=bare, headers=SERVICE)).status_code == 422
+    resp = await c.get("/v1/crm/appointments?start=2026-10-01T00:00:00", headers=SERVICE)
+    assert resp.status_code == 422
+
+
+async def test_a25_null_name_is_rejected_not_a_500(o: Orchestrator, c: httpx.AsyncClient) -> None:
+    # Prueba 18: {"display_name": null} broke the NOT NULL constraint (500).
+    await _patient(o)
+    url = "/v1/crm/patients/p1"
+    assert (await c.patch(url, json={"display_name": None}, headers=SERVICE)).status_code == 422
+    kept = await c.patch(url, json={"phone": "+593 99 000 0000"}, headers=SERVICE)
+    assert kept.status_code == 200 and kept.json()["display_name"] == "Ana Prueba"
+    cleared = await c.patch(url, json={"phone": None}, headers=SERVICE)  # null clears a contact
+    assert cleared.status_code == 200 and cleared.json()["phone"] is None
+    renamed = await c.patch(url, json={"display_name": "Ana María"}, headers=SERVICE)
+    assert renamed.json()["display_name"] == "Ana María"
+
+
+A2A_MALFORMED = [
+    (b"{not json", -32700),
+    (b"[1, 2]", -32600),
+    (b'{"jsonrpc": "2.0", "id": {"x": 1}, "method": "message/send"}', -32600),
+    (b'{"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": [1]}', -32602),
+    (b'{"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": "hi"}}', -32602),
+    (
+        b'{"jsonrpc": "2.0", "id": 1, "method": "message/send",'
+        b' "params": {"message": {"parts": ["hi"]}}}',
+        -32602,
+    ),
+    (
+        b'{"jsonrpc": "2.0", "id": 1, "method": "message/send",'
+        b' "params": {"message": {"parts": [{"kind": "text", "text": 42}]}}}',
+        -32602,
+    ),
+    (
+        b'{"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message":'
+        b' {"contextId": "../x", "parts": [{"kind": "text", "text": "hi"}]}}}',
+        -32602,
+    ),
+    (b'{"jsonrpc": "2.0", "id": 1, "method": 7}', -32600),
+]
+
+
+@pytest.mark.parametrize(("raw", "code"), A2A_MALFORMED)
+async def test_a26_malformed_a2a_is_a_protocol_error(
+    c: httpx.AsyncClient, raw: bytes, code: int
+) -> None:
+    # Prueba 19: list params, string message, string parts, numeric text -> 500.
+    headers = {**SERVICE, "Content-Type": "application/json"}
+    resp = await c.post("/a2a", content=raw, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["error"]["code"] == code
+
+
+async def test_a27_oversized_body_is_refused_early(c: httpx.AsyncClient) -> None:
+    # Prueba 24: an ignored 1.1 M-character field was accepted with a 200.
+    big = {"question": "hola", "padding": "x" * 1_100_000}
+    assert (await c.post("/v1/chat", json=big, headers=SERVICE)).status_code == 413
+
+    async def chunks() -> AsyncIterator[bytes]:  # no Content-Length: chunked transfer
+        yield b'{"question": "hola", "padding": "'
+        for _ in range(40):
+            yield b"x" * 10_000
+        yield b'"}'
+
+    headers = {**SERVICE, "Content-Type": "application/json"}
+    resp = await c.post("/v1/chat", content=chunks(), headers=headers)
+    assert resp.status_code == 413
+    # Document upload has its own, larger limit (~380 KB here, over the 256 KB default).
+    doc = {"title": "Manual", "text": "é" * 190_000}
+    assert (await c.post("/v1/knowledge/documents", json=doc, headers=SERVICE)).status_code == 201

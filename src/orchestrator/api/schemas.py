@@ -1,22 +1,24 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from orchestrator.auth import Role
 
 # Pseudonymous data-subject id (patient/customer number): never a name or an e-mail.
 SUBJECT_ID = r"^[\w.-]{1,64}$"
+# Longest question any interface accepts (REST, A2A); guardrails apply MAX_INPUT_CHARS.
+MAX_QUESTION_CHARS = 20_000
 
 
 class RouteRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=20_000)
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
 
 
 class ChatRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=20_000)
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     thread_id: str | None = Field(default=None, max_length=128, pattern=r"^[\w-]+$")
     subject_id: str | None = Field(
         default=None,
@@ -104,6 +106,8 @@ class PatientIn(BaseModel):
 
 
 class PatientPatch(BaseModel):
+    """Omitted fields stay as they are; null clears an optional contact field."""
+
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
     phone: str | None = Field(default=None, max_length=32)
     email: str | None = Field(default=None, max_length=254)
@@ -111,10 +115,19 @@ class PatientPatch(BaseModel):
     birth_date: date | None = None
     preferred_channel: Literal["telegram", "phone", "email"] | None = None
 
+    @field_validator("display_name")
+    @classmethod
+    def _name_cannot_be_cleared(cls, value: str | None) -> str | None:
+        # Runs only when the field is sent: an explicit null is a 422, not a 500 (A25).
+        if value is None:
+            raise ValueError("display_name cannot be null; omit it to keep the current name")
+        return value
+
 
 class AppointmentIn(BaseModel):
     patient_id: str = Field(pattern=SUBJECT_ID)
-    starts_at: datetime
+    # With an offset, e.g. 2026-10-01T10:00:00-05:00: a bare local time is ambiguous (A24).
+    starts_at: AwareDatetime
     duration_min: int = Field(default=30, ge=5, le=480)
     kind: str = Field(default="checkup", min_length=1, max_length=32)
     price: float = Field(default=0.0, ge=0, le=1_000_000)

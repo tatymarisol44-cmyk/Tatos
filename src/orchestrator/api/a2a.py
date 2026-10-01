@@ -6,12 +6,15 @@ orchestrator's thread id, so multi-turn A2A conversations keep their history."""
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from orchestrator import __version__
+from orchestrator.api.schemas import MAX_QUESTION_CHARS
 from orchestrator.api.security import require_tenant
 from orchestrator.governance import ThreadBusyError
 from orchestrator.service import Orchestrator, PendingReviewError
@@ -62,26 +65,71 @@ def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
 
+# Strict shapes for what we read (A26): a wrong type is a JSON-RPC error, never a 500.
+# Unknown fields are allowed, as the A2A spec adds optional ones over time.
+class _Part(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    kind: str = Field(max_length=32)
+    text: str | None = None
+
+
+class _Message(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    parts: list[_Part] = Field(min_length=1, max_length=32)
+    # Same limits as the REST thread_id: it becomes our thread id.
+    contextId: str | None = Field(default=None, max_length=128, pattern=r"^[\w-]+$")
+    metadata: dict[str, Any] | None = None
+
+
+class _Params(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    message: _Message
+
+
+class _Envelope(BaseModel):
+    jsonrpc: str
+    method: str = Field(max_length=64)
+    id: str | int | None = None
+    params: Any = None
+
+
+def _first_error(exc: ValidationError) -> str:
+    err = exc.errors()[0]
+    where = ".".join(str(x) for x in err["loc"]) or "params"
+    return f"Invalid params at {where}: {err['msg']}"
+
+
 @router.post("/a2a")
-async def a2a_rpc(
-    request: Request, body: dict[str, Any], tenant: str = Depends(require_tenant)
-) -> dict[str, Any]:
-    req_id = body.get("id")
-    if body.get("jsonrpc") != "2.0" or "method" not in body:
+async def a2a_rpc(request: Request, tenant: str = Depends(require_tenant)) -> dict[str, Any]:
+    try:
+        raw = json.loads(await request.body())
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _rpc_error(None, -32700, "Parse error")
+    req_id = raw.get("id") if isinstance(raw, dict) else None
+    if not isinstance(req_id, str | int):
+        req_id = None
+    try:
+        envelope = _Envelope.model_validate(raw)
+    except ValidationError:
         return _rpc_error(req_id, -32600, "Invalid Request")
-    if body["method"] != "message/send":
-        return _rpc_error(req_id, -32601, f"Method not found: {body['method']}")
-    message = (body.get("params") or {}).get("message") or {}
-    text = "\n".join(
-        p.get("text", "") for p in message.get("parts", []) if p.get("kind") == "text"
-    ).strip()
+    if envelope.jsonrpc != "2.0":
+        return _rpc_error(req_id, -32600, "Invalid Request")
+    if envelope.method != "message/send":
+        return _rpc_error(req_id, -32601, f"Method not found: {envelope.method}")
+    try:
+        message = _Params.model_validate(envelope.params).message
+    except ValidationError as exc:
+        return _rpc_error(req_id, -32602, _first_error(exc))
+    text = "\n".join(p.text or "" for p in message.parts if p.kind == "text").strip()
     if not text:
         return _rpc_error(req_id, -32602, "message must contain at least one text part")
-
     orch: Orchestrator = request.app.state.orchestrator
-    context_id = str(message.get("contextId") or uuid.uuid4())
+    if len(text) > MAX_QUESTION_CHARS:  # the same ceiling as the REST question
+        return _rpc_error(req_id, -32602, "message text too long")
+
+    context_id = message.contextId or str(uuid.uuid4())
     # Callers opt into team orchestration with message metadata {"mode": "team"}.
-    team = (message.get("metadata") or {}).get("mode") == "team"
+    team = (message.metadata or {}).get("mode") == "team"
     try:
         result = await orch.chat(
             text, thread_id=context_id, mode="team" if team else "single", tenant=tenant

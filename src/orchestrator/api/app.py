@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
 from orchestrator.api import a2a, business, channels, patients
+from orchestrator.api.body_limit import BodySizeLimit
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -105,6 +106,11 @@ def create_app(
     )
     app.state.settings = settings
     app.state.limiter = build_limiter(settings)
+    app.add_middleware(
+        BodySizeLimit,
+        max_bytes=settings.max_body_bytes,
+        overrides={"/v1/knowledge/documents": settings.max_document_body_bytes},
+    )
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(patients.router)
