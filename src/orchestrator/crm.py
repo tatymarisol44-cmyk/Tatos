@@ -26,6 +26,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     Date,
@@ -88,6 +89,21 @@ treatments = Table(
     Column("stage", String(16), nullable=False),
     Column("presented_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+# Conversations with clinical content, kept as part of the clinical record when the
+# conversation itself is deleted (erasure request, retention purge). Only what the
+# patient was actually shown, plus who reviewed it: never an unreviewed AI draft.
+clinical_notes = Table(
+    "crm_clinical_notes",
+    metadata,
+    Column("tenant", String(64), primary_key=True),
+    Column("thread_id", String(128), primary_key=True),
+    Column("patient_id", String(64), nullable=False, index=True),
+    Column("messages", JSON, nullable=False),
+    Column("review", JSON, nullable=True),
+    Column("reason", String(32), nullable=False),  # erasure_request | retention
+    Column("archived_at", DateTime(timezone=True), nullable=False),
 )
 
 APPOINTMENT_STATUSES = ("scheduled", "confirmed", "completed", "no_show", "cancelled")
@@ -578,14 +594,64 @@ class CrmService:
             return set((await conn.execute(query)).scalars().all())
 
     # --- data-subject rights -------------------------------------------------
+    async def archive_conversation(
+        self,
+        tenant: str,
+        patient_id: str,
+        thread_id: str,
+        messages: list[dict[str, Any]],
+        review: dict[str, Any] | None,
+        reason: str,
+    ) -> None:
+        """Move a clinical conversation into the clinical record (idempotent: a later
+        archive of the same thread replaces the earlier one with the longer history)."""
+        values = {
+            "patient_id": patient_id,
+            "messages": messages,
+            "review": review,
+            "reason": reason,
+            "archived_at": utcnow(),
+        }
+        key = and_(clinical_notes.c.tenant == tenant, clinical_notes.c.thread_id == thread_id)
+        async with self.db.engine.begin() as conn:
+            if (
+                await conn.execute(update(clinical_notes).where(key).values(**values))
+            ).rowcount == 0:
+                await conn.execute(
+                    insert(clinical_notes).values(tenant=tenant, thread_id=thread_id, **values)
+                )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                "system:retention",
+                "crm.clinical_note.archived",
+                f"thread/{thread_id}",
+                subject_id=patient_id,
+                details={"reason": reason, "messages": len(messages)},
+            )
+
+    async def clinical_notes(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:
+        query = (
+            select(clinical_notes)
+            .where(
+                and_(clinical_notes.c.tenant == tenant, clinical_notes.c.patient_id == patient_id)
+            )
+            .order_by(clinical_notes.c.archived_at)
+        )
+        async with self.db.engine.connect() as conn:
+            rows = (await conn.execute(query)).mappings().all()
+        return [_row(r) for r in rows]
+
     async def export_subject(self, tenant: str, patient_id: str) -> dict[str, Any] | None:
         patient = await self._patient(tenant, patient_id)
-        if patient is None:
+        notes = await self.clinical_notes(tenant, patient_id)
+        if patient is None and not notes:
             return None
         return {
             "patient": patient,
             "appointments": await self.list_appointments(tenant, patient_id=patient_id),
             "treatments": await self.list_treatments(tenant, patient_id=patient_id),
+            "clinical_notes": notes,
         }
 
     async def erase_subject(self, tenant: str, patient_id: str) -> dict[str, Any]:

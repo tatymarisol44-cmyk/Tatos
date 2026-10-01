@@ -237,12 +237,48 @@ class Orchestrator:
     def thread_key(tenant: str, thread_id: str) -> str:
         return f"{tenant}:{thread_id}"
 
-    async def delete_thread(self, tenant: str, thread_id: str) -> bool:
+    async def _archive_if_clinical(self, tenant: str, thread_id: str, reason: str) -> bool:
+        """Before a conversation is deleted: if it had clinical content (a turn the risk
+        rules marked clinical, or one a professional reviewed), what the patient was
+        shown moves to the clinical record, which is kept. Unreviewed drafts are not
+        part of it and go with the conversation."""
+        snapshot = await self.graph.aget_state(self._config(tenant, thread_id))
+        values = snapshot.values or {}
+        subject = values.get("subject_id")
+        if not subject:
+            return False
+        review = await self.reviews.get(tenant, thread_id)
+        decided = review is not None and review.status in ("approved", "rejected")
+        if not (values.get("clinical") or decided):
+            return False
+        summary = None
+        if decided and review is not None:
+            decision = review.decision or {}
+            summary = {
+                "status": review.status,
+                "reviewer": decision.get("reviewer"),
+                "resolved_at": review.resolved_at.isoformat() if review.resolved_at else None,
+            }
+        messages = list(values.get("messages", []))
+        if snapshot.next and values.get("sanitized"):
+            # Paused for review: the patient's question is part of the record; the AI
+            # draft waiting for the professional is not.
+            messages.append({"role": "user", "content": values["sanitized"], "unanswered": True})
+            summary = {"status": "pending", "reviewer": None, "resolved_at": None}
+        await self.crm.archive_conversation(tenant, subject, thread_id, messages, summary, reason)
+        return True
+
+    async def delete_thread(
+        self, tenant: str, thread_id: str, *, reason: str = "deletion_request", archive: bool = True
+    ) -> bool:
         """Erase one conversation of this tenant and its review (the review is removed even
-        when the checkpoint is already gone). False if neither existed."""
+        when the checkpoint is already gone). Clinical content is archived to the clinical
+        record first. False if neither existed."""
         key = self.thread_key(tenant, thread_id)
         had_thread = await self.checkpointer.exists(key)
         if had_thread:
+            if archive:
+                await self._archive_if_clinical(tenant, thread_id, reason)
             await self.checkpointer.delete(key)
         had_review = await self.reviews.get(tenant, thread_id) is not None
         await self.reviews.delete_thread(tenant, thread_id)
@@ -264,9 +300,10 @@ class Orchestrator:
         cutoff = datetime.now(UTC) - older_than
         keys = [k async for k, ts in self.checkpointer.threads() if ts is not None and ts < cutoff]
         for key in keys:
-            await self.checkpointer.delete(key)
             # Keys are "tenant:thread"; tenant names cannot contain ":" (config check).
             tenant, _, thread_id = key.partition(":")
+            await self._archive_if_clinical(tenant, thread_id, "retention")
+            await self.checkpointer.delete(key)
             await self.reviews.delete_thread(tenant, thread_id)  # no orphaned drafts
             await self.subject_threads.unlink(tenant, thread_id)
         return len(keys)
@@ -327,9 +364,10 @@ class Orchestrator:
         What stays is listed in `retained` with its basis: the clinical record (restricted,
         GDPR Art. 17(3)(b)/(c), HIPAA and local retention rules) and the audit trail that
         proves the erasure happened."""
-        conversations = 0
+        conversations = archived = 0
         for thread_id in await self.subject_threads.threads(tenant, subject_id):
-            conversations += await self.delete_thread(tenant, thread_id)
+            archived += await self._archive_if_clinical(tenant, thread_id, "erasure_request")
+            conversations += await self.delete_thread(tenant, thread_id, archive=False)
         reviews = 0
         for review in await self.reviews.for_subject(tenant, subject_id):  # unlinked leftovers
             await self.reviews.delete_thread(tenant, review.thread_id)
@@ -339,10 +377,11 @@ class Orchestrator:
                 tenant, subject_id, actor
             ),
             "conversations": conversations,
+            "clinical_conversations_archived": archived,
             "reviews": reviews,
             "memory_facts": await self.memory.erase(tenant, subject_id),
             "consents": await self.consents.erase(tenant, subject_id),
-            "campaign_messages": await self.campaigns.erase_subject(tenant, subject_id),
+            "campaign_messages_anonymised": await self.campaigns.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
         }
         result["retained"] = [
@@ -352,12 +391,13 @@ class Orchestrator:
                 "HIPAA 164.316(b)(2): six years)",
             },
         ]
-        if result["crm"].get("clinical_record") == "retained":
+        if result["crm"].get("clinical_record") == "retained" or archived:
             result["retained"].append(
                 {
                     "store": "clinical_record",
                     "basis": "legal retention of health records (GDPR Art. 17(3)(b)/(c), "
-                    "LOPDP, local health law); restricted: no marketing, no updates",
+                    "LOPDP, local health law); restricted: no marketing, no updates. "
+                    "Includes conversations with clinical content",
                 }
             )
         await self.audit.record(

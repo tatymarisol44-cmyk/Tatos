@@ -96,6 +96,8 @@ STOP_CONFIRMATION = (
     "Listo: no recibirás más mensajes promocionales. Tus citas y recordatorios no cambian."
 )
 
+# Delivery rows of erased patients: outcome kept, identity and timestamps gone.
+ANON_PREFIX = "anon:"
 EDITABLE = ("draft", "pending_approval")
 CANCELLABLE = ("draft", "pending_approval", "approved", "queued", "sending")
 SENT_STATES = ("sending", "completed", "partial_failed")
@@ -1004,6 +1006,8 @@ class CampaignService:
                 recipients.c.tenant == tenant,
                 recipients.c.campaign_id == campaign_id,
                 recipients.c.status.in_((*REACHED, "held_out")),
+                # Anonymised rows lost the link to their bookings: they cannot be scored.
+                ~recipients.c.patient_id.startswith(ANON_PREFIX),
             )
         )
         arms: dict[str, dict[str, int]] = {
@@ -1131,11 +1135,34 @@ class CampaignService:
         return out
 
     async def erase_subject(self, tenant: str, patient_id: str) -> int:
-        """Marketing history goes on request (contact and marketing data are not kept)."""
-        query = delete(recipients).where(
+        """The marketing history stops being about this person. Each delivery row keeps
+        its campaign, arm and outcome (the business keeps learning what works) but loses
+        the link to the patient and every timestamp: a random id replaces the patient id,
+        so it is anonymous, not pseudonymous (a hash of the id could be recomputed)."""
+        query = select(recipients.c.campaign_id).where(
             and_(recipients.c.tenant == tenant, recipients.c.patient_id == patient_id)
         )
         async with self.db.engine.begin() as conn:
+            rows: list[str] = list((await conn.execute(query)).scalars().all())
+            for campaign_id in rows:
+                await conn.execute(
+                    update(recipients)
+                    .where(
+                        and_(
+                            recipients.c.tenant == tenant,
+                            recipients.c.campaign_id == campaign_id,
+                            recipients.c.patient_id == patient_id,
+                        )
+                    )
+                    .values(
+                        patient_id=f"{ANON_PREFIX}{uuid.uuid4().hex}",
+                        sent_at=None,
+                        seen_at=None,
+                        claimed_at=None,
+                        fallback_due_at=None,
+                        error=None,
+                    )
+                )
             await conn.execute(
                 delete(contact_budget).where(
                     and_(
@@ -1144,4 +1171,4 @@ class CampaignService:
                     )
                 )
             )
-            return int((await conn.execute(query)).rowcount)
+        return len(rows)

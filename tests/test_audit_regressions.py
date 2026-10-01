@@ -695,3 +695,53 @@ async def test_patient_marks_offers_seen_over_http(o: Orchestrator, c: httpx.Asy
     await o.campaigns.send("acme", cid, "staff")
     resp = await c.post("/v1/me/offers/seen", headers=key)
     assert resp.json() == {"marked": 1} and await _status(o, cid) == "seen"
+
+
+# --- retention rule: the clinical record is kept, marketing is anonymised ---------------
+CLINICAL = "¿Qué dosis de ibuprofeno tomo?"
+
+
+async def test_erasure_keeps_reviewed_clinical_conversations(o: Orchestrator) -> None:
+    await _patient(o)
+    held = await o.chat(CLINICAL, tenant="acme", subject_id="p1", thread_id="clin")
+    assert held.status == "pending_review"
+    await o.resolve_review(
+        "acme", "clin", approved=True, reviewer="dr.lopez", edited_answer="Llámenos, por favor."
+    )
+    small_talk = await o.chat("¿A qué hora abren?", tenant="acme", subject_id="p1")
+
+    erased = await o.erase_subject("acme", "p1", "dpo")
+    assert erased["conversations"] == 2 and erased["clinical_conversations_archived"] == 1
+    assert "clinical_record" in {x["store"] for x in erased["retained"]}
+    # Both conversations are gone from the chat store...
+    for thread in ("clin", small_talk.thread_id):
+        assert not await o.checkpointer.exists(o.thread_key("acme", thread))
+    # ...and the clinical one lives on in the clinical record, as shown to the patient.
+    [note] = await o.crm.clinical_notes("acme", "p1")
+    assert note["thread_id"] == "clin" and note["reason"] == "erasure_request"
+    assert note["messages"][-1] == {"role": "assistant", "content": "Llámenos, por favor."}
+    assert note["review"]["reviewer"] == "dr.lopez"
+    exported = await o.export_subject("acme", "p1", "dpo")
+    assert [n["thread_id"] for n in exported["crm"]["clinical_notes"]] == ["clin"]
+
+
+async def test_pending_clinical_question_is_kept_without_the_draft(o: Orchestrator) -> None:
+    assert isinstance(o.llm, FakeLLM)
+    o.llm.agent_replies = ["BORRADOR_IA_SIN_REVISAR"]
+    await o.chat(CLINICAL, tenant="acme", subject_id="p1", thread_id="pend")
+    await o.erase_subject("acme", "p1", "dpo")
+    [note] = await o.crm.clinical_notes("acme", "p1")
+    assert note["messages"] == [{"role": "user", "content": CLINICAL, "unanswered": True}]
+    assert note["review"]["status"] == "pending"
+    assert "BORRADOR_IA_SIN_REVISAR" not in str(note)
+    assert await o.reviews.get("acme", "pend") is None
+
+
+async def test_retention_purge_archives_clinical_conversations(o: Orchestrator) -> None:
+    await o.chat(CLINICAL, tenant="acme", subject_id="p1", thread_id="old")
+    await o.resolve_review("acme", "old", approved=False, reviewer="dr.lopez")
+    await o.chat("hola", tenant="acme", subject_id="p1", thread_id="chit")
+    assert await o.purge_threads(timedelta(seconds=-1)) == 2
+    assert [n["thread_id"] for n in await o.crm.clinical_notes("acme", "p1")] == ["old"]
+    [note] = await o.crm.clinical_notes("acme", "p1")
+    assert note["reason"] == "retention" and note["review"]["status"] == "rejected"

@@ -388,5 +388,10 @@ async def test_subject_rights_cover_campaign_history(clinic: Orchestrator) -> No
     assert message["status"] == "dry_run" and message["sent_at"]
     assert exported["crm"]["patient"]["id"] == "p1"
     erased = await clinic.erase_subject("acme", "p1", actor="dpo")
-    assert erased["campaign_messages"] == 1
+    assert erased["campaign_messages_anonymised"] == 1
     assert await clinic.campaigns.export_subject("acme", "p1") == []
+    # The outcome stays for the clinic's statistics, without identity or timestamps.
+    counts = (await clinic.campaigns.get("acme", c["id"]))["recipients"]
+    assert sum(counts.values()) == 1
+    [row] = await _rows(clinic, c["id"])
+    assert row["patient_id"].startswith("anon:") and row["sent_at"] is None

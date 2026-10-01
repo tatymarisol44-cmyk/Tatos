@@ -103,6 +103,9 @@ class OrchestratorState(TypedDict, total=False):
     citation_retries: int
     citation_feedback: str | None
     risk: dict[str, Any] | None
+    # Sticky across turns: once a turn was clinical, the conversation belongs to the
+    # clinical record (kept on erasure and retention instead of deleted).
+    clinical: Annotated[bool, operator.or_]
     review: dict[str, Any] | None
     status: str
     decision_record: dict[str, Any] | None
@@ -515,6 +518,7 @@ def build_graph(
         )
         return {
             "risk": assessment.to_dict(),
+            "clinical": "clinical_advice" in assessment.reasons,
             "route_log": _log("risk_score", assessment.level, reasons=assessment.reasons),
         }
 
