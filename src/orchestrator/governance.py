@@ -256,9 +256,31 @@ class AuditLog:
             update(audit_heads).where(audit_heads.c.tenant == tenant).values(hash=digest)
         )
 
-    async def verify(self, tenant: str) -> dict[str, Any]:
+    async def anchors(self) -> list[dict[str, Any]]:
+        """The current head of every tenant's chain, to be copied OUTSIDE this database
+        (write-once storage). The chain alone cannot stop someone who controls the whole
+        database from rewriting every event and recomputing every hash; a head kept
+        elsewhere can: the rewritten chain no longer contains it."""
+        async with self.db.engine.connect() as conn:
+            rows = (await conn.execute(select(audit_heads).order_by(audit_heads.c.tenant))).all()
+        at = utcnow().isoformat()
+        return [
+            {"anchored_at": at, "tenant": r.tenant, "seq": int(r.seq), "hash": str(r.hash)}
+            for r in rows
+        ]
+
+    async def tenants(self) -> list[str]:
+        async with self.db.engine.connect() as conn:
+            return list((await conn.execute(select(audit_heads.c.tenant))).scalars().all())
+
+    async def verify(
+        self, tenant: str, anchors: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         """Recompute the tenant's chain. Any edited, deleted, reordered or inserted event
-        (or a truncated tail) breaks it; `broken_at` names the first bad seq."""
+        (or a truncated tail) breaks it; `broken_at` names the first bad seq. With
+        `anchors` (heads exported earlier, see `anchors()`), the chain must also still
+        contain each of them: that catches a chain rewritten and re-hashed end to end."""
+        wanted = {int(a["seq"]): str(a["hash"]) for a in anchors or [] if a["tenant"] == tenant}
         prev, expected = GENESIS, 1
         async with self.db.engine.connect() as conn:
             head = (
@@ -295,6 +317,13 @@ class AuditLog:
                     )
                     if ev["seq"] != expected or ev["prev_hash"] != prev or ev["hash"] != digest:
                         return {"ok": False, "events": expected - 1, "broken_at": expected}
+                    if wanted.get(expected, digest) != digest:
+                        return {
+                            "ok": False,
+                            "events": expected,
+                            "broken_at": expected,
+                            "reason": "does not match the external anchor",
+                        }
                     prev, expected = digest, expected + 1
                 if len(rows) < 1000:
                     break
@@ -302,7 +331,20 @@ class AuditLog:
         head_state = (int(head.seq), str(head.hash)) if head is not None else (0, GENESIS)
         if head_state != (count, prev):  # events missing at the end of the chain
             return {"ok": False, "events": count, "broken_at": count + 1}
-        return {"ok": True, "events": count, "broken_at": None, "head": prev}
+        if wanted and max(wanted) > count:  # anchored events no longer exist
+            return {
+                "ok": False,
+                "events": count,
+                "broken_at": count + 1,
+                "reason": "shorter than an external anchor",
+            }
+        return {
+            "ok": True,
+            "events": count,
+            "broken_at": None,
+            "head": prev,
+            "anchors_checked": len(wanted),
+        }
 
     async def list(
         self, tenant: str, *, subject_id: str | None = None, limit: int | None = 100

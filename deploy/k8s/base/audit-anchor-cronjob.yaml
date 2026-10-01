@@ -1,0 +1,50 @@
+# External anchor of the audit hash chain (second audit). Every hour, each tenant's chain
+# head (seq, hash) is printed as a JSON line. Those lines must land OUTSIDE the database,
+# in storage nobody can rewrite: e.g. a log pipeline into S3 with Object Lock (compliance
+# mode) or a log store with a retention lock. `agency audit-verify --anchors <file>` then
+# detects even a chain rewritten and re-hashed end to end. Choosing that storage is an
+# operator decision; this job only produces the anchors.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agency-audit-anchor
+  labels: {app.kubernetes.io/name: agency-retention}
+spec:
+  schedule: "5 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          # Same network profile as the retention job (Postgres and Qdrant only).
+          labels: {app.kubernetes.io/name: agency-retention}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: anchor
+              image: agency-orchestrator
+              command: ["agency", "audit-anchor"]
+              envFrom:
+                - configMapRef: {name: agency-orchestrator-config}
+                - secretRef: {name: agency-orchestrator-secrets}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - {name: tmp, emptyDir: {}}

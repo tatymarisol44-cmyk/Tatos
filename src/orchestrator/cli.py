@@ -162,6 +162,39 @@ async def _retention(days: int, dry_run: bool) -> None:
         await orch.close()
 
 
+async def _audit_anchor() -> None:
+    """Print one JSON line per tenant with its chain head. Ship it to write-once storage
+    (e.g. S3 Object Lock in compliance mode): that copy is what makes a rewritten chain
+    detectable."""
+    from orchestrator.service import Orchestrator
+
+    orch = Orchestrator(get_settings())
+    try:
+        await orch.start_maintenance()
+        for anchor in await orch.audit.anchors():
+            print(json.dumps(anchor, ensure_ascii=False))
+    finally:
+        await orch.close()
+
+
+async def _audit_verify(anchors: list[dict[str, Any]], tenant: str | None) -> int:
+    from orchestrator.service import Orchestrator
+
+    orch = Orchestrator(get_settings())
+    try:
+        await orch.start_maintenance()
+        tenants = (
+            [tenant]
+            if tenant
+            else sorted({*await orch.audit.tenants(), *(a["tenant"] for a in anchors)})
+        )
+        results = {t: await orch.audit.verify(t, anchors) for t in tenants}
+    finally:
+        await orch.close()
+    _print(results)
+    return 0 if all(r["ok"] for r in results.values()) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -206,6 +239,12 @@ def main(argv: list[str] | None = None) -> int:
             "--older-than-days", type=int, default=None, help="Default: THREAD_RETENTION_DAYS"
         )
         p_purge.add_argument("--dry-run", action="store_true", help="Only count")
+    sub.add_parser("audit-anchor", help="Print each tenant's audit-chain head (JSON lines)")
+    p_verify = sub.add_parser(
+        "audit-verify", help="Verify audit chains, optionally against anchors"
+    )
+    p_verify.add_argument("--anchors", type=Path, help="JSON lines from audit-anchor")
+    p_verify.add_argument("--tenant")
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -230,6 +269,15 @@ def main(argv: list[str] | None = None) -> int:
         if days < 1:
             parser.error("--older-than-days must be >= 1")
         asyncio.run(_retention(days, args.dry_run))
+    elif args.cmd == "audit-anchor":
+        asyncio.run(_audit_anchor())
+    elif args.cmd == "audit-verify":
+        anchors = (
+            [json.loads(x) for x in args.anchors.read_text("utf-8").splitlines() if x.strip()]
+            if args.anchors
+            else []
+        )
+        return asyncio.run(_audit_verify(anchors, args.tenant))
     elif args.cmd == "serve":
         import uvicorn
 

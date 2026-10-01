@@ -223,3 +223,23 @@ async def test_retention_dry_run_only_counts(orchestrator: Orchestrator) -> None
     assert await orchestrator.checkpointer.exists("acme:old")
     done = await orchestrator.retention(timedelta(seconds=-1))
     assert done["threads"] == 1 and not await orchestrator.checkpointer.exists("acme:old")
+
+
+def test_cli_audit_anchor_and_verify(
+    settings: Settings,
+    catalog: Catalog,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: Any,
+    tmp_path: Any,
+) -> None:
+    from orchestrator import cli
+
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr("orchestrator.service.load_catalog", lambda _path: catalog, raising=True)
+    assert cli.main(["audit-anchor"]) == 0  # a fresh database: no chains yet
+    assert cli.main(["audit-verify"]) == 0
+    # An anchor the database no longer backs (e.g. the log was replaced): exit 1.
+    anchors = tmp_path / "anchors.jsonl"
+    anchors.write_text('{"tenant": "acme", "seq": 3, "hash": "' + "a" * 64 + '"}\n', "utf-8")
+    assert cli.main(["audit-verify", "--anchors", str(anchors)]) == 1
+    assert "shorter than an external anchor" in capsys.readouterr().out

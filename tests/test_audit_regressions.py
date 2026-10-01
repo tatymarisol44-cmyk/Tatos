@@ -26,8 +26,16 @@ from orchestrator.campaigns import (
 )
 from orchestrator.config import Settings
 from orchestrator.crm import CrmError
-from orchestrator.db import utcnow
-from orchestrator.governance import Purpose, ThreadBusyError, audit_events, reviews
+from orchestrator.db import aware, utcnow
+from orchestrator.governance import (
+    GENESIS,
+    Purpose,
+    ThreadBusyError,
+    audit_events,
+    audit_heads,
+    event_hash,
+    reviews,
+)
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 
@@ -387,6 +395,70 @@ async def test_audit_chain_detects_tampering(o: Orchestrator) -> None:
         )
     assert await o.audit.verify("acme") == {"ok": False, "events": 2, "broken_at": 3}
     assert (await o.audit.verify("globex"))["ok"] is True  # chains are per tenant
+
+
+async def test_audit_chain_rewritten_end_to_end_is_caught_by_an_anchor(o: Orchestrator) -> None:
+    # Second audit: someone with full database access edits an event and recomputes
+    # every hash after it. The chain is consistent again; only an external copy of an
+    # earlier head can tell.
+    for i in range(4):
+        await o.audit.record("acme", "staff", "test.event", f"doc/{i}")
+    anchors = await o.audit.anchors()  # shipped to write-once storage
+    assert [(a["tenant"], a["seq"]) for a in anchors] == [("acme", 4)]
+
+    async with o.db.engine.begin() as conn:
+        rows = (
+            (
+                await conn.execute(
+                    select(audit_events)
+                    .where(audit_events.c.tenant == "acme")
+                    .order_by(audit_events.c.seq)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        prev = GENESIS
+        for ev in rows:
+            actor = "someone-else" if ev["seq"] == 2 else ev["actor"]
+            digest = event_hash(
+                prev,
+                ev["seq"],
+                aware(ev["ts"]) or utcnow(),
+                ev["tenant"],
+                actor,
+                ev["action"],
+                ev["resource"],
+                ev["subject_id"],
+                ev["details"] or {},
+            )
+            await conn.execute(
+                update(audit_events)
+                .where(audit_events.c.tenant == "acme", audit_events.c.seq == ev["seq"])
+                .values(actor=actor, prev_hash=prev, hash=digest)
+            )
+            prev = digest
+        await conn.execute(
+            update(audit_heads).where(audit_heads.c.tenant == "acme").values(hash=prev)
+        )
+
+    assert (await o.audit.verify("acme"))["ok"] is True  # the chain alone is fooled
+    checked = await o.audit.verify("acme", anchors)
+    assert checked["ok"] is False and checked["reason"] == "does not match the external anchor"
+
+
+async def test_audit_chain_shorter_than_its_anchor_fails(o: Orchestrator) -> None:
+    for _ in range(3):
+        await o.audit.record("acme", "staff", "test.event", "test")
+    anchors = await o.audit.anchors()
+    async with o.db.engine.begin() as conn:  # the tail is cut and the head moved back
+        await conn.execute(delete(audit_events).where(audit_events.c.seq == 3))
+        prev = (
+            await conn.execute(select(audit_events.c.hash).where(audit_events.c.seq == 2))
+        ).scalar_one()
+        await conn.execute(update(audit_heads).values(seq=2, hash=prev))
+    assert (await o.audit.verify("acme"))["ok"] is True
+    assert (await o.audit.verify("acme", anchors))["reason"] == "shorter than an external anchor"
 
 
 async def test_audit_chain_detects_deleted_events(o: Orchestrator) -> None:

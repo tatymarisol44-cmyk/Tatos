@@ -17,6 +17,7 @@ resources:
   - jvm-agent.yaml
   - redis.yaml
   - retention-cronjob.yaml
+  - audit-anchor-cronjob.yaml
 images:
   - name: agency-orchestrator
     newName: ghcr.io/tatymarisol44-cmyk/agency-orchestrator
