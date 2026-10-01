@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from orchestrator.config import Settings
 
@@ -26,10 +26,26 @@ class ReviewPolicy(BaseModel):
     clinical: bool = False
 
 
+def _all_preferences() -> list[str]:
+    from orchestrator.memory import PREFERENCES
+
+    return list(PREFERENCES)
+
+
 class MemoryPolicy(BaseModel):
-    # Health data in long-term memory needs a treatment purpose and clinician access;
-    # packs keep it off unless they are built for that.
-    allow_clinical: bool = False
+    # Which preference keys (orchestrator.memory.PREFERENCES) this business remembers.
+    # There is no free-text or clinical memory: health data stays in the clinical record.
+    preferences: list[str] = Field(default_factory=_all_preferences)
+
+    @field_validator("preferences")
+    @classmethod
+    def _known(cls, value: list[str]) -> list[str]:
+        from orchestrator.memory import PREFERENCES
+
+        unknown = sorted(set(value) - set(PREFERENCES))
+        if unknown:
+            raise ValueError(f"unknown memory preferences: {unknown}")
+        return value
 
 
 class CrmPolicy(BaseModel):

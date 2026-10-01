@@ -5,6 +5,7 @@ defect comes back. Synthetic data and fake credentials only."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -13,9 +14,12 @@ from pathlib import Path
 import httpx
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import delete, update
 
 from orchestrator.api.app import create_app
 from orchestrator.config import Settings
+from orchestrator.db import utcnow
+from orchestrator.governance import Purpose, ThreadBusyError, audit_events, reviews
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 
@@ -230,3 +234,166 @@ async def test_a07_paused_thread_cannot_be_overwritten_without_review_row(
     # The checkpoint is paused at review: a new turn must not run over it.
     with pytest.raises(PendingReviewError):
         await o.chat("second", tenant="acme", thread_id="orphan")
+
+
+# --- step 2: privacy and integrity ---------------------------------------------------
+
+
+async def test_a05_erasure_removes_conversations_and_pending_drafts(o: Orchestrator) -> None:
+    r = await o.chat("Dato privado de prueba", tenant="acme", subject_id="p1", force_review=True)
+    done = await o.chat("hola", tenant="acme", subject_id="p1")
+    exported = await o.export_subject("acme", "p1", "staff")
+    assert {c["thread_id"] for c in exported["conversations"]} == {r.thread_id, done.thread_id}
+    assert [rv["thread_id"] for rv in exported["reviews"]] == [r.thread_id]
+    assert exported["inventory"]["conversations"] == 2
+
+    erased = await o.erase_subject("acme", "p1", "staff")
+    assert erased["conversations"] == 2
+    assert {x["store"] for x in erased["retained"]} == {"audit_trail"}  # no CRM record here
+    for thread in (r.thread_id, done.thread_id):
+        assert not await o.checkpointer.exists(o.thread_key("acme", thread))
+    assert await o.reviews.get("acme", r.thread_id) is None
+    after = await o.export_subject("acme", "p1", "staff")
+    assert after["conversations"] == [] and after["reviews"] == []
+
+
+async def test_a05_erasure_states_what_is_retained_and_why(o: Orchestrator) -> None:
+    await o.crm.create_patient("acme", {"display_name": "Ana Prueba"}, "staff", patient_id="p1")
+    erased = await o.erase_subject("acme", "p1", "staff")
+    retained = {x["store"]: x["basis"] for x in erased["retained"]}
+    assert set(retained) == {"audit_trail", "clinical_record"}
+    assert all(retained.values())
+
+
+async def test_a07_one_run_per_thread(o: Orchestrator, monkeypatch: pytest.MonkeyPatch) -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = o.graph.ainvoke
+
+    async def slow(*args: object, **kwargs: object) -> object:
+        entered.set()
+        await release.wait()
+        return await original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(o.graph, "ainvoke", slow)
+    first = asyncio.create_task(o.chat("uno", tenant="acme", thread_id="race"))
+    await entered.wait()
+    with pytest.raises(ThreadBusyError):
+        await o.chat("dos", tenant="acme", thread_id="race")
+    release.set()
+    assert (await first).status == "completed"
+    # The lease was released: the thread is usable again.
+    monkeypatch.setattr(o.graph, "ainvoke", original)
+    assert (await o.chat("tres", tenant="acme", thread_id="race")).status == "completed"
+
+
+async def test_a07_no_new_turn_while_a_review_is_resuming(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paused = await o.chat("hola", tenant="acme", thread_id="race-review", force_review=True)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = o.graph.ainvoke
+
+    async def delay_resume(*args: object, **kwargs: object) -> object:
+        entered.set()
+        await release.wait()
+        return await original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(o.graph, "ainvoke", delay_resume)
+    task = asyncio.create_task(
+        o.resolve_review("acme", paused.thread_id, approved=True, reviewer="staff")
+    )
+    await entered.wait()
+    assert (await o.reviews.get("acme", paused.thread_id)).status == "resolving"  # type: ignore[union-attr]
+    with pytest.raises((ThreadBusyError, PendingReviewError)):
+        await o.chat("nuevo", tenant="acme", thread_id=paused.thread_id)
+    with pytest.raises(PendingReviewError):  # even without the lease, the state says no
+        await o._prepare("nuevo", paused.thread_id, None, None, "single", "acme", None, False)
+    release.set()
+    assert (await task).status == "completed"
+    assert (await o.reviews.get("acme", paused.thread_id)).status == "approved"  # type: ignore[union-attr]
+
+
+async def test_a07_failed_resume_returns_the_review_to_pending(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paused = await o.chat("hola", tenant="acme", thread_id="fail", force_review=True)
+
+    async def boom(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("model outage")
+
+    monkeypatch.setattr(o.graph, "ainvoke", boom)
+    with pytest.raises(RuntimeError):
+        await o.resolve_review("acme", paused.thread_id, approved=True, reviewer="staff")
+    review = await o.reviews.get("acme", paused.thread_id)
+    assert review is not None and review.status == "pending" and review.decision is None
+
+
+async def test_a07_startup_reconciles_a_crashed_resolution(o: Orchestrator) -> None:
+    paused = await o.chat("hola", tenant="acme", thread_id="crash", force_review=True)
+    assert await o.reviews.claim("acme", paused.thread_id, {"approved": True})
+    # Simulate a replica that died after claiming, long enough ago.
+    async with o.db.engine.begin() as conn:
+        await conn.execute(
+            update(reviews)
+            .where(reviews.c.thread_id == paused.thread_id)
+            .values(resolved_at=utcnow() - timedelta(hours=1))
+        )
+    assert await o.reconcile_reviews() == 1
+    review = await o.reviews.get("acme", paused.thread_id)
+    assert review is not None and review.status == "pending"  # the graph is still paused
+
+
+async def test_a21_audit_failure_rolls_back_the_business_write(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fail(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("audit store outage")
+
+    monkeypatch.setattr(o.audit, "record_in", fail)
+    with pytest.raises(RuntimeError):
+        await o.crm.create_patient("acme", {"display_name": "Ana Prueba"}, "staff", patient_id="p1")
+    with pytest.raises(RuntimeError):
+        await o.consents.record("acme", "p1", Purpose.MARKETING, True, source="t", actor="s")
+    monkeypatch.undo()
+    assert await o.crm._patient("acme", "p1") is None
+    assert await o.consents.get("acme", "p1") == {}
+    # A retry succeeds cleanly: no half-written state to conflict with.
+    await o.crm.create_patient("acme", {"display_name": "Ana Prueba"}, "staff", patient_id="p1")
+
+
+async def test_audit_chain_detects_tampering(o: Orchestrator) -> None:
+    for i in range(5):
+        await o.audit.record("acme", "staff", "test.event", "test", details={"i": i, "x": [1]})
+    await o.audit.record("globex", "staff", "test.event", "test")
+    assert (await o.audit.verify("acme"))["ok"] is True
+    assert (await o.audit.verify("globex"))["events"] == 1
+
+    async with o.db.engine.begin() as conn:  # someone edits event 3 directly in the database
+        await conn.execute(
+            update(audit_events)
+            .where(audit_events.c.tenant == "acme", audit_events.c.seq == 3)
+            .values(actor="someone-else")
+        )
+    assert await o.audit.verify("acme") == {"ok": False, "events": 2, "broken_at": 3}
+    assert (await o.audit.verify("globex"))["ok"] is True  # chains are per tenant
+
+
+async def test_audit_chain_detects_deleted_events(o: Orchestrator) -> None:
+    for _ in range(3):
+        await o.audit.record("acme", "staff", "test.event", "test")
+    async with o.db.engine.begin() as conn:  # the last event disappears
+        await conn.execute(
+            delete(audit_events).where(audit_events.c.tenant == "acme", audit_events.c.seq == 3)
+        )
+    assert await o.audit.verify("acme") == {"ok": False, "events": 2, "broken_at": 3}
+
+
+async def test_audit_chain_survives_erasure_and_is_exposed(
+    o: Orchestrator, c: httpx.AsyncClient
+) -> None:
+    await o.chat("hola", tenant="acme", subject_id="p1")
+    await o.erase_subject("acme", "p1", "staff")
+    resp = await c.get("/v1/audit/verify", headers=SERVICE)
+    assert resp.status_code == 200 and resp.json()["ok"] is True
+    reception = await staff(c, "maria", "reception")
+    assert (await c.get("/v1/audit/verify", headers=reception)).status_code == 403

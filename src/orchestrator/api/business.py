@@ -42,7 +42,7 @@ from orchestrator.api.security import requires
 from orchestrator.auth import Principal, Role
 from orchestrator.campaigns import CampaignError
 from orchestrator.crm import CrmError, NotFoundError
-from orchestrator.governance import Purpose
+from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.insights import QuestionBlockedError
 from orchestrator.service import Orchestrator, ReviewNotFoundError
 
@@ -120,6 +120,8 @@ async def resolve_review(
         )
     except ReviewNotFoundError as exc:
         raise _not_found("pending review") from exc
+    except ThreadBusyError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     return ChatResponse(**result.__dict__)
 
 
@@ -174,6 +176,13 @@ async def audit_trail(
 ) -> list[dict[str, Any]]:
     events = await orch(request).audit.list(p.tenant, subject_id=subject_id, limit=limit)
     return [e.to_dict() for e in events]
+
+
+@router.get("/v1/audit/verify", tags=["privacy"])
+async def verify_audit(request: Request, p: Privacy) -> dict[str, Any]:
+    """Recompute this tenant's audit hash chain: `ok` false and `broken_at` if any event
+    was edited, deleted or inserted after it was written."""
+    return await orch(request).audit.verify(p.tenant)
 
 
 # --- key administration -------------------------------------------------------------

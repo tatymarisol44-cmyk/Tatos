@@ -85,6 +85,16 @@ class LiteLLMClient:
             return result
 
 
+# What the fake extractor recognises in a sentence that states a preference.
+_FAKE_PREFERENCES = [
+    (r"\b(tarde|afternoon)\b", "schedule", "afternoon"),
+    (r"\b(mañana|morning)\b", "schedule", "morning"),
+    (r"\btelegram\b", "channel", "telegram"),
+    (r"\b(español|spanish)\b", "language", "es"),
+    (r"\b(inglés|english)\b", "language", "en"),
+]
+
+
 @dataclass
 class FakeLLM:
     """Router calls get the first candidate id; planner calls get a two-step sequential
@@ -147,8 +157,15 @@ class FakeLLM:
                 return LLMResult(self.memory_reply, model, 30, 10)
             said = re.search(r"CUSTOMER: (.*)", question)
             sentences = re.split(r"(?<=[.!?])\s+", said.group(1)) if said else []
-            facts = [s for s in sentences if re.search(r"\b(prefer\w*|prefiero)\b", s, re.I)]
-            return LLMResult(json.dumps({"facts": facts}), model, 30, 10)
+            stated = " ".join(
+                s for s in sentences if re.search(r"\b(prefer\w*|prefiero)\b", s, re.I)
+            )
+            found = [
+                {"key": key, "value": value}
+                for pattern, key, value in _FAKE_PREFERENCES
+                if re.search(pattern, stated, re.I)
+            ]
+            return LLMResult(json.dumps({"preferences": found}), model, 30, 10)
         if "COPYWRITER" in system:
             return LLMResult(
                 "Hola {first_name}, te esperamos para tu control. Agenda tu cita cuando "

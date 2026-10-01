@@ -85,16 +85,15 @@ class Settings(BaseSettings):
     review_enabled: bool = True
     # Patient access keys (the /v1/me link sent to a patient) expire after this many days.
     patient_access_ttl_days: int = Field(default=90, ge=1, le=730)
+    # One run per conversation: a lease held for at most this long (a crashed replica
+    # frees the thread after it). Also how old a half-resolved review must be before
+    # startup reconciles it.
+    thread_lease_seconds: int = Field(default=300, ge=10, le=3600)
 
     # --- Semantic memory (long-term, per data subject) -----------------------
     memory_enabled: bool = True
     memory_collection: str = "memory"
-    memory_top_k: int = 5
-    memory_min_score: float = 0.15
-    # Two facts this similar are the same fact: the newer one replaces the older.
-    memory_dedupe_score: float = 0.8
     memory_ttl_days: int = Field(default=365, ge=1)
-    memory_max_facts_per_turn: int = 3
 
     # --- Campaigns and channels ----------------------------------------------
     # Without a token the Telegram channel runs dry: messages are recorded, not sent.

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 
 from orchestrator import __version__
 from orchestrator.api.security import require_tenant
+from orchestrator.governance import ThreadBusyError
 from orchestrator.service import Orchestrator, PendingReviewError
 
 router = APIRouter()
@@ -87,6 +88,8 @@ async def a2a_rpc(
         )
     except PendingReviewError:
         return _rpc_error(req_id, -32001, "context is waiting for a human review")
+    except ThreadBusyError:
+        return _rpc_error(req_id, -32001, "context has a request in progress")
     if result.blocked:
         reply = "Request blocked by guardrails: " + ", ".join(result.guardrails["reasons"])
     elif result.status == "pending_review":

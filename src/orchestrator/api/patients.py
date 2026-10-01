@@ -12,7 +12,7 @@ from fastapi import Path as FastAPIPath
 from orchestrator.api.schemas import PatientChatIn, PatientConsentIn
 from orchestrator.api.security import require_patient
 from orchestrator.auth import Principal
-from orchestrator.governance import Purpose
+from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.service import Orchestrator, PendingReviewError
 
 router = APIRouter(prefix="/v1/me", tags=["patient"])
@@ -82,6 +82,10 @@ async def my_chat(body: PatientChatIn, request: Request, p: Me) -> dict[str, Any
     except PendingReviewError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "your previous question is still being reviewed"
+        ) from exc
+    except ThreadBusyError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "your previous question is still being answered"
         ) from exc
 
 

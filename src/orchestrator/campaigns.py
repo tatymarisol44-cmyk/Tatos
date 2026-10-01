@@ -280,13 +280,18 @@ class CampaignService:
                         for pid in members
                     ],
                 )
-        await self.audit.record(
-            tenant,
-            actor,
-            "campaign.created",
-            f"campaign/{cid}",
-            details={"segment": segment, "recipients": len(members), "compliance": check.to_dict()},
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "campaign.created",
+                f"campaign/{cid}",
+                details={
+                    "segment": segment,
+                    "recipients": len(members),
+                    "compliance": check.to_dict(),
+                },
+            )
         return await self.get(tenant, cid)
 
     async def get(self, tenant: str, campaign_id: str) -> dict[str, Any]:
@@ -338,9 +343,14 @@ class CampaignService:
         )
         async with self.db.engine.begin() as conn:
             await conn.execute(query)
-        await self.audit.record(
-            tenant, actor, "campaign.edited", f"campaign/{campaign_id}", details=check.to_dict()
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "campaign.edited",
+                f"campaign/{campaign_id}",
+                details=check.to_dict(),
+            )
         return await self.get(tenant, campaign_id)
 
     async def approve(
@@ -365,13 +375,14 @@ class CampaignService:
         async with self.db.engine.begin() as conn:
             if (await conn.execute(query)).rowcount != 1:
                 raise CampaignError("campaign changed while approving; reload it")
-        await self.audit.record(
-            tenant,
-            reviewer,
-            "campaign.approved",
-            f"campaign/{campaign_id}",
-            details={"owner_approval": owner_approval},
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                reviewer,
+                "campaign.approved",
+                f"campaign/{campaign_id}",
+                details={"owner_approval": owner_approval},
+            )
         return await self.get(tenant, campaign_id)
 
     async def cancel(self, tenant: str, campaign_id: str, actor: str) -> dict[str, Any]:
@@ -385,7 +396,9 @@ class CampaignService:
         )
         async with self.db.engine.begin() as conn:
             await conn.execute(query)
-        await self.audit.record(tenant, actor, "campaign.cancelled", f"campaign/{campaign_id}")
+            await self.audit.record_in(
+                conn, tenant, actor, "campaign.cancelled", f"campaign/{campaign_id}"
+            )
         return await self.get(tenant, campaign_id)
 
     async def _sent_last_month(

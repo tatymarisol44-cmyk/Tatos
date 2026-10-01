@@ -172,7 +172,9 @@ class CrmService:
                     tenant=tenant, id=pid, created_at=utcnow(), restricted=False, **values
                 )
             )
-        await self.audit.record(tenant, actor, "crm.patient.created", "patient", subject_id=pid)
+            await self.audit.record_in(
+                conn, tenant, actor, "crm.patient.created", "patient", subject_id=pid
+            )
         return await self.get_patient(tenant, pid, actor=None)
 
     async def _patient(self, tenant: str, patient_id: str) -> dict[str, Any] | None:
@@ -233,14 +235,15 @@ class CrmService:
             )
             async with self.db.engine.begin() as conn:
                 await conn.execute(query)
-            await self.audit.record(
-                tenant,
-                actor,
-                "crm.patient.updated",
-                "patient",
-                subject_id=patient_id,
-                details={"fields": sorted(values)},
-            )
+                await self.audit.record_in(
+                    conn,
+                    tenant,
+                    actor,
+                    "crm.patient.updated",
+                    "patient",
+                    subject_id=patient_id,
+                    details={"fields": sorted(values)},
+                )
         return await self.get_patient(tenant, patient_id, actor=None)
 
     async def contacts(self, tenant: str, patient_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -296,9 +299,14 @@ class CrmService:
                     updated_at=now,
                 )
             )
-        await self.audit.record(
-            tenant, actor, "crm.appointment.created", f"appointment/{aid}", subject_id=patient_id
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "crm.appointment.created",
+                f"appointment/{aid}",
+                subject_id=patient_id,
+            )
         return await self.get_appointment(tenant, aid)
 
     async def get_appointment(self, tenant: str, appointment_id: str) -> dict[str, Any]:
@@ -343,13 +351,14 @@ class CrmService:
         )
         async with self.db.engine.begin() as conn:
             await conn.execute(query)
-        await self.audit.record(
-            tenant,
-            actor,
-            f"crm.appointment.{status}",
-            f"appointment/{appointment_id}",
-            subject_id=current["patient_id"],
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                f"crm.appointment.{status}",
+                f"appointment/{appointment_id}",
+                subject_id=current["patient_id"],
+            )
         return await self.get_appointment(tenant, appointment_id)
 
     # --- treatment plans (quotes) --------------------------------------------
@@ -373,9 +382,14 @@ class CrmService:
                     updated_at=now,
                 )
             )
-        await self.audit.record(
-            tenant, actor, "crm.treatment.created", f"treatment/{tid}", subject_id=patient_id
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "crm.treatment.created",
+                f"treatment/{tid}",
+                subject_id=patient_id,
+            )
         return await self.get_treatment(tenant, tid)
 
     async def get_treatment(self, tenant: str, treatment_id: str) -> dict[str, Any]:
@@ -414,14 +428,15 @@ class CrmService:
         )
         async with self.db.engine.begin() as conn:
             await conn.execute(query)
-        await self.audit.record(
-            tenant,
-            actor,
-            "crm.treatment.stage",
-            f"treatment/{treatment_id}",
-            subject_id=current["patient_id"],
-            details={"from": current["stage"], "to": stage},
-        )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "crm.treatment.stage",
+                f"treatment/{treatment_id}",
+                subject_id=current["patient_id"],
+                details={"from": current["stage"], "to": stage},
+            )
         return await self.get_treatment(tenant, treatment_id)
 
     # --- traffic-light alerts ------------------------------------------------

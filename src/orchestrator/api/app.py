@@ -29,6 +29,7 @@ from orchestrator.api.security import build_limiter, require_staff, require_tena
 from orchestrator.api.views import staff_view, stream_event
 from orchestrator.auth import Principal, Role
 from orchestrator.config import Settings, get_settings
+from orchestrator.governance import ThreadBusyError
 from orchestrator.guardrails import check_input
 from orchestrator.knowledge import KnowledgeRejected
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
@@ -170,7 +171,7 @@ def create_app(
                 force_review=body.force_review,
                 actor=principal.id,
             )
-        except (PendingReviewError, ThreadSubjectError) as exc:
+        except (PendingReviewError, ThreadSubjectError, ThreadBusyError) as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
@@ -197,7 +198,7 @@ def create_app(
                 force_review=body.force_review,
                 actor=principal.id,
             )
-        except (PendingReviewError, ThreadSubjectError) as exc:
+        except (PendingReviewError, ThreadSubjectError, ThreadBusyError) as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

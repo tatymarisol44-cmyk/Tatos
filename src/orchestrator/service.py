@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -21,7 +22,14 @@ from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
-from orchestrator.governance import AuditLog, ConsentRegistry, Purpose, ReviewQueue
+from orchestrator.governance import (
+    AuditLog,
+    ConsentRegistry,
+    Purpose,
+    ReviewQueue,
+    SubjectThreads,
+    ThreadLeases,
+)
 from orchestrator.graph import build_graph
 from orchestrator.guardrails import redact_pii
 from orchestrator.insights import InsightsService
@@ -173,6 +181,8 @@ class Orchestrator:
         self.db = Database(settings)
         self.audit = AuditLog(self.db)
         self.reviews = ReviewQueue(self.db)
+        self.leases = ThreadLeases(self.db, timedelta(seconds=settings.thread_lease_seconds))
+        self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.crm = CrmService(self.db, self.audit, settings)
@@ -212,6 +222,7 @@ class Orchestrator:
         await self.router.build_index()
         await self.knowledge.start()
         await self.memory.start()
+        await self.reconcile_reviews()
         self.ready = True
 
     async def close(self) -> None:
@@ -235,6 +246,7 @@ class Orchestrator:
             await self.checkpointer.delete(key)
         had_review = await self.reviews.get(tenant, thread_id) is not None
         await self.reviews.delete_thread(tenant, thread_id)
+        await self.subject_threads.unlink(tenant, thread_id)
         return had_thread or had_review
 
     async def delete_tenant_threads(self, tenant: str) -> int:
@@ -244,6 +256,7 @@ class Orchestrator:
         for key in keys:
             await self.checkpointer.delete(key)
             await self.reviews.delete_thread(tenant, key.removeprefix(prefix))
+            await self.subject_threads.unlink(tenant, key.removeprefix(prefix))
         return len(keys)
 
     async def purge_threads(self, older_than: timedelta) -> int:
@@ -255,6 +268,7 @@ class Orchestrator:
             # Keys are "tenant:thread"; tenant names cannot contain ":" (config check).
             tenant, _, thread_id = key.partition(":")
             await self.reviews.delete_thread(tenant, thread_id)  # no orphaned drafts
+            await self.subject_threads.unlink(tenant, thread_id)
         return len(keys)
 
     async def purge_memory(self) -> int:
@@ -262,35 +276,90 @@ class Orchestrator:
         return await self.memory.purge_expired()
 
     # --- data-subject rights (GDPR Art. 15/17/20, HIPAA access, LOPDP) ------------
+    async def _subject_conversations(self, tenant: str, subject_id: str) -> list[dict[str, Any]]:
+        out = []
+        for thread_id in await self.subject_threads.threads(tenant, subject_id):
+            snapshot = await self.graph.aget_state(self._config(tenant, thread_id))
+            if not snapshot.values:
+                continue
+            out.append(
+                {
+                    "thread_id": thread_id,
+                    "messages": snapshot.values.get("messages", []),
+                    "paused_for_review": bool(snapshot.next),
+                }
+            )
+        return out
+
     async def export_subject(self, tenant: str, subject_id: str, actor: str) -> dict[str, Any]:
-        """Everything held about one subject, in a portable structure."""
+        """Everything held about one subject, in a portable structure: every store listed
+        in `inventory`, the audit history complete (read in pages, never truncated)."""
+        access = [p for p in await self.principals.list(tenant) if p["subject_id"] == subject_id]
         data = {
             "subject_id": subject_id,
             "consents": await self.consents.get(tenant, subject_id),
             "memory": [f.to_dict() for f in await self.memory.export(tenant, subject_id)],
             "crm": await self.crm.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
-            "audit": [
-                e.to_dict()
-                for e in await self.audit.list(tenant, subject_id=subject_id, limit=None)
-            ],
+            "conversations": await self._subject_conversations(tenant, subject_id),
+            "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],
+            "access_keys": access,
+            "audit": [e.to_dict() for e in await self.audit.all_for_subject(tenant, subject_id)],
         }
-        await self.audit.record(tenant, actor, "subject.exported", "subject", subject_id=subject_id)
+        data["inventory"] = {
+            store: len(value) if isinstance(value, list | dict) else int(value is not None)
+            for store, value in data.items()
+            if store != "subject_id"
+        }
+        await self.audit.record(
+            tenant,
+            actor,
+            "subject.exported",
+            "subject",
+            subject_id=subject_id,
+            details={"inventory": data["inventory"]},
+        )
         return data
 
     async def erase_subject(self, tenant: str, subject_id: str, actor: str) -> dict[str, Any]:
-        """Right to erasure. Memory, consents, marketing history and contact data go; the
-        clinical record is kept (restricted) where the law requires it (GDPR Art. 17(3),
-        HIPAA/State retention rules) and the audit trail stays to prove the erasure."""
-        result = {
+        """Right to erasure, store by store. Conversations (including drafts waiting for a
+        review), memory, consents, marketing history, contact data and access keys go.
+        What stays is listed in `retained` with its basis: the clinical record (restricted,
+        GDPR Art. 17(3)(b)/(c), HIPAA and local retention rules) and the audit trail that
+        proves the erasure happened."""
+        conversations = 0
+        for thread_id in await self.subject_threads.threads(tenant, subject_id):
+            conversations += await self.delete_thread(tenant, thread_id)
+        reviews = 0
+        for review in await self.reviews.for_subject(tenant, subject_id):  # unlinked leftovers
+            await self.reviews.delete_thread(tenant, review.thread_id)
+            reviews += 1
+        result: dict[str, Any] = {
             "patient_access_keys_revoked": await self.principals.revoke_subject(
                 tenant, subject_id, actor
             ),
+            "conversations": conversations,
+            "reviews": reviews,
             "memory_facts": await self.memory.erase(tenant, subject_id),
             "consents": await self.consents.erase(tenant, subject_id),
             "campaign_messages": await self.campaigns.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
         }
+        result["retained"] = [
+            {
+                "store": "audit_trail",
+                "basis": "proof of processing and of this erasure (GDPR Art. 5(2), "
+                "HIPAA 164.316(b)(2): six years)",
+            },
+        ]
+        if result["crm"].get("clinical_record") == "retained":
+            result["retained"].append(
+                {
+                    "store": "clinical_record",
+                    "basis": "legal retention of health records (GDPR Art. 17(3)(b)/(c), "
+                    "LOPDP, local health law); restricted: no marketing, no updates",
+                }
+            )
         await self.audit.record(
             tenant, actor, "subject.erased", "subject", subject_id=subject_id, details=result
         )
@@ -323,11 +392,10 @@ class Orchestrator:
             raise KeyError(f"Unknown agent_id: {', '.join(unknown)}")
         thread_id = thread_id or str(uuid.uuid4())
         config = self._config(tenant, thread_id)
-        pending = await self.reviews.get(tenant, thread_id)
         snapshot = await self.graph.aget_state(config)
         # The checkpoint is the source of truth: a paused run blocks new input even if the
         # review row is missing (failed write) or already claimed by a resuming reviewer.
-        if (pending is not None and pending.status == "pending") or snapshot.next:
+        if await self.reviews.is_open(tenant, thread_id) or snapshot.next:
             # A new input would start a fresh run and orphan the paused one.
             raise PendingReviewError(f"thread {thread_id} is waiting for a human review")
         if snapshot.values and snapshot.values.get("subject_id") != subject_id:
@@ -426,21 +494,53 @@ class Orchestrator:
         actor: str = "api",
         subject_context: str = "",
     ) -> ChatResult:
-        thread_id, inputs, config = await self._prepare(
-            question,
-            thread_id,
-            agent_id,
-            agent_ids,
-            mode,
-            tenant,
-            subject_id,
-            force_review,
-            subject_context,
+        thread_id = thread_id or str(uuid.uuid4())
+        async with self._lease(tenant, thread_id):
+            thread_id, inputs, config = await self._prepare(
+                question,
+                thread_id,
+                agent_id,
+                agent_ids,
+                mode,
+                tenant,
+                subject_id,
+                force_review,
+                subject_context,
+            )
+            if subject_id:
+                await self.subject_threads.link(tenant, thread_id, subject_id)
+            state = await self.graph.ainvoke(inputs, config)
+            result = self._result(thread_id, mode, state)
+            await self._after_run(tenant, thread_id, subject_id, actor, result)
+            return result
+
+    @asynccontextmanager
+    async def _lease(self, tenant: str, thread_id: str) -> AsyncIterator[None]:
+        """One run per conversation at a time, across replicas (audit finding A07)."""
+        holder = uuid.uuid4().hex
+        await self.leases.acquire(tenant, thread_id, holder)
+        try:
+            yield
+        finally:
+            await self.leases.release(tenant, thread_id, holder)
+
+    async def reconcile_reviews(self) -> int:
+        """After a crash between claiming a review and finishing its run: a thread still
+        paused goes back to pending; a finished one gets its final status."""
+        stale = await self.reviews.stale_resolving(
+            timedelta(seconds=self.settings.thread_lease_seconds)
         )
-        state = await self.graph.ainvoke(inputs, config)
-        result = self._result(thread_id, mode, state)
-        await self._after_run(tenant, thread_id, subject_id, actor, result)
-        return result
+        for review in stale:
+            snapshot = await self.graph.aget_state(self._config(review.tenant, review.thread_id))
+            if snapshot.next:
+                await self.reviews.release(review.tenant, review.thread_id)
+            else:
+                approved = bool((review.decision or {}).get("approved"))
+                await self.reviews.finish(
+                    review.tenant, review.thread_id, "approved" if approved else "rejected"
+                )
+            log.warning("reconciled review %s:%s", review.tenant, review.thread_id)
+        return len(stale)
 
     async def resolve_review(
         self,
@@ -453,6 +553,20 @@ class Orchestrator:
         edited_answer: str | None = None,
     ) -> ChatResult:
         """Apply a human decision to a paused thread and let the graph finish it."""
+        async with self._lease(tenant, thread_id):
+            return await self._resolve(
+                tenant, thread_id, approved, reviewer, feedback, edited_answer
+            )
+
+    async def _resolve(
+        self,
+        tenant: str,
+        thread_id: str,
+        approved: bool,
+        reviewer: str,
+        feedback: str | None,
+        edited_answer: str | None,
+    ) -> ChatResult:
         pending = await self.reviews.get(tenant, thread_id)
         if pending is None or pending.status != "pending":
             raise ReviewNotFoundError(thread_id)
@@ -471,32 +585,34 @@ class Orchestrator:
             "edited_answer": minimise(edited_answer),
         }
         # Claim the review first: two reviewers clicking at once apply one decision.
-        if not await self.reviews.resolve(
-            tenant, thread_id, "approved" if approved else "rejected", decision
-        ):
+        if not await self.reviews.claim(tenant, thread_id, decision):
             raise ReviewNotFoundError(thread_id)
         config = self._config(tenant, thread_id)
         try:
             state = await self.graph.ainvoke(Command(resume=decision), config)
         except Exception:
-            # The thread is still paused at its checkpoint: put the review back.
-            await self.reviews.open(tenant, thread_id, pending.payload, pending.subject_id)
+            # The thread is still paused at its checkpoint: the review goes back to pending.
+            await self.reviews.release(tenant, thread_id)
             raise
         snapshot = await self.graph.aget_state(config)
         mode: Mode = "team" if snapshot.values.get("mode") == "team" else "single"
         result = self._result(thread_id, mode, state)
-        await self.audit.record(
-            tenant,
-            reviewer,
-            "review.approved" if approved else "review.rejected",
-            f"thread/{thread_id}",
-            subject_id=pending.subject_id,
-            details={
-                "edited": bool(edited_answer),
-                "feedback": bool(feedback),
-                "risk": pending.payload.get("risk"),
-            },
-        )
+        status = "approved" if approved else "rejected"
+        async with self.db.engine.begin() as conn:  # final status and its audit event
+            await self.reviews.finish(tenant, thread_id, status, conn)
+            await self.audit.record_in(
+                conn,
+                tenant,
+                reviewer,
+                f"review.{status}",
+                f"thread/{thread_id}",
+                subject_id=pending.subject_id,
+                details={
+                    "edited": bool(edited_answer),
+                    "feedback": bool(feedback),
+                    "risk": pending.payload.get("risk"),
+                },
+            )
         return result
 
     async def chat_stream(
@@ -517,11 +633,27 @@ class Orchestrator:
         per specialist, `review` if the answer was paused for a human, then `done` with
         the full result.
         Validation errors raise before the first event, so callers can still return 4xx."""
-        thread_id, inputs, config = await self._prepare(
-            question, thread_id, agent_id, agent_ids, mode, tenant, subject_id, force_review
-        )
+        thread_id = thread_id or str(uuid.uuid4())
+        holder = uuid.uuid4().hex
+        await self.leases.acquire(tenant, thread_id, holder)
+        try:
+            thread_id, inputs, config = await self._prepare(
+                question, thread_id, agent_id, agent_ids, mode, tenant, subject_id, force_review
+            )
+            if subject_id:
+                await self.subject_threads.link(tenant, thread_id, subject_id)
+        except BaseException:
+            await self.leases.release(tenant, thread_id, holder)
+            raise
 
         async def events() -> AsyncIterator[tuple[str, dict[str, Any]]]:
+            try:
+                async for item in run():
+                    yield item
+            finally:
+                await self.leases.release(tenant, thread_id, holder)
+
+        async def run() -> AsyncIterator[tuple[str, dict[str, Any]]]:
             yield "start", {"thread_id": thread_id, "mode": mode}
             interrupts: tuple[Any, ...] = ()
             async for chunk in self.graph.astream(inputs, config, stream_mode="updates"):

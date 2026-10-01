@@ -9,7 +9,7 @@ review:
   divisions: [healthcare, finance, paid-media]
   clinical: true
 memory:
-  allow_clinical: false
+  preferences: [schedule, channel, language, tone, reminder]
 crm:
   pipeline: [presented, accepted, in_progress, completed, declined]
   recall_months: 6

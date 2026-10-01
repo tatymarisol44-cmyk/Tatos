@@ -597,15 +597,10 @@ def build_graph(
             return {}
         tenant = state.get("tenant", "")
         thread = str((config.get("configurable") or {}).get("thread_id", ""))
+        allowed = set(pack_for(settings, tenant).memory.preferences)
         try:
-            facts = await memory.extract(state["sanitized"], state.get("answer") or "")
-            stored = await memory.remember(
-                tenant,
-                subject,
-                facts,
-                thread,
-                allow_clinical=pack_for(settings, tenant).memory.allow_clinical,
-            )
+            found = await memory.extract(state["sanitized"], state.get("answer") or "", allowed)
+            stored = await memory.remember(tenant, subject, found, thread, allowed=allowed)
         except Exception:  # never lose the answer because memory failed
             log.exception("memory write failed")
             return {"route_log": _log("remember", "failed")}
