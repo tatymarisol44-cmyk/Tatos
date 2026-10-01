@@ -282,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--workers", type=int, default=1, help="Worker processes")
     sub.add_parser("mcp", help="Run the MCP server over stdio")
 
     args = parser.parse_args(argv)
@@ -318,7 +319,13 @@ def main(argv: list[str] | None = None) -> int:
         import uvicorn
 
         uvicorn.run(
-            "orchestrator.api.app:app_factory", factory=True, host=args.host, port=args.port
+            "orchestrator.api.app:app_factory",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            workers=args.workers,
+            # psycopg (Postgres) needs the selector loop; uvicorn picks Proactor on Windows.
+            loop="asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto",
         )
     elif args.cmd == "mcp":
         from orchestrator.mcp_server import main as mcp_main

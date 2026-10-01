@@ -46,6 +46,9 @@ dev = [
     # separately: `uv run playwright install chromium`.
     "playwright>=1.48",
 ]
+load = [
+    "locust>=2.32",
+]
 
 [build-system]
 requires = ["hatchling"]
