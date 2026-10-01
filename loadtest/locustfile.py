@@ -50,7 +50,7 @@ class ClinicStaff(HttpUser):
         # A new conversation each time: every request writes fresh checkpoints.
         self.client.post(
             "/v1/chat",
-            json={"question": random.choice(QUESTIONS), "thread_id": uuid.uuid4().hex},
+            json={"question": random.choice(QUESTIONS), "thread_id": uuid.uuid4().hex},  # noqa: S311
             headers=KEY,
             name="POST /v1/chat",
         )
