@@ -59,6 +59,12 @@ async def my_loyalty(request: Request, p: Me) -> dict[str, Any]:
     return {**profile["loyalty"], "offers": profile["offers"]}
 
 
+@router.post("/offers/seen")
+async def offers_seen(request: Request, p: Me) -> dict[str, int]:
+    """The app showed the patient their offers: none of them goes out by Telegram."""
+    return {"marked": await orch(request).campaigns.mark_seen(p.tenant, _subject(p))}
+
+
 @router.put("/consents/{purpose}")
 async def set_my_consent(
     body: PatientConsentIn, request: Request, purpose: Purpose, p: Me

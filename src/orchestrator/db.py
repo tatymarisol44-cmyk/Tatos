@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import MetaData
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from orchestrator.config import Settings
 
@@ -43,8 +43,17 @@ def build_engine(settings: Settings) -> AsyncEngine:
     if url.get_backend_name() == "sqlite":
         if settings.app_env == "prod":
             raise ValueError("DATABASE_URL must point to Postgres in prod, not SQLite")
-        # One shared connection, or every session would see its own empty :memory: db.
-        kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
+        # One connection, or every session would see its own empty :memory: db. It is
+        # lent exclusively (a pool of one): a second transaction waits for the first to
+        # finish instead of interleaving its statements on the same connection, which
+        # is what the row locks of Postgres give concurrent code in prod.
+        kwargs = {
+            "poolclass": AsyncAdaptedQueuePool,
+            "pool_size": 1,
+            "max_overflow": 0,
+            "pool_timeout": 60,
+            "connect_args": {"check_same_thread": False},
+        }
     elif (
         settings.app_env == "prod"
         and not settings.postgres_allow_insecure

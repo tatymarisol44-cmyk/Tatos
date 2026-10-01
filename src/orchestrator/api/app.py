@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -15,7 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
-from orchestrator.api import a2a, business, patients
+from orchestrator.api import a2a, business, channels, patients
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -55,6 +57,18 @@ def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+async def outbox_worker(orch: Orchestrator, interval: int) -> None:
+    """Campaign deliveries, retries after a crash and Telegram fallbacks, every few
+    seconds. Safe on several replicas: each recipient is claimed with a conditional
+    UPDATE before anything is sent."""
+    while True:
+        try:
+            await orch.campaigns.run_outbox()
+        except Exception:
+            log.exception("outbox pass failed")
+        await asyncio.sleep(interval)
+
+
 def create_app(
     settings: Settings | None = None, orchestrator: Orchestrator | None = None
 ) -> FastAPI:
@@ -69,10 +83,17 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         orch = orchestrator or Orchestrator(settings)
         app.state.orchestrator = orch
+        worker: asyncio.Task[None] | None = None
         try:
             await orch.start()  # inside try: a failed start still releases pools
+            if settings.outbox_interval_seconds > 0:
+                worker = asyncio.create_task(outbox_worker(orch, settings.outbox_interval_seconds))
             yield
         finally:
+            if worker is not None:
+                worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await worker
             await orch.close()
             await app.state.limiter.close()
 
@@ -87,6 +108,7 @@ def create_app(
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(patients.router)
+    app.include_router(channels.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:

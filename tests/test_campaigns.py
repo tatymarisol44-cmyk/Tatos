@@ -185,7 +185,7 @@ async def test_send_respects_consent_channel_and_holdout(
     statuses = {r["patient_id"]: r["status"] for r in await _rows(clinic, campaign["id"])}
     assert statuses == expected
     assert sum(outcomes.values()) == 3
-    assert sent["status"] == "sent"
+    assert sent["status"] == "completed"
     with pytest.raises(CampaignError):
         await clinic.campaigns.send("acme", campaign["id"], "ana")  # never twice
 

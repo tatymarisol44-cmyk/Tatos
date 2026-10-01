@@ -176,6 +176,10 @@ class PatientChatIn(BaseModel):
     thread_id: str | None = Field(default=None, pattern=r"^[\w-]{1,64}$")
 
 
+class DeliveryResolution(BaseModel):
+    delivered: bool
+
+
 class PatientConsentIn(BaseModel):
     granted: bool
 

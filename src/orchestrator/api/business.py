@@ -30,6 +30,7 @@ from orchestrator.api.schemas import (
     CampaignTemplateIn,
     ChatResponse,
     ConsentIn,
+    DeliveryResolution,
     InsightsQuestion,
     PatientIn,
     PatientPatch,
@@ -467,6 +468,35 @@ async def send_campaign(
 ) -> dict[str, Any]:
     try:
         return await orch(request).campaigns.send(p.tenant, campaign_id, p.id)
+    except (KeyError, CampaignError) as exc:
+        raise _campaign_error(exc) from exc
+
+
+@router.post("/v1/campaigns/{campaign_id}/retry", tags=["campaigns"])
+async def retry_campaign(
+    request: Request, campaign_id: Annotated[str, record_path()], p: Marketing
+) -> dict[str, Any]:
+    """Queue again the deliveries that certainly failed. Uncertain ones are never
+    re-sent automatically: resolve them first."""
+    try:
+        return await orch(request).campaigns.retry_failed(p.tenant, campaign_id, p.id)
+    except (KeyError, CampaignError) as exc:
+        raise _campaign_error(exc) from exc
+
+
+@router.post("/v1/campaigns/{campaign_id}/recipients/{patient_id}/delivery", tags=["campaigns"])
+async def resolve_delivery(
+    body: DeliveryResolution,
+    request: Request,
+    campaign_id: Annotated[str, record_path()],
+    patient_id: Annotated[str, subject_path()],
+    p: Marketing,
+) -> dict[str, Any]:
+    """Record whether an uncertain message actually arrived (checked by a person)."""
+    try:
+        return await orch(request).campaigns.resolve_uncertain(
+            p.tenant, campaign_id, patient_id, body.delivered, p.id
+        )
     except (KeyError, CampaignError) as exc:
         raise _campaign_error(exc) from exc
 

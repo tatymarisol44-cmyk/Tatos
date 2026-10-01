@@ -14,9 +14,16 @@ from pathlib import Path
 import httpx
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 
 from orchestrator.api.app import create_app
+from orchestrator.campaigns import (
+    CampaignError,
+    DeliveryUncertain,
+    contact_budget,
+    has_opt_out,
+    recipients,
+)
 from orchestrator.config import Settings
 from orchestrator.db import utcnow
 from orchestrator.governance import Purpose, ThreadBusyError, audit_events, reviews
@@ -397,3 +404,294 @@ async def test_audit_chain_survives_erasure_and_is_exposed(
     assert resp.status_code == 200 and resp.json()["ok"] is True
     reception = await staff(c, "maria", "reception")
     assert (await c.get("/v1/audit/verify", headers=reception)).status_code == 403
+
+
+# --- step 3: campaigns -----------------------------------------------------------------
+GOOD = "Hola {first_name}, te esperamos. Responde STOP para salir."
+
+
+async def _patient(
+    o: Orchestrator, pid: str = "p1", *, consent: bool = True, chat: str | None = "1"
+) -> None:
+    await o.crm.create_patient(
+        "acme", {"display_name": "Ana Prueba", "telegram_chat_id": chat}, "staff", patient_id=pid
+    )
+    if consent:
+        await o.consents.record("acme", pid, Purpose.MARKETING, True, source="t", actor="s")
+
+
+async def _campaign(o: Orchestrator) -> str:
+    draft = await o.campaigns.create(
+        "acme",
+        name="Test",
+        kind="education",
+        segment="no_visits",
+        channel="telegram",
+        template=GOOD,
+        actor="staff",
+        holdout_pct=0,
+    )
+    await o.campaigns.approve("acme", draft["id"], "staff")
+    return str(draft["id"])
+
+
+async def _status(o: Orchestrator, cid: str, pid: str = "p1") -> str:
+    async with o.db.engine.connect() as conn:
+        row = (
+            await conn.execute(
+                select(recipients.c.status).where(
+                    recipients.c.campaign_id == cid, recipients.c.patient_id == pid
+                )
+            )
+        ).first()
+    assert row is not None
+    return str(row.status)
+
+
+def test_a11_opt_out_must_be_an_instruction() -> None:
+    assert has_opt_out(GOOD)
+    assert has_opt_out("Reply STOP to unsubscribe.")
+    assert has_opt_out("Si no quieres recibir más mensajes, responde BAJA.")
+    for bad in ("Promoción nonstop para clientes.", "Stop by our clinic!", "Pare aquí"):
+        assert not has_opt_out(bad), bad
+
+
+async def test_a11_stop_reply_unsubscribes_end_to_end(
+    o: Orchestrator, c: httpx.AsyncClient
+) -> None:
+    await _patient(o, chat="777")
+    o.settings.telegram_webhook_secret = SecretStr("whsec-test-not-a-secret")
+    update_ = {"update_id": 1, "message": {"chat": {"id": 777}, "text": " Stop "}}
+    url = "/v1/channels/telegram/acme"
+    assert (await c.post(url, json=update_)).status_code == 401
+    bad = {"X-Telegram-Bot-Api-Secret-Token": "wrong"}
+    assert (await c.post(url, json=update_, headers=bad)).status_code == 401
+    good = {"X-Telegram-Bot-Api-Secret-Token": "whsec-test-not-a-secret"}
+    assert (await c.post(url, json=update_, headers=good)).status_code == 200
+    assert not await o.consents.has("acme", "p1", Purpose.MARKETING)
+    trail = await o.audit.list("acme", subject_id="p1")
+    assert trail[0].action == "consent.withdrawn" and trail[0].actor == "channel:telegram"
+    # And nothing is sent to them afterwards.
+    cid = await _campaign(o)
+    await o.campaigns.send("acme", cid, "staff")
+    assert await _status(o, cid) == "skipped_no_consent"
+
+
+async def test_a11_webhook_is_off_without_a_secret(c: httpx.AsyncClient) -> None:
+    resp = await c.post("/v1/channels/telegram/acme", json={"message": {"text": "STOP"}})
+    assert resp.status_code == 404
+
+
+async def test_a12_failure_before_sending_is_recoverable(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o)
+    cid = await _campaign(o)
+
+    async def fail(*args: object, **kwargs: object) -> bool:
+        raise RuntimeError("simulated db outage")
+
+    monkeypatch.setattr(o.campaigns, "_reserve", fail)
+    with pytest.raises(RuntimeError):
+        await o.campaigns.send("acme", cid, "staff")
+    campaign = await o.campaigns.get("acme", cid)
+    assert campaign["status"] == "sending"  # not "sent" while nothing was delivered
+    assert await _status(o, cid) == "queued"
+    monkeypatch.undo()
+    await o.campaigns.run_outbox()  # the worker finishes the job
+    assert await _status(o, cid) == "dry_run"
+    assert (await o.campaigns.get("acme", cid))["status"] == "completed"
+
+
+async def test_a12_crash_after_sending_is_never_resent(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o)
+    cid = await _campaign(o)
+    sent: list[str] = []
+
+    async def deliver(chat: str, text: str) -> str:
+        sent.append(chat)
+        raise DeliveryUncertain("timeout")
+
+    monkeypatch.setattr(o.campaigns.telegram, "send", deliver)
+    result = await o.campaigns.send("acme", cid, "staff")
+    assert result["status"] == "partial_failed" and await _status(o, cid) == "uncertain"
+    with pytest.raises(CampaignError):  # uncertain is not "failed": no automatic retry
+        await o.campaigns.retry_failed("acme", cid, "staff")
+    await o.campaigns.run_outbox()
+    assert sent == ["1"]
+    resolved = await o.campaigns.resolve_uncertain("acme", cid, "p1", True, "staff")
+    assert resolved["recipients"] == {"treatment:sent": 1}
+
+
+async def test_a12_stale_claim_becomes_uncertain(o: Orchestrator) -> None:
+    await _patient(o)
+    cid = await _campaign(o)
+    await o.campaigns.send("acme", cid, "staff")
+    async with o.db.engine.begin() as conn:  # a worker died between claim and result
+        await conn.execute(
+            update(recipients)
+            .where(recipients.c.campaign_id == cid)
+            .values(status="sending", claimed_at=utcnow() - timedelta(hours=1))
+        )
+    stats = await o.campaigns.run_outbox()
+    assert stats["recovered"] == 1 and await _status(o, cid) == "uncertain"
+
+
+async def test_a12_definite_failures_can_be_retried(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o)
+    cid = await _campaign(o)
+
+    async def refuse(chat: str, text: str) -> str:
+        raise RuntimeError("telegram HTTP 400")
+
+    monkeypatch.setattr(o.campaigns.telegram, "send", refuse)
+    assert (await o.campaigns.send("acme", cid, "staff"))["status"] == "partial_failed"
+    monkeypatch.undo()
+    retried = await o.campaigns.retry_failed("acme", cid, "staff")
+    assert retried["status"] == "completed" and retried["recipients"] == {"treatment:dry_run": 1}
+
+
+async def test_a13_late_edit_cannot_reopen_a_sent_campaign(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o)
+    draft = await o.campaigns.create(
+        "acme",
+        name="Race",
+        kind="education",
+        segment="no_visits",
+        channel="telegram",
+        template=GOOD,
+        actor="staff",
+        holdout_pct=0,
+    )
+    cid = draft["id"]
+    read, resume = asyncio.Event(), asyncio.Event()
+    original = o.campaigns.get
+    first = True
+
+    async def blocked_get(*args: object, **kwargs: object) -> dict[str, object]:
+        nonlocal first
+        result = await original(*args, **kwargs)  # type: ignore[arg-type]
+        if first:
+            first = False
+            read.set()
+            await resume.wait()
+        return result
+
+    monkeypatch.setattr(o.campaigns, "get", blocked_get)
+    edit = asyncio.create_task(o.campaigns.update_template("acme", cid, GOOD + " Otro.", "s"))
+    await read.wait()
+    await o.campaigns.approve("acme", cid, "staff")
+    await o.campaigns.send("acme", cid, "staff")
+    resume.set()
+    with pytest.raises(CampaignError):
+        await edit
+    after = await original("acme", cid)
+    assert after["status"] == "completed" and after["template"] == GOOD
+    with pytest.raises(CampaignError):
+        await o.campaigns.send("acme", cid, "staff")
+
+
+async def test_a14_concurrent_campaigns_share_the_monthly_cap(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o)  # dental pack: at most 2 messages a month
+    await o.campaigns.send("acme", await _campaign(o), "staff")
+    c1, c2 = await _campaign(o), await _campaign(o)
+    sent: list[str] = []
+
+    async def slow(chat: str, text: str) -> str:
+        sent.append(chat)
+        await asyncio.sleep(0.05)  # both campaigns are in flight at once
+        return "sent"
+
+    monkeypatch.setattr(o.campaigns.telegram, "send", slow)
+    await asyncio.gather(
+        o.campaigns.send("acme", c1, "staff"), o.campaigns.send("acme", c2, "staff")
+    )
+    assert len(sent) == 1
+    assert sorted([await _status(o, c1), await _status(o, c2)]) == ["sent", "skipped_cap"]
+    async with o.db.engine.connect() as conn:
+        used = (await conn.execute(select(contact_budget.c.used))).scalar_one()
+    assert used == 2
+
+
+async def test_a15_withdrawal_mid_batch_stops_later_sends(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o, "p1")
+    await _patient(o, "p2", chat="2")
+    cid = await _campaign(o)
+    sent: list[str] = []
+
+    async def deliver(chat: str, text: str) -> str:
+        sent.append(chat)
+        if len(sent) == 1:
+            for pid in ("p1", "p2"):
+                await o.consents.record(
+                    "acme", pid, Purpose.MARKETING, False, source="STOP", actor="patient"
+                )
+        return "sent"
+
+    monkeypatch.setattr(o.campaigns.telegram, "send", deliver)
+    await o.campaigns.send("acme", cid, "staff")
+    assert len(sent) == 1
+    assert sorted([await _status(o, cid, "p1"), await _status(o, cid, "p2")]) == [
+        "sent",
+        "skipped_no_consent",
+    ]
+
+
+async def test_a15_cancel_mid_batch_stops_later_sends(
+    o: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patient(o, "p1")
+    await _patient(o, "p2", chat="2")
+    cid = await _campaign(o)
+    sent: list[str] = []
+
+    async def deliver(chat: str, text: str) -> str:
+        sent.append(chat)
+        await o.campaigns.cancel("acme", cid, "owner")
+        return "sent"
+
+    monkeypatch.setattr(o.campaigns.telegram, "send", deliver)
+    result = await o.campaigns.send("acme", cid, "staff")
+    assert len(sent) == 1 and result["status"] == "cancelled"
+    assert "treatment:cancelled" in result["recipients"]
+
+
+async def test_app_first_then_telegram_fallback(o: Orchestrator) -> None:
+    await _patient(o, "p1")
+    await _patient(o, "p2", chat="2")
+    for pid in ("p1", "p2"):
+        await o.principals.create_patient_access("acme", pid, "staff", 30)
+    cid = await _campaign(o)
+    result = await o.campaigns.send("acme", cid, "staff")
+    assert result["recipients"] == {"treatment:in_app": 2}
+    assert [x["seen"] for x in await o.campaigns.offers_for("acme", "p1")] == [False]
+    # p1 opens the app; p2 does not.
+    assert await o.campaigns.mark_seen("acme", "p1") == 1
+    assert (await o.campaigns.run_outbox())["fallback"] == 0  # not due yet
+    async with o.db.engine.begin() as conn:  # 48 hours later
+        await conn.execute(
+            update(recipients).values(fallback_due_at=utcnow() - timedelta(minutes=1))
+        )
+    assert (await o.campaigns.run_outbox())["fallback"] == 1
+    assert await _status(o, cid, "p1") == "seen"
+    assert await _status(o, cid, "p2") == "dry_run"  # the Telegram fallback
+
+
+async def test_patient_marks_offers_seen_over_http(o: Orchestrator, c: httpx.AsyncClient) -> None:
+    await _patient(o)
+    created = await c.post("/v1/crm/patients/p1/access", headers=SERVICE)
+    key = {"X-API-Key": created.json()["key"]}
+    cid = await _campaign(o)
+    await o.campaigns.send("acme", cid, "staff")
+    resp = await c.post("/v1/me/offers/seen", headers=key)
+    assert resp.json() == {"marked": 1} and await _status(o, cid) == "seen"

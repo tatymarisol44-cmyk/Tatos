@@ -102,6 +102,16 @@ class Settings(BaseSettings):
     campaign_default_holdout_pct: int = Field(default=20, ge=0, le=50)
     # A booking this many days after a message counts as a conversion.
     campaign_conversion_window_days: int = Field(default=30, ge=1)
+    # Offers appear in the patient's app first; unseen after this many hours, they go
+    # out by Telegram (0: never fall back).
+    campaign_fallback_hours: int = Field(default=48, ge=0, le=720)
+    # Outbox worker: pass interval (0 disables the in-process worker, e.g. when a
+    # separate worker or CronJob runs it), and the age at which a claim is presumed dead.
+    outbox_interval_seconds: int = Field(default=30, ge=0)
+    outbox_stale_seconds: int = Field(default=300, ge=30)
+    # Telegram sends it in X-Telegram-Bot-Api-Secret-Token on every webhook call
+    # (setWebhook secret_token). Without it the inbound endpoint is disabled.
+    telegram_webhook_secret: SecretStr | None = None
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000

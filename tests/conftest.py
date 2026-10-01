@@ -26,6 +26,7 @@ def settings() -> Settings:
         router_top_k=3,
         api_keys="test-key:acme,other-key:globex",  # type: ignore[arg-type]
         rate_limit_per_minute=1000,
+        outbox_interval_seconds=0,  # tests drive the outbox explicitly
     )
 
 
