@@ -12,6 +12,7 @@ from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.crm import CrmError, NotFoundError, treatments
 from orchestrator.db import utcnow
+from orchestrator.governance import Purpose
 from orchestrator.insights import NO_SHOW_HIGH, no_show_rate, segment_of
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
@@ -30,6 +31,8 @@ async def _patient(orch: Orchestrator, pid: str, tenant: str = "acme", **extra: 
     await orch.crm.create_patient(
         tenant, {"display_name": f"Paciente {pid}", **extra}, "recepcion", patient_id=pid
     )
+    # Segments profile people: only with the analytics consent (A19).
+    await orch.consents.record(tenant, pid, Purpose.ANALYTICS, True, source="form", actor="r")
 
 
 async def _visit(
@@ -58,7 +61,8 @@ async def test_patient_crud_is_audited_and_tenant_scoped(clinic: Orchestrator) -
     assert [p["id"] for p in await crm.list_patients("acme", search="p-1")] == ["p-1"]
     with pytest.raises(NotFoundError):
         await crm.get_patient("globex", "p-1", actor="x")  # other tenant: does not exist
-    actions = [e.action for e in await clinic.audit.list("acme", subject_id="p-1")]
+    trail = await clinic.audit.list("acme", subject_id="p-1")
+    actions = [e.action for e in trail if e.action.startswith("crm.")]
     assert actions == ["crm.patient.updated", "crm.patient.viewed", "crm.patient.created"]
 
 

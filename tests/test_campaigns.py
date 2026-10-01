@@ -4,21 +4,22 @@ lift measurement and data-subject rights."""
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from orchestrator.campaigns import (
     CampaignError,
     arm_for,
+    campaigns,
+    contact_budget,
     placeholders_ok,
     recipients,
     render,
-    two_proportion_p,
 )
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
@@ -30,12 +31,18 @@ from orchestrator.service import Orchestrator
 GOOD = "Hola {first_name}, ya toca tu control. Agenda respondiendo aquí. Responde STOP para salir."
 
 
+def _telegram_ok(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"ok": True})
+
+
 @pytest.fixture
 async def clinic(settings: Settings, catalog: Catalog) -> Any:
     settings.tenant_packs = {"acme": "dental"}
     settings.campaign_default_holdout_pct = 0  # deterministic tests: everyone is treated
+    settings.telegram_bot_token = SecretStr("123:test-token")  # a stand-in bot that says ok
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     await orch.start()
+    orch.campaigns.telegram._http = httpx.AsyncClient(transport=httpx.MockTransport(_telegram_ok))
     yield orch
     await orch.close()
 
@@ -57,6 +64,7 @@ async def _dormant(
         actor="r",
     )
     await orch.crm.set_appointment_status("acme", appt["id"], "completed", "r")
+    await orch.consents.record("acme", pid, Purpose.ANALYTICS, True, source="form", actor="r")
     if consent:
         await orch.consents.record("acme", pid, Purpose.MARKETING, True, source="form", actor="r")
 
@@ -69,14 +77,6 @@ def test_holdout_split_is_deterministic_and_proportional() -> None:
     control = sum(arm_for("c1", f"p{i}", 20) == "control" for i in range(2000))
     assert 320 < control < 480  # ~20%
     assert {arm_for("c1", f"p{i}", 0) for i in range(50)} == {"treatment"}
-
-
-def test_two_proportion_test() -> None:
-    assert two_proportion_p(50, 100, 50, 100) == pytest.approx(1.0)
-    p = two_proportion_p(60, 100, 30, 100)
-    assert p is not None and p < 0.001
-    assert two_proportion_p(0, 0, 1, 10) is None
-    assert two_proportion_p(0, 10, 0, 10) is None  # no variance
 
 
 def test_template_helpers() -> None:
@@ -154,7 +154,7 @@ async def test_big_discounts_need_the_owner(clinic: Orchestrator) -> None:
     assert approved["status"] == "approved" and approved["approved_by"] == "owner"
 
 
-async def test_send_respects_consent_channel_and_holdout(
+async def test_eligibility_is_decided_before_the_split(
     clinic: Orchestrator, settings: Settings
 ) -> None:
     await _dormant(clinic, "yes")
@@ -170,21 +170,17 @@ async def test_send_respects_consent_channel_and_holdout(
         template=GOOD,
         actor="ana",
     )
+    # Ineligible patients are in neither arm: they are reported, not assigned.
+    assert campaign["population"] == {
+        "segment": 3,
+        "eligible": 1,
+        "excluded": {"no_marketing_consent": 1, "no_channel": 1},
+    }
     await clinic.campaigns.approve("acme", campaign["id"], "owner")
     sent = await clinic.campaigns.send("acme", campaign["id"], "ana")
-    outcomes = sent["outcomes"]
-    arms = {r["patient_id"]: r["arm"] for r in await _rows(clinic, campaign["id"])}
-    expected = {
-        pid: ("held_out" if arms[pid] == "control" else status)
-        for pid, status in {
-            "yes": "dry_run",  # no bot token: recorded, not delivered
-            "no-consent": "skipped_no_consent",
-            "no-chat": "skipped_no_channel",
-        }.items()
-    }
-    statuses = {r["patient_id"]: r["status"] for r in await _rows(clinic, campaign["id"])}
-    assert statuses == expected
-    assert sum(outcomes.values()) == 3
+    [row] = await _rows(clinic, campaign["id"])
+    assert row["patient_id"] == "yes"
+    assert row["status"] == ("held_out" if row["arm"] == "control" else "sent")
     assert sent["status"] == "completed"
     with pytest.raises(CampaignError):
         await clinic.campaigns.send("acme", campaign["id"], "ana")  # never twice
@@ -222,7 +218,7 @@ async def test_withdrawn_consent_is_checked_at_send_time(clinic: Orchestrator) -
 async def test_monthly_frequency_cap(clinic: Orchestrator) -> None:
     await _dormant(clinic, "p1")  # dental pack: at most 2 messages a month
     outcomes = []
-    for i in range(3):
+    for i, mode in enumerate(["simulation", "simulation", "live", "live", "live"]):
         c = await clinic.campaigns.create(
             "acme",
             name=f"c{i}",
@@ -231,10 +227,20 @@ async def test_monthly_frequency_cap(clinic: Orchestrator) -> None:
             channel="telegram",
             template=GOOD,
             actor="ana",
+            mode=mode,
         )
         await clinic.campaigns.approve("acme", c["id"], "owner")
         outcomes.append((await clinic.campaigns.send("acme", c["id"], "ana"))["outcomes"])
-    assert outcomes == [{"dry_run": 1}, {"dry_run": 1}, {"skipped_cap": 1}]
+    # Rehearsals take no room under the cap; real messages do.
+    assert outcomes == [
+        {"dry_run": 1},
+        {"dry_run": 1},
+        {"sent": 1},
+        {"sent": 1},
+        {"skipped_cap": 1},
+    ]
+    async with clinic.db.engine.connect() as conn:
+        assert (await conn.execute(select(contact_budget.c.used))).scalar_one() == 2
 
 
 async def test_live_telegram_delivery(clinic: Orchestrator, settings: Settings) -> None:
@@ -287,7 +293,7 @@ async def test_results_measure_lift_against_the_holdout(
         actor="ana",
     )
     await clinic.campaigns.approve("acme", c["id"], "owner")
-    await clinic.campaigns.send("acme", c["id"], "ana")
+    sent = await clinic.campaigns.send("acme", c["id"], "ana")
     rows = await _rows(clinic, c["id"])
     treated = [r["patient_id"] for r in rows if r["arm"] == "treatment"]
     control = [r["patient_id"] for r in rows if r["arm"] == "control"]
@@ -303,15 +309,25 @@ async def test_results_measure_lift_against_the_holdout(
             price=50,
             actor="bot",
         )
-    results = await clinic.campaigns.results("acme", c["id"])
-    assert results["arms"]["treatment"] == {
+    early = await clinic.campaigns.results("acme", c["id"])
+    assert early["status"] == "provisional" and "lift_abs" not in early["itt"]
+    later = utcnow() + timedelta(days=31)
+    results = await clinic.campaigns.results("acme", c["id"], now=later)
+    assert results["status"] == "final"
+    treatment = results["itt"]["arms"]["treatment"]
+    assert {k: treatment[k] for k in ("n", "converted", "rate")} == {
         "n": len(treated),
         "converted": len(treated),
         "rate": 1.0,
     }
-    assert results["arms"]["control"]["converted"] == 0
-    assert results["lift_abs"] == 1.0 and results["lift_rel"] is None
+    assert results["itt"]["arms"]["control"]["converted"] == 0
+    assert results["itt"]["lift_abs"] == 1.0 and results["itt"]["lift_rel"] is None
+    assert results["itt"]["test"] == "fisher_exact_two_sided"
     assert results["conclusion"] == "inconclusive (arms too small)"
+    assert (
+        results["window_ends_at"]
+        == (datetime.fromisoformat(sent["sent_at"]) + timedelta(days=30)).isoformat()
+    )
 
 
 async def test_bookings_outside_the_window_do_not_count(clinic: Orchestrator) -> None:
@@ -327,9 +343,9 @@ async def test_bookings_outside_the_window_do_not_count(clinic: Orchestrator) ->
     )
     await clinic.campaigns.approve("acme", c["id"], "owner")
     await clinic.campaigns.send("acme", c["id"], "ana")
-    # Pretend the message went out two months ago; a booking today is outside 30 days.
+    # Pretend the campaign went out two months ago; a booking today is outside 30 days.
     async with clinic.db.engine.begin() as conn:
-        await conn.execute(update(recipients).values(sent_at=utcnow() - timedelta(days=60)))
+        await conn.execute(update(campaigns).values(sent_at=utcnow() - timedelta(days=60)))
     await clinic.crm.create_appointment(
         "acme",
         "p1",
@@ -340,7 +356,8 @@ async def test_bookings_outside_the_window_do_not_count(clinic: Orchestrator) ->
         actor="r",
     )
     results = await clinic.campaigns.results("acme", c["id"])
-    assert results["arms"]["treatment"]["converted"] == 0
+    assert results["status"] == "final"
+    assert results["itt"]["arms"]["treatment"]["converted"] == 0
 
 
 async def test_cancel_and_validation(clinic: Orchestrator) -> None:
@@ -365,6 +382,16 @@ async def test_cancel_and_validation(clinic: Orchestrator) -> None:
         await clinic.campaigns.create(
             "acme", name="c", kind="recall", segment="dormant", channel="sms", actor="a"
         )
+    with pytest.raises(CampaignError, match="unknown mode"):
+        await clinic.campaigns.create(
+            "acme",
+            name="c",
+            kind="recall",
+            segment="dormant",
+            channel="telegram",
+            actor="a",
+            mode="pretend",
+        )
     with pytest.raises(KeyError):
         await clinic.campaigns.get("globex", c["id"])
     assert [x["id"] for x in await clinic.campaigns.list_all("acme")] == [c["id"]]
@@ -385,7 +412,7 @@ async def test_subject_rights_cover_campaign_history(clinic: Orchestrator) -> No
     await clinic.campaigns.send("acme", c["id"], "ana")
     exported = await clinic.export_subject("acme", "p1", actor="dpo")
     [message] = exported["campaign_messages"]
-    assert message["status"] == "dry_run" and message["sent_at"]
+    assert message["status"] == "sent" and message["sent_at"]
     assert exported["crm"]["patient"]["id"] == "p1"
     erased = await clinic.erase_subject("acme", "p1", actor="dpo")
     assert erased["campaign_messages_anonymised"] == 1

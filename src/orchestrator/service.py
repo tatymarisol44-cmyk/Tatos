@@ -186,7 +186,7 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.crm = CrmService(self.db, self.audit, settings)
-        self.insights = InsightsService(self.db, self.crm, self.llm, settings)
+        self.insights = InsightsService(self.db, self.crm, self.consents, self.llm, settings)
         self.campaigns = CampaignService(
             self.db, self.audit, self.consents, self.crm, self.insights, self.llm, settings
         )

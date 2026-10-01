@@ -15,7 +15,16 @@ the tenant's industry pack as the time unit:
     at_risk    last visit between one and two intervals ago
     dormant    last visit more than two intervals ago
     no_visits  registered, never completed a visit
-    occasional anything else"""
+    occasional anything else
+
+Populations (audit findings A19, A20):
+- every metric leaves out restricted patients (erasure requested), including the
+  forecast and the upcoming appointments, so the totals agree with each other;
+- operational aggregates (counts, no-shows, pipeline, forecast, alerts) are running the
+  clinic and do not depend on consent;
+- profiling a person (their RFM segment, the high-value ranking, and therefore campaign
+  targeting) needs the `analytics` consent. Opt-in: no record means no.
+`population` in the summary states both sizes."""
 
 from __future__ import annotations
 
@@ -29,6 +38,7 @@ from sqlalchemy import and_, case, func, select
 from orchestrator.config import Settings
 from orchestrator.crm import REVENUE_STAGES, CrmService, appointments, money, patients, treatments
 from orchestrator.db import Database, aware, utcnow
+from orchestrator.governance import ConsentRegistry, Purpose
 from orchestrator.guardrails import check_input
 from orchestrator.llm import LLMClient
 from orchestrator.packs import pack_for
@@ -78,9 +88,17 @@ def no_show_rate(no_shows: int, completed: int) -> float:
 
 
 class InsightsService:
-    def __init__(self, db: Database, crm: CrmService, llm: LLMClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        db: Database,
+        crm: CrmService,
+        consents: ConsentRegistry,
+        llm: LLMClient,
+        settings: Settings,
+    ) -> None:
         self.db = db
         self.crm = crm
+        self.consents = consents
         self.llm = llm
         self.settings = settings
 
@@ -145,11 +163,18 @@ class InsightsService:
             )
         return out
 
+    async def _profiled(
+        self, tenant: str, per_patient: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """The patients who may be profiled: `analytics` consent granted."""
+        allowed = await self.consents.granted_subjects(tenant, Purpose.ANALYTICS)
+        return [p for p in per_patient if p["id"] in allowed]
+
     async def segments(self, tenant: str, now: datetime | None = None) -> dict[str, list[str]]:
         now = now or utcnow()
         interval = 30 * pack_for(self.settings, tenant).crm.recall_months
         members: dict[str, list[str]] = {s: [] for s in SEGMENTS}
-        for p in await self._per_patient(tenant, now):
+        for p in await self._profiled(tenant, await self._per_patient(tenant, now)):
             recency = (now - p["last_visit"]).days if p["last_visit"] else None
             members[segment_of(p["visits_24m"], p["total_visits"], recency, interval)].append(
                 p["id"]
@@ -157,13 +182,16 @@ class InsightsService:
         return {k: sorted(v) for k, v in members.items()}
 
     async def segment_members(self, tenant: str, segment: str) -> list[str]:
-        if segment == "recall_due":
+        """Who a campaign may target: only patients who allow profiling."""
+        alert_kind = {"recall_due": "recall_due", "pending_treatment": "quote_followup"}
+        if segment in alert_kind:
+            allowed = await self.consents.granted_subjects(tenant, Purpose.ANALYTICS)
             return sorted(
-                {a.patient_id for a in await self.crm.alerts(tenant) if a.kind == "recall_due"}
-            )
-        if segment == "pending_treatment":
-            return sorted(
-                {a.patient_id for a in await self.crm.alerts(tenant) if a.kind == "quote_followup"}
+                {
+                    a.patient_id
+                    for a in await self.crm.alerts(tenant)
+                    if a.kind == alert_kind[segment] and a.patient_id in allowed
+                }
             )
         members = await self.segments(tenant)
         if segment not in members:
@@ -174,24 +202,29 @@ class InsightsService:
         now = now or utcnow()
         policy = pack_for(self.settings, tenant).crm
         interval = 30 * policy.recall_months
-        per_patient = await self._per_patient(tenant, now)
+        per_patient = await self._per_patient(tenant, now)  # restricted ones excluded
         by_id = {p["id"]: p for p in per_patient}
+        profiled = await self._profiled(tenant, per_patient)
         segs: Counter[str] = Counter()
-        for p in per_patient:
+        for p in profiled:
             recency = (now - p["last_visit"]).days if p["last_visit"] else None
             segs[segment_of(p["visits_24m"], p["total_visits"], recency, interval)] += 1
 
         # Top 20% by monetary value (at least one patient when anyone spent anything).
-        spenders = sorted(
-            (p for p in per_patient if p["monetary"] > 0), key=lambda p: -p["monetary"]
-        )
+        spenders = sorted((p for p in profiled if p["monetary"] > 0), key=lambda p: -p["monetary"])
         high_value = spenders[: max(1, len(spenders) // 5)] if spenders else []
 
         alerts = await self.crm.alerts(tenant, now)
-        upcoming = await self.crm.list_appointments(tenant, start=now, end=now + timedelta(days=14))
+        upcoming = [
+            a
+            for a in await self.crm.list_appointments(
+                tenant, start=now, end=now + timedelta(days=14)
+            )
+            if a["patient_id"] in by_id
+        ]
         risky = []
         for appt in upcoming:
-            if appt["status"] not in ("scheduled", "confirmed") or appt["patient_id"] not in by_id:
+            if appt["status"] not in ("scheduled", "confirmed"):
                 continue
             p = by_id[appt["patient_id"]]
             rate = no_show_rate(p["no_shows"], p["total_visits"])
@@ -218,12 +251,18 @@ class InsightsService:
 
         # Naive forecast: the average of the last 8 weeks, projected 4 weeks ahead.
         recent = await self.crm.list_appointments(tenant, start=now - timedelta(weeks=8), end=now)
-        done = [a for a in recent if a["status"] == "completed"]
+        done = [a for a in recent if a["status"] == "completed" and a["patient_id"] in by_id]
         weekly = len(done) / 8
         weekly_revenue = sum(a["price"] for a in done) / 8
         return {
             "generated_at": now.isoformat(),
             "pack": pack_for(self.settings, tenant).id,
+            "population": {
+                "operations": len(per_patient),
+                "profiling": len(profiled),
+                "rule": "restricted patients are excluded everywhere; segments and "
+                "high_value cover only patients with the analytics consent",
+            },
             "patients": {
                 "total": len(per_patient),
                 "active": sum(

@@ -348,11 +348,11 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | INS-02 | The summary shall report:<br>• patients (total, active);<br>• segment counts;<br>• the top 20% by monetary value (visit prices plus accepted, in-progress and completed plans);<br>• alert counts and recalls due;<br>• the historical no-show rate and upcoming appointments (14 days) whose smoothed no-show rate is at least 0.3;<br>• pipeline count and amount by stage;<br>• an 8-week-average forecast, labelled as such. | I | test_crm |
 | INS-03 | `POST /v1/insights/ask` shall apply the input guard (400 when blocked). An LLM shall then answer only from the metrics JSON (pseudonymous ids, no names or contact data), naming the metric behind each claim. | I | test_crm, test_business_api |
 | INS-04 | A guarded text-to-SQL recipe (read-only role, allow-listed views, validate → execute → repair loop) shall answer exploratory questions. | F | — |
-| CMP-01 | Campaigns shall have a kind (`recall`, `reactivation`, `pending_treatment`, `referral`, `birthday`, `education`) and a channel (`telegram`). Recipients shall be fixed at creation from a segment or alert list, excluding restricted records, and unknown segments shall return 422. | I | test_campaigns, test_business_api |
+| CMP-01 | Campaigns shall have a kind (`recall`, `reactivation`, `pending_treatment`, `referral`, `birthday`, `education`) and a channel (`telegram`). Recipients shall be fixed at creation from a segment or alert list: only eligible patients (not restricted, `analytics` and `marketing` consent, a working channel) shall be assigned to an arm, and the exclusions shall be recorded (`population`). Unknown segments shall return 422. A campaign's `mode` (`live` or `simulation`) shall be fixed at creation. | I | test_campaigns, test_business_api, test_audit_regressions (A16, A17) |
 | CMP-02 | Copy shall be checked against the pack's banned claims and, in health packs, against clinical details. Only `{first_name}` shall be allowed as a placeholder, and a "reply STOP" opt-out shall be required. Non-compliant copy shall stay `draft` with the violations listed, and compliant copy shall go to `pending_approval`. LLM-drafted copy shall get the opt-out appended if it is missing. | I | test_campaigns, test_governance |
 | CMP-03 | Approval by a person shall be required. A discount above the pack's `max_discount_pct` shall also require `owner_approval`. Approval and sending shall be atomic, and a campaign shall be sent once. | I | test_campaigns |
 | CMP-04 | At send time the treatment arm shall be filtered by `marketing` consent (checked again then), a channel address, restriction and the pack's monthly cap. The control arm, chosen by `sha256(campaign, subject) % 100 < holdout_pct`, shall receive nothing. Outcomes shall be recorded per recipient: `sent`, `dry_run`, `failed` (error type only), `skipped_*` or `held_out`. The bot token shall never be logged. | I | test_campaigns |
-| CMP-05 | Results shall report the booking rate per arm within `CAMPAIGN_CONVERSION_WINDOW_DAYS`, absolute and relative lift, and a two-proportion z-test p-value. With fewer than 30 per arm the conclusion shall be "inconclusive". | I | test_campaigns |
+| CMP-05 | Results shall be an intention-to-treat comparison of every assigned patient from the moment the campaign was queued, with attrition per arm. They shall be `provisional` (no test, no conclusion) until the conversion window closes, then `final`: Fisher's exact test, Wilson intervals per arm and a Newcombe interval for the lift; "inconclusive" under 30 per arm. A simulation shall report no effect (ADR 0013). | I | test_campaigns, test_stats, test_audit_regressions (A16–A18) |
 | CMP-06 | Copy shall be editable only in `draft` or `pending_approval`. Campaigns shall be cancellable unless sent, and results shall exist only for sent campaigns. | I | test_campaigns, test_business_api |
 | CMP-07 | Messages shall be sent at each subject's best time (send-time optimisation). | F | — |
 | CMP-08 | WhatsApp Business, e-mail, Facebook/Instagram publishing and paid ads shall be supported, with ad spend held for approval and no targeting by health condition. | F | — |
@@ -391,7 +391,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | PERF-01 | Campaign delivery, results and alerts shall use a bounded number of queries per operation (no per-recipient round trips). | I | code review; test_campaigns |
 | PERF-02 | A load test shall report p50/p95/p99 latency, throughput and error rate with a fake LLM (orchestrator overhead) and with real providers. | F | — |
 | OBS-01 | OpenTelemetry spans per graph node, team step, memory and knowledge operation and LLM call (GenAI attributes). Metrics: routed count, guardrail blocks, latency, tokens. | I | Manual: `docker compose up` + Jaeger/Prometheus. The OTLP exporter setup has no automated test (see Appendix C). |
-| MNT-01 | Test coverage gate ≥ 80% (currently about 98%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0012). | I | CI |
+| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0013). | I | CI |
 | POR-01 | Provider-agnostic LLM (LiteLLM), SQLite or Postgres, in-memory store or Qdrant. Runnable locally, with Docker Compose, in Codespaces and on Kubernetes. | I | CI, dev container |
 
 ### 3.12 Data Structure
@@ -737,7 +737,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Recipient outcome (per campaign recipient): `pending` → `held_out` (control) | `skipped_no_consent` | `skipped_no_channel` | `skipped_cap` | `dry_run` | `sent` | `failed`.
+Recipient outcome (per campaign recipient): `pending` → `held_out` (control) | `skipped_no_consent` | `skipped_no_channel` | `skipped_cap` | `in_app` → `seen` | `sent` | `failed` | `uncertain`; `dry_run` only in simulation campaigns.
 
 ### 4.6 SCR Tables (thread review mode)
 
@@ -881,7 +881,7 @@ The campaign is `pending_approval`. The owner approves and sends it: consenting 
 10. Regulation (EU) 2016/679 (General Data Protection Regulation), in particular Arts. 5, 6, 7, 9, 15, 17, 20, 22, 28, 30, 32, 33, 35 and 44–49.
 11. U.S. HIPAA Privacy and Security Rules, 45 CFR Parts 160 and 164, in particular 164.312(b) (audit controls), 164.316(b)(2) (documentation retention) and 164.501/164.508(a)(3) (marketing).
 12. Ley Orgánica de Protección de Datos Personales, Ecuador, Registro Oficial Suplemento 459, 26 May 2021.
-13. Project ADRs 0001–0012 (`docs/adr/`).
+13. Project ADRs 0001–0013 (`docs/adr/`).
 
 ## 7 Point of Contact
 
@@ -904,7 +904,7 @@ For further information about this document and the project, contact the project
 | GOV-01..05 | `governance.py`, `service.py`, `crm.py`, `campaigns.py`, `memory.py`, `cli.py` | test_governance, test_memory, test_crm, test_campaigns, test_limits_and_retention, test_business_api |
 | CRM-01..04 | `crm.py`, `api/business.py` | test_crm, test_business_api, test_db_postgres (CI) |
 | INS-01..03 | `insights.py` | test_crm, test_business_api, test_db_postgres (CI) |
-| CMP-01..06 | `campaigns.py`, `risk.py` | test_campaigns, test_business_api, test_db_postgres (CI) |
+| CMP-01..06 | `campaigns.py`, `stats.py`, `risk.py` | test_campaigns, test_stats, test_audit_regressions, test_business_api, test_db_postgres (CI) |
 | SEC, PRV, REL, PERF-01 | `api/security.py`, `db.py`, `checkpoint.py`, all services | test_api, test_team (CSP), test_db, test_limits_and_retention, test_business_api |
 
 ## Appendix B — Compliance Controls (HIPAA · GDPR · LOPDP)
@@ -932,13 +932,13 @@ For further information about this document and the project, contact the project
 
 ## Appendix C — Known Gaps and Risks
 
-1. **Identity.** `X-Actor` is trusted as declared, so a compromised client application could impersonate a reviewer. Mitigation: per-user SSO/RBAC (GOV-08).
+1. **Identity.** Per-person keys with roles replaced the declared `X-Actor` (audit A01). SSO/OIDC is still future work (GOV-08).
 2. **Edited answers and phone numbers.** The output guard redacts phone numbers in reviewer-edited text too, including the clinic's own number. An allow-list of the tenant's public contact data would fix this.
-3. **Kubernetes base without Redis.** Two replicas with in-process rate limits: each replica enforces its own budget.
+3. **No deployment pipeline.** The Kubernetes base now runs Redis for the shared rate limit (audit A30), but nothing deploys images with health checks and rollback yet.
 4. **Schema migrations.** Tables are created with `create_all`. Alembic is needed before the first breaking change.
 5. **Audit growth.** There is no audit retention job yet (GOV-06).
 6. **Alert and insight queries** run at request time. Large tenants will need materialised aggregates or caching.
-7. **Holdout bias.** Eligibility filters apply only to the treatment arm, so the measured lift is conservative.
+7. **Lift is the effect of assignment.** Intention to treat among eligible patients (ADR 0013): with many failed or skipped deliveries it understates the effect of receiving the message; the attrition table shows by how much. No power calculation is made before sending.
 8. **Heuristic clinical detection.** Regex rules in EN/ES can miss paraphrases. Mitigations: the pack's division rules, `force_review`, and a planned LLM classifier (REV-10).
 9. **Local environment.** The development machine cannot run Docker (firmware virtualization disabled). The Postgres integration test, the Java suite and the Docker builds run only in CI or Codespaces.
 10. **Telemetry export untested.** `setup_telemetry` (OTLP exporters) has no automated test; the spans and metrics themselves are exercised by the suite through the no-op provider. A test with an in-memory span exporter would close this.

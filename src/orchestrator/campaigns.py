@@ -20,20 +20,32 @@ Channels, in order:
 2. Telegram, as a fallback: if the patient has not seen the offer after
    CAMPAIGN_FALLBACK_HOURS (or has no app access), it is sent as a message.
 
-Outcomes per recipient: in_app, seen, sent, dry_run (no bot token: recorded, not
-delivered), failed (certainly not delivered: may be retried), uncertain (the request
-left and no answer came back: never re-sent blindly, an operator decides), skipped_*
-(no consent, no channel, cap), held_out (control arm), cancelled.
+Outcomes per recipient: in_app, seen, sent, dry_run (simulation only), failed (certainly
+not delivered: may be retried), uncertain (the request left and no answer came back:
+never re-sent blindly, an operator decides), skipped_* (no consent, no channel, cap),
+held_out (control arm), cancelled.
+
+Simulation vs live (A17): the mode is fixed when the campaign is created. A simulation
+runs the same checks and records `dry_run` for each treatment recipient, but delivers
+nothing (not even in the app), takes no room under the monthly cap and produces no lift.
+A live campaign never pretends: without a bot token Telegram is simply not a channel.
 
 Opting out (A11): every message must tell the recipient how to stop (a reply
 instruction with the word STOP or BAJA, not a substring such as "nonstop"), and a STOP
 reply to the bot withdraws the marketing consent at once (`handle_inbound`).
 
-- The control arm is chosen by a hash of (campaign, subject), so the split is
-  reproducible and does not depend on the order recipients were listed in.
-- Lift is the difference in booking rate between arms within the conversion window,
-  with a two-proportion z-test. With small arms the result is labelled as inconclusive
-  instead of being reported as an effect.
+Measurement (A16, A18, docs/adr/0013):
+- Eligibility is decided before the split: profiling consent (the segment), marketing
+  consent and a reachable channel. Only eligible patients are assigned, so both arms come
+  from the same population. The control arm is chosen by a hash of (campaign, subject):
+  reproducible and independent of list order.
+- The primary analysis is intention to treat: everyone assigned, whatever happened to
+  their delivery, from the moment the campaign was queued. Attrition (skips, failures,
+  anonymised rows) is reported per arm, never silently dropped from one side.
+- The result stays `provisional` until the conversion window has closed; only then is
+  there one final analysis (bookings after the window never count, so asking again gives
+  the same answer). Fisher's exact test and 95 % intervals are valid for rare and zero
+  conversions; arms under MIN_ARM_SIZE are reported as inconclusive.
 - Messages carry no clinical details (checked) and are personalised only with the first
   name."""
 
@@ -41,7 +53,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -75,6 +86,7 @@ from orchestrator.insights import InsightsService
 from orchestrator.llm import LLMClient
 from orchestrator.packs import pack_for
 from orchestrator.risk import CopyCheck, check_copy, fold
+from orchestrator.stats import diff_interval, fisher_exact_p, wilson_interval
 
 log = logging.getLogger(__name__)
 
@@ -98,11 +110,13 @@ STOP_CONFIRMATION = (
 
 # Delivery rows of erased patients: outcome kept, identity and timestamps gone.
 ANON_PREFIX = "anon:"
+LIVE, SIMULATION = "live", "simulation"
+MODES = (LIVE, SIMULATION)
 EDITABLE = ("draft", "pending_approval")
 CANCELLABLE = ("draft", "pending_approval", "approved", "queued", "sending")
 SENT_STATES = ("sending", "completed", "partial_failed")
-# Recipients the treatment arm actually reached (for results and the patient's inbox).
-REACHED = ("in_app", "seen", "sent", "dry_run")
+# Recipients the treatment arm actually reached (per-delivery figures, patient's inbox).
+REACHED = ("in_app", "seen", "sent")
 _FINAL_FAILURES = ("failed", "uncertain")
 
 COPYWRITER_PROMPT = """You are the COPYWRITER of a small business. Write one short, warm
@@ -124,6 +138,9 @@ campaigns = Table(
     Column("status", String(24), nullable=False),
     Column("version", Integer, nullable=False, default=1),
     Column("holdout_pct", Integer, nullable=False),
+    Column("mode", String(16), nullable=False, default=LIVE),  # live | simulation
+    # Who the segment had and who was eligible (assigned to an arm), with the reasons.
+    Column("population", JSON, nullable=True),
     Column("compliance", JSON, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String(128), nullable=False),
@@ -202,18 +219,6 @@ def text_hash(template: str) -> str:
 def render(template: str, display_name: str) -> str:
     first = (display_name or "").split()[0] if display_name else ""
     return template.replace("{first_name}", first)
-
-
-def two_proportion_p(conv_a: int, n_a: int, conv_b: int, n_b: int) -> float | None:
-    """Two-sided p-value of H0: both arms convert at the same rate (normal approx.)."""
-    if n_a == 0 or n_b == 0:
-        return None
-    pooled = (conv_a + conv_b) / (n_a + n_b)
-    se = math.sqrt(pooled * (1 - pooled) * (1 / n_a + 1 / n_b))
-    if se == 0:
-        return None
-    z = (conv_a / n_a - conv_b / n_b) / se
-    return math.erfc(abs(z) / math.sqrt(2))
 
 
 class TelegramChannel:
@@ -331,12 +336,17 @@ class CampaignService:
         template: str | None = None,
         holdout_pct: int | None = None,
         language: str = "es",
+        mode: str = LIVE,
     ) -> dict[str, Any]:
         if kind not in KINDS:
             raise CampaignError(f"unknown kind {kind!r}; one of {KINDS}")
         if channel not in CHANNELS:
             raise CampaignError(f"unsupported channel {channel!r}; one of {CHANNELS}")
-        members = await self.insights.segment_members(tenant, segment)
+        if mode not in MODES:
+            raise CampaignError(f"unknown mode {mode!r}; one of {MODES}")
+        segment_ids = await self.insights.segment_members(tenant, segment)
+        members, excluded = await self._eligible(tenant, segment_ids, mode)
+        population = {"segment": len(segment_ids), "eligible": len(members), "excluded": excluded}
         text = template or await self.draft_copy(kind, segment, language)
         check = self._check(tenant, text)
         cid = uuid.uuid4().hex[:12]
@@ -354,6 +364,8 @@ class CampaignService:
                     status="pending_approval" if check.ok else "draft",
                     version=1,
                     holdout_pct=holdout,
+                    mode=mode,
+                    population=population,
                     compliance=check.to_dict(),
                     created_at=utcnow(),
                     created_by=actor,
@@ -382,11 +394,37 @@ class CampaignService:
                 f"campaign/{cid}",
                 details={
                     "segment": segment,
-                    "recipients": len(members),
+                    "mode": mode,
+                    "population": population,
                     "compliance": check.to_dict(),
                 },
             )
         return await self.get(tenant, cid)
+
+    async def _eligible(
+        self, tenant: str, segment_ids: list[str], mode: str
+    ) -> tuple[list[str], dict[str, int]]:
+        """Who can be assigned to an arm, decided once and for both arms (A16): marketing
+        consent and a channel that works (the app, or Telegram when it is configured or
+        only simulated). Profiling consent and restriction were applied by the segment."""
+        if not segment_ids:
+            return [], {}
+        marketing = await self.consents.granted_subjects(tenant, Purpose.MARKETING)
+        info = await self.crm.contacts(tenant, segment_ids)
+        app = await self._app_holders(tenant, segment_ids, utcnow())
+        telegram = mode == SIMULATION or self.telegram.live
+        eligible: list[str] = []
+        excluded: dict[str, int] = {}
+        for pid in segment_ids:
+            if pid not in marketing:
+                reason = "no_marketing_consent"
+            elif pid in app or (telegram and (info.get(pid) or {}).get("telegram_chat_id")):
+                eligible.append(pid)
+                continue
+            else:
+                reason = "no_channel"
+            excluded[reason] = excluded.get(reason, 0) + 1
+        return eligible, excluded
 
     async def get(self, tenant: str, campaign_id: str) -> dict[str, Any]:
         query = select(campaigns).where(
@@ -578,25 +616,33 @@ class CampaignService:
                 actor,
                 "campaign.queued",
                 f"campaign/{campaign_id}",
-                details={"version": current["version"], "live": self.telegram.live},
+                details={
+                    "version": current["version"],
+                    "mode": current["mode"],
+                    "telegram": self.telegram.live,
+                },
             )
         await self.dispatch(tenant, campaign_id)
         out = await self.get(tenant, campaign_id)
         out["outcomes"] = {k.split(":", 1)[1]: v for k, v in out["recipients"].items()}
         return out
 
-    async def _has_app(self, tenant: str, patient_id: str, now: datetime) -> bool:
-        query = select(func.count()).where(
+    async def _app_holders(self, tenant: str, patient_ids: list[str], now: datetime) -> set[str]:
+        """Patients with a working key to the patient app."""
+        query = select(principals.c.subject_id).where(
             and_(
                 principals.c.tenant == tenant,
                 principals.c.kind == PATIENT,
-                principals.c.subject_id == patient_id,
+                principals.c.subject_id.in_(patient_ids),
                 principals.c.revoked_at.is_(None),
                 or_(principals.c.expires_at.is_(None), principals.c.expires_at > now),
             )
         )
         async with self.db.engine.connect() as conn:
-            return int((await conn.execute(query)).scalar_one()) > 0
+            return set((await conn.execute(query)).scalars().all())
+
+    async def _has_app(self, tenant: str, patient_id: str, now: datetime) -> bool:
+        return bool(await self._app_holders(tenant, [patient_id], now))
 
     async def _reserve(self, tenant: str, patient_id: str, cap: int, now: datetime) -> bool:
         """Take one slot of the patient's monthly cap, or return False if it is full."""
@@ -736,7 +782,12 @@ class CampaignService:
         if not info or info.get("restricted"):
             await self._record(tenant, cid, patient_id, status="skipped_no_channel")
             return "skipped_no_channel"
-        chat_id = info.get("telegram_chat_id")
+        if campaign["mode"] == SIMULATION:
+            # Same checks, nothing delivered, no room taken under the cap (A17).
+            await self._record(tenant, cid, patient_id, status="dry_run", sent_at=now)
+            return "dry_run"
+        # Live: without a bot token Telegram is not a channel (never a silent dry run).
+        chat_id = info.get("telegram_chat_id") if self.telegram.live else None
         if not fallback and await self._has_app(tenant, patient_id, now):
             hours = self.settings.campaign_fallback_hours
             due = now + timedelta(hours=hours) if chat_id and hours > 0 else None
@@ -993,79 +1044,116 @@ class CampaignService:
                 ).rowcount
             )
 
-    async def results(self, tenant: str, campaign_id: str) -> dict[str, Any]:
-        """Booking rate per arm within the conversion window, lift and a z-test.
-        The treatment arm is the recipients reached (in the app or by message), the
-        control arm those held out."""
+    async def results(
+        self, tenant: str, campaign_id: str, now: datetime | None = None
+    ) -> dict[str, Any]:
+        """Booking rate per arm, intention to treat (A16): every eligible patient assigned
+        to an arm counts in it, measured from the moment the campaign was queued, whatever
+        happened to their delivery. Provisional until the conversion window has closed;
+        then one final analysis with Fisher's exact test and 95 % intervals (A18). A
+        simulation never yields an effect (A17)."""
         campaign = await self.get(tenant, campaign_id)
         if campaign["status"] not in SENT_STATES:
             raise CampaignError("results exist only for sent campaigns")
-        window = timedelta(days=self.settings.campaign_conversion_window_days)
-        query = select(recipients).where(
-            and_(
-                recipients.c.tenant == tenant,
-                recipients.c.campaign_id == campaign_id,
-                recipients.c.status.in_((*REACHED, "held_out")),
-                # Anonymised rows lost the link to their bookings: they cannot be scored.
-                ~recipients.c.patient_id.startswith(ANON_PREFIX),
-            )
+        now = now or utcnow()
+        days = self.settings.campaign_conversion_window_days
+        start = datetime.fromisoformat(campaign["sent_at"])
+        window_end = start + timedelta(days=days)
+        query = select(recipients.c.patient_id, recipients.c.arm, recipients.c.status).where(
+            and_(recipients.c.tenant == tenant, recipients.c.campaign_id == campaign_id)
         )
-        arms: dict[str, dict[str, int]] = {
-            "treatment": {"n": 0, "converted": 0},
-            "control": {"n": 0, "converted": 0},
-        }
         async with self.db.engine.connect() as conn:
-            rows = (await conn.execute(query)).mappings().all()
-            if not rows:
-                bookings: dict[str, list[datetime]] = {}
-            else:
-                starts = [aware(r["sent_at"]) or utcnow() for r in rows]
-                booked_rows = (
-                    await conn.execute(
-                        select(appointments.c.patient_id, appointments.c.created_at).where(
-                            and_(
-                                appointments.c.tenant == tenant,
-                                appointments.c.patient_id.in_([r["patient_id"] for r in rows]),
-                                appointments.c.created_at > min(starts),
-                                appointments.c.created_at <= max(starts) + window,
+            rows = (await conn.execute(query)).all()
+            # Anonymised rows lost the link to their bookings: reported, not scored.
+            scored = [r for r in rows if not r.patient_id.startswith(ANON_PREFIX)]
+            booked: set[str] = set()
+            if scored and campaign["mode"] == LIVE:
+                booked = set(
+                    (
+                        await conn.execute(
+                            select(appointments.c.patient_id)
+                            .where(
+                                and_(
+                                    appointments.c.tenant == tenant,
+                                    appointments.c.patient_id.in_([r.patient_id for r in scored]),
+                                    appointments.c.created_at > start,
+                                    appointments.c.created_at <= window_end,
+                                )
                             )
+                            .distinct()
                         )
                     )
-                ).all()
-                bookings = {}
-                for pid, created in booked_rows:
-                    bookings.setdefault(pid, []).append(aware(created) or created)
-        for row in rows:
-            sent_at = aware(row["sent_at"]) or utcnow()
-            converted = any(
-                sent_at < created <= sent_at + window
-                for created in bookings.get(row["patient_id"], [])
-            )
-            arm = arms[row["arm"]]
-            arm["n"] += 1
-            arm["converted"] += 1 if converted else 0
-        rate = {k: (v["converted"] / v["n"] if v["n"] else 0.0) for k, v in arms.items()}
-        p_value = two_proportion_p(
-            arms["treatment"]["converted"],
-            arms["treatment"]["n"],
-            arms["control"]["converted"],
-            arms["control"]["n"],
-        )
-        small = min(arms["treatment"]["n"], arms["control"]["n"]) < MIN_ARM_SIZE
-        return {
+                    .scalars()
+                    .all()
+                )
+        attrition: dict[str, dict[str, int]] = {"treatment": {}, "control": {}}
+        for r in rows:
+            status = "anonymised" if r.patient_id.startswith(ANON_PREFIX) else r.status
+            attrition[r.arm][status] = attrition[r.arm].get(status, 0) + 1
+        out: dict[str, Any] = {
             "campaign_id": campaign_id,
-            "window_days": self.settings.campaign_conversion_window_days,
-            "arms": {k: {**v, "rate": round(rate[k], 4)} for k, v in arms.items()},
-            "lift_abs": round(rate["treatment"] - rate["control"], 4),
-            "lift_rel": round(rate["treatment"] / rate["control"] - 1, 4)
-            if rate["control"]
-            else None,
-            "p_value": round(p_value, 4) if p_value is not None else None,
-            "conclusion": "inconclusive (arms too small)"
-            if small
-            else (
-                "significant at 5%" if p_value is not None and p_value < 0.05 else "not significant"
-            ),
+            "mode": campaign["mode"],
+            "population": campaign["population"],
+            "attrition": attrition,
+            "window_days": days,
+            "window_ends_at": window_end.isoformat(),
+        }
+        if campaign["mode"] == SIMULATION:
+            return {
+                **out,
+                "status": "simulation",
+                "conclusion": "simulation: nothing was delivered, so no effect is measured",
+            }
+
+        def arm(rows_: list[Any]) -> dict[str, Any]:
+            n = len(rows_)
+            conv = sum(1 for r in rows_ if r.patient_id in booked)
+            return {"n": n, "converted": conv, "rate": round(conv / n, 4) if n else 0.0}
+
+        itt = {k: arm([r for r in scored if r.arm == k]) for k in ("treatment", "control")}
+        per_delivery = arm([r for r in scored if r.arm == "treatment" and r.status in REACHED])
+        out["itt"] = {"arms": itt}
+        out["per_delivery"] = {
+            "treatment_reached": per_delivery,
+            "note": "descriptive only: who was reached is not random, so it is not "
+            "compared with the control arm",
+        }
+        if now < window_end:
+            return {
+                **out,
+                "status": "provisional",
+                "conclusion": f"provisional: the conversion window closes at "
+                f"{window_end.isoformat()}; no conclusion before then",
+            }
+        t, c = itt["treatment"], itt["control"]
+        for a in itt.values():
+            ci = wilson_interval(a["converted"], a["n"])
+            a["rate_ci95"] = [round(x, 4) for x in ci] if ci else None
+        diff = diff_interval(t["converted"], t["n"], c["converted"], c["n"])
+        p_value = fisher_exact_p(t["converted"], t["n"], c["converted"], c["n"])
+        lift = t["rate"] - c["rate"]
+        out["itt"].update(
+            {
+                "lift_abs": round(lift, 4),
+                "lift_abs_ci95": [round(x, 4) for x in diff] if diff else None,
+                "lift_rel": round(t["rate"] / c["rate"] - 1, 4) if c["rate"] else None,
+                "test": "fisher_exact_two_sided",
+                "p_value": round(p_value, 4) if p_value is not None else None,
+            }
+        )
+        if min(t["n"], c["n"]) < MIN_ARM_SIZE:
+            conclusion = "inconclusive (arms too small)"
+        elif p_value is not None and p_value < 0.05:
+            direction = "more" if lift > 0 else "less"
+            conclusion = f"treatment booked {direction} than control (significant at 5%)"
+        else:
+            conclusion = "no detectable difference at 5%"
+        return {
+            **out,
+            "status": "final",
+            "conclusion": conclusion,
+            "note": "Significance says a difference is unlikely to be chance alone; whether "
+            "its size is worth the campaign is a business judgement (see lift_abs_ci95).",
         }
 
     async def offers_for(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:

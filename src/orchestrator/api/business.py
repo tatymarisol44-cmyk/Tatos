@@ -410,6 +410,7 @@ async def create_campaign(body: CampaignIn, request: Request, p: Marketing) -> d
             template=body.template,
             holdout_pct=body.holdout_pct,
             language=body.language,
+            mode=body.mode,
             actor=p.id,
         )
     except KeyError as exc:  # unknown segment

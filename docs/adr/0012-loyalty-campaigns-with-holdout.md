@@ -1,6 +1,6 @@
 # ADR 0012: Loyalty campaigns with compliance checks, approval and a holdout group
 
-**Status:** accepted
+**Status:** accepted; eligibility, results and dry runs superseded by [ADR 0013](0013-campaign-measurement.md)
 
 ## Context
 
@@ -18,6 +18,6 @@ The retention stage of the e-CRM cycle (acquire, retain, extend) is where small 
 ## Consequences
 
 - Campaign impact is measured as causal lift, not activity, which is the metric a clinic owner can act on.
-- Eligibility filters apply only to the treatment arm, which slightly favours the control arm, so the measured lift is conservative. This is documented in the results docstring.
+- *(Withdrawn by ADR 0013, audit finding A16.)* Eligibility filters applied only to the treatment arm; the claim that this made the lift "conservative" was wrong, and eligibility is now decided before the split.
 - WhatsApp Business, e-mail, Facebook and Instagram are not yet channels. Meta's APIs need app review, and health ads cannot target health conditions. Paid ads would go through the same approval queue before any spend.
 - Send-time optimisation per subject is future work: it needs response-time history, which the channel adapters do not collect yet.

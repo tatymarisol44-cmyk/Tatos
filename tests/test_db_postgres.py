@@ -8,6 +8,7 @@ import os
 import uuid
 from datetime import timedelta
 
+import httpx
 import pytest
 from pydantic import SecretStr
 
@@ -56,6 +57,10 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
         assert summary["high_value"]["patients"] == ["p1"]
 
         await orch.consents.record(tenant, "p1", Purpose.MARKETING, True, source="f", actor="r")
+        orch.settings.telegram_bot_token = SecretStr("123:test-token")
+        orch.campaigns.telegram._http = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"ok": True}))
+        )
         campaign = await orch.campaigns.create(
             tenant,
             name="c",
@@ -67,9 +72,9 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
         )
         await orch.campaigns.approve(tenant, campaign["id"], "owner")
         sent = await orch.campaigns.send(tenant, campaign["id"], "r")
-        assert sent["outcomes"] == {"dry_run": 1}
-        results = await orch.campaigns.results(tenant, campaign["id"])
-        assert results["arms"]["treatment"]["n"] == 1
+        assert sent["outcomes"] == {"sent": 1}
+        results = await orch.campaigns.results(tenant, campaign["id"], now=now + timedelta(days=31))
+        assert results["status"] == "final" and results["itt"]["arms"]["treatment"]["n"] == 1
 
         paused = await orch.chat("hello", tenant=tenant, thread_id="t", force_review=True)
         assert paused.status == "pending_review"

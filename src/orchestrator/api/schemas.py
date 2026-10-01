@@ -157,6 +157,11 @@ class CampaignIn(BaseModel):
     )
     holdout_pct: int | None = Field(default=None, ge=0, le=50)
     language: str = Field(default="es", pattern=r"^[a-z]{2}$")
+    mode: Literal["live", "simulation"] = Field(
+        default="live",
+        description="simulation runs every check and records dry_run outcomes, but delivers "
+        "nothing, uses no monthly cap and reports no effect.",
+    )
 
 
 class CampaignTemplateIn(BaseModel):

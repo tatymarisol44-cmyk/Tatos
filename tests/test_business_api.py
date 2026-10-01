@@ -351,11 +351,12 @@ def test_campaign_endpoints(client: TestClient) -> None:
     client.post(
         f"/v1/crm/appointments/{appt['id']}/status", json={"status": "completed"}, headers=ACME
     )
-    client.put(
-        "/v1/subjects/p-1/consents/marketing",
-        json={"granted": True, "source": "form"},
-        headers=ACME,
-    )
+    for purpose in ("marketing", "analytics"):
+        client.put(
+            f"/v1/subjects/p-1/consents/{purpose}",
+            json={"granted": True, "source": "form"},
+            headers=ACME,
+        )
 
     assert (
         client.post(
@@ -367,10 +368,17 @@ def test_campaign_endpoints(client: TestClient) -> None:
     )
     created = client.post(
         "/v1/campaigns",
-        json={"name": "Vuelve", "kind": "reactivation", "segment": "dormant", "template": GOOD},
+        json={
+            "name": "Vuelve",
+            "kind": "reactivation",
+            "segment": "dormant",
+            "template": GOOD,
+            "mode": "simulation",  # no bot token in this test: rehearse only
+        },
         headers=ACME,
     )
     assert created.status_code == 201
+    assert created.json()["mode"] == "simulation"
     cid = created.json()["id"]
     assert client.get(f"/v1/campaigns/{cid}", headers=GLOBEX).status_code == 404
     assert client.get("/v1/campaigns/nope", headers=ACME).status_code == 404
@@ -393,7 +401,8 @@ def test_campaign_endpoints(client: TestClient) -> None:
     )
     assert client.post(f"/v1/campaigns/{cid}/cancel", headers=ACME).status_code == 409
     results = client.get(f"/v1/campaigns/{cid}/results", headers=ACME).json()
-    assert results["arms"]["treatment"]["n"] == 1
+    assert results["status"] == "simulation" and "itt" not in results
+    assert results["population"]["eligible"] == 1
     assert [c["id"] for c in client.get("/v1/campaigns", headers=ACME).json()] == [cid]
     other = client.post(
         "/v1/campaigns",

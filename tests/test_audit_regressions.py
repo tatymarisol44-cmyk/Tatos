@@ -52,11 +52,14 @@ async def o() -> AsyncIterator[Orchestrator]:
         postgres_url=None,
         remote_agents=[],
         remote_agents_api_key=None,
-        telegram_bot_token=None,
+        telegram_bot_token=SecretStr("123:test-token"),  # a stand-in bot that says ok
         otel_enabled=False,
     )
     obj = Orchestrator(settings, llm=FakeLLM())
     await obj.start()
+    obj.campaigns.telegram._http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"ok": True}))
+    )
     yield obj
     await obj.close()
 
@@ -416,6 +419,7 @@ async def _patient(
     await o.crm.create_patient(
         "acme", {"display_name": "Ana Prueba", "telegram_chat_id": chat}, "staff", patient_id=pid
     )
+    await o.consents.record("acme", pid, Purpose.ANALYTICS, True, source="t", actor="s")
     if consent:
         await o.consents.record("acme", pid, Purpose.MARKETING, True, source="t", actor="s")
 
@@ -471,10 +475,11 @@ async def test_a11_stop_reply_unsubscribes_end_to_end(
     assert not await o.consents.has("acme", "p1", Purpose.MARKETING)
     trail = await o.audit.list("acme", subject_id="p1")
     assert trail[0].action == "consent.withdrawn" and trail[0].actor == "channel:telegram"
-    # And nothing is sent to them afterwards.
+    # And nothing is sent to them afterwards: they are not even assigned.
     cid = await _campaign(o)
-    await o.campaigns.send("acme", cid, "staff")
-    assert await _status(o, cid) == "skipped_no_consent"
+    campaign = await o.campaigns.send("acme", cid, "staff")
+    assert campaign["recipients"] == {}
+    assert campaign["population"]["excluded"] == {"no_marketing_consent": 1}
 
 
 async def test_a11_webhook_is_off_without_a_secret(c: httpx.AsyncClient) -> None:
@@ -499,7 +504,7 @@ async def test_a12_failure_before_sending_is_recoverable(
     assert await _status(o, cid) == "queued"
     monkeypatch.undo()
     await o.campaigns.run_outbox()  # the worker finishes the job
-    assert await _status(o, cid) == "dry_run"
+    assert await _status(o, cid) == "sent"
     assert (await o.campaigns.get("acme", cid))["status"] == "completed"
 
 
@@ -552,7 +557,7 @@ async def test_a12_definite_failures_can_be_retried(
     assert (await o.campaigns.send("acme", cid, "staff"))["status"] == "partial_failed"
     monkeypatch.undo()
     retried = await o.campaigns.retry_failed("acme", cid, "staff")
-    assert retried["status"] == "completed" and retried["recipients"] == {"treatment:dry_run": 1}
+    assert retried["status"] == "completed" and retried["recipients"] == {"treatment:sent": 1}
 
 
 async def test_a13_late_edit_cannot_reopen_a_sent_campaign(
@@ -684,7 +689,7 @@ async def test_app_first_then_telegram_fallback(o: Orchestrator) -> None:
         )
     assert (await o.campaigns.run_outbox())["fallback"] == 1
     assert await _status(o, cid, "p1") == "seen"
-    assert await _status(o, cid, "p2") == "dry_run"  # the Telegram fallback
+    assert await _status(o, cid, "p2") == "sent"  # the Telegram fallback
 
 
 async def test_patient_marks_offers_seen_over_http(o: Orchestrator, c: httpx.AsyncClient) -> None:
@@ -695,6 +700,207 @@ async def test_patient_marks_offers_seen_over_http(o: Orchestrator, c: httpx.Asy
     await o.campaigns.send("acme", cid, "staff")
     resp = await c.post("/v1/me/offers/seen", headers=key)
     assert resp.json() == {"marked": 1} and await _status(o, cid) == "seen"
+
+
+# --- step 4: measurement ----------------------------------------------------------------
+AFTER_WINDOW = timedelta(days=31)  # the conversion window is 30 days
+
+
+async def _measured(o: Orchestrator, holdout: int = 50, mode: str = "live") -> str:
+    draft = await o.campaigns.create(
+        "acme",
+        name="Measured",
+        kind="education",
+        segment="no_visits",
+        channel="telegram",
+        template=GOOD,
+        actor="staff",
+        holdout_pct=holdout,
+        mode=mode,
+    )
+    await o.campaigns.approve("acme", draft["id"], "staff")
+    return str(draft["id"])
+
+
+async def _arms(o: Orchestrator, cid: str) -> dict[str, str]:
+    async with o.db.engine.connect() as conn:
+        rows = await conn.execute(
+            select(recipients.c.patient_id, recipients.c.arm).where(recipients.c.campaign_id == cid)
+        )
+        return {r.patient_id: r.arm for r in rows}
+
+
+async def _book(o: Orchestrator, pid: str) -> None:
+    await o.crm.create_appointment(
+        "acme",
+        pid,
+        starts_at=utcnow() + timedelta(days=5),
+        duration_min=30,
+        kind="checkup",
+        price=50,
+        actor="bot",
+    )
+
+
+async def _fixed_arms(o: Orchestrator, n: int) -> tuple[str, list[str], list[str]]:
+    """n eligible patients, the first half treated and the second half held out (set by
+    hand so that the arm sizes do not depend on the random campaign id)."""
+    pids = [f"p{i:03d}" for i in range(n)]
+    for pid in pids:
+        await _patient(o, pid)
+    cid = await _measured(o)
+    treated, control = pids[: n // 2], pids[n // 2 :]
+    async with o.db.engine.begin() as conn:
+        for arm, members in (("treatment", treated), ("control", control)):
+            await conn.execute(
+                update(recipients)
+                .where(recipients.c.campaign_id == cid, recipients.c.patient_id.in_(members))
+                .values(arm=arm)
+            )
+    await o.campaigns.send("acme", cid, "staff")
+    return cid, treated, control
+
+
+async def test_a16_ineligible_patients_are_in_neither_arm(o: Orchestrator) -> None:
+    # Prueba 14: a patient with no consent and no Telegram address counted as control.
+    for i in range(20):
+        await _patient(o, f"ok{i}")
+    await _patient(o, "nobody", consent=False, chat=None)
+    cid = await _measured(o)
+    arms = await _arms(o, cid)
+    assert "nobody" not in arms and len(arms) == 20
+    assert set(arms.values()) == {"treatment", "control"}
+    population = (await o.campaigns.get("acme", cid))["population"]
+    assert population == {
+        "segment": 21,
+        "eligible": 20,
+        "excluded": {"no_marketing_consent": 1},
+    }
+
+
+async def test_a16_attrition_stays_in_its_arm(o: Orchestrator) -> None:
+    for i in range(20):
+        await _patient(o, f"p{i}")
+    cid = await _measured(o)
+    treated = sorted(p for p, arm in (await _arms(o, cid)).items() if arm == "treatment")
+    # Assigned, then withdraws before the send: still counted as treated (intention to
+    # treat), and reported as attrition instead of being dropped from one side.
+    await o.consents.record("acme", treated[0], Purpose.MARKETING, False, source="t", actor="p")
+    await o.campaigns.send("acme", cid, "staff")
+    results = await o.campaigns.results("acme", cid, now=utcnow() + AFTER_WINDOW)
+    assert results["itt"]["arms"]["treatment"]["n"] == len(treated)
+    assert results["attrition"]["treatment"]["skipped_no_consent"] == 1
+    assert results["per_delivery"]["treatment_reached"]["n"] == len(treated) - 1
+    assert results["itt"]["arms"]["control"]["n"] == 20 - len(treated)
+
+
+async def test_a17_simulation_delivers_nothing_and_measures_nothing(o: Orchestrator) -> None:
+    # Prueba 15: a dry run counted as treatment and used up the monthly cap.
+    await _patient(o, "p1")
+    await o.principals.create_patient_access("acme", "p1", "staff", 30)
+    cid = await _measured(o, holdout=0, mode="simulation")
+    result = await o.campaigns.send("acme", cid, "staff")
+    assert result["recipients"] == {"treatment:dry_run": 1}
+    assert await o.campaigns.offers_for("acme", "p1") == []  # not even in the app
+    async with o.db.engine.connect() as conn:
+        assert (await conn.execute(select(contact_budget))).first() is None
+    assert (await o.campaigns.run_outbox())["fallback"] == 0
+    results = await o.campaigns.results("acme", cid, now=utcnow() + AFTER_WINDOW)
+    assert results["status"] == "simulation" and "itt" not in results
+
+
+async def test_a17_live_without_a_bot_token_never_pretends(o: Orchestrator) -> None:
+    o.settings.telegram_bot_token = None
+    await _patient(o, "chat-only")
+    await _patient(o, "app-user")
+    await o.principals.create_patient_access("acme", "app-user", "staff", 30)
+    cid = await _measured(o, holdout=0)
+    assert (await o.campaigns.get("acme", cid))["population"]["excluded"] == {"no_channel": 1}
+    result = await o.campaigns.send("acme", cid, "staff")
+    assert result["recipients"] == {"treatment:in_app": 1}  # no dry_run in a live campaign
+
+
+async def test_a18_recent_campaign_is_only_provisional(o: Orchestrator) -> None:
+    cid, treated, _ = await _fixed_arms(o, 20)
+    for pid in treated:
+        await _book(o, pid)
+    early = await o.campaigns.results("acme", cid)
+    assert early["status"] == "provisional"
+    assert early["conclusion"].startswith("provisional")
+    assert "p_value" not in early["itt"]
+    final = await o.campaigns.results("acme", cid, now=utcnow() + AFTER_WINDOW)
+    assert final["status"] == "final" and final["itt"]["p_value"] is not None
+    # One analysis: asking again later gives the same answer.
+    again = await o.campaigns.results("acme", cid, now=utcnow() + 3 * AFTER_WINDOW)
+    assert again["itt"] == final["itt"] and again["conclusion"] == final["conclusion"]
+
+
+async def test_a18_zero_rare_and_clear_effects(o: Orchestrator) -> None:
+    cid, treated, _ = await _fixed_arms(o, 80)  # 40 per arm
+    later = utcnow() + AFTER_WINDOW
+
+    zero = await o.campaigns.results("acme", cid, now=later)
+    assert zero["itt"]["p_value"] == 1.0
+    assert zero["conclusion"] == "no detectable difference at 5%"
+    low, high = zero["itt"]["lift_abs_ci95"]
+    assert low < 0 < high
+    assert zero["itt"]["arms"]["treatment"]["rate_ci95"][0] == 0.0
+
+    await _book(o, treated[0])  # one rare conversion is not an effect
+    rare = await o.campaigns.results("acme", cid, now=later)
+    assert rare["itt"]["p_value"] == 1.0
+    assert rare["conclusion"] == "no detectable difference at 5%"
+
+    for pid in treated[1:10]:  # 10 of 40 against 0 of 40
+        await _book(o, pid)
+    clear = await o.campaigns.results("acme", cid, now=later)
+    assert clear["itt"]["p_value"] < 0.01
+    assert clear["conclusion"] == "treatment booked more than control (significant at 5%)"
+    assert clear["itt"]["lift_abs_ci95"][0] > 0
+
+
+@pytest.mark.parametrize("state", ["denied", "withdrawn", "absent"])
+async def test_a19_analytics_consent_controls_profiling(o: Orchestrator, state: str) -> None:
+    # Prueba 17: analytics=False did not stop counting or segmenting the patient.
+    await _patient(o, "p1")
+    await o.crm.create_patient("acme", {"display_name": "Sin perfil"}, "staff", patient_id="p2")
+    if state in ("denied", "withdrawn"):
+        if state == "withdrawn":
+            await o.consents.record("acme", "p2", Purpose.ANALYTICS, True, source="t", actor="p")
+        await o.consents.record("acme", "p2", Purpose.ANALYTICS, False, source="t", actor="p")
+    summary = await o.insights.summary("acme")
+    assert summary["population"]["operations"] == 2  # still a patient of the clinic
+    assert summary["population"]["profiling"] == 1
+    assert summary["patients"]["total"] == 2
+    assert sum(summary["segments"].values()) == 1
+    segments = await o.insights.segments("acme")
+    assert "p2" not in {pid for members in segments.values() for pid in members}
+    assert await o.insights.segment_members("acme", "no_visits") == ["p1"]
+
+
+async def test_a20_restricted_patients_do_not_feed_the_forecast(o: Orchestrator) -> None:
+    # Prueba 16: after erasing the only patient, the forecast still showed their visit.
+    await _patient(o, "p1")
+    done = await o.crm.create_appointment(
+        "acme",
+        "p1",
+        starts_at=utcnow() - timedelta(days=7),
+        duration_min=30,
+        kind="checkup",
+        price=80,
+        actor="r",
+    )
+    await o.crm.set_appointment_status("acme", done["id"], "completed", "r")
+    await _book(o, "p1")
+    before = (await o.insights.summary("acme"))["forecast"]
+    assert before["expected_visit_revenue_next_4_weeks"] == 40.0
+    assert before["scheduled_next_14_days"] == 1
+    await o.erase_subject("acme", "p1", "dpo")
+    after = await o.insights.summary("acme")
+    assert after["patients"]["total"] == 0
+    assert after["forecast"]["expected_visit_revenue_next_4_weeks"] == 0
+    assert after["forecast"]["completed_visits_per_week"] == 0
+    assert after["forecast"]["scheduled_next_14_days"] == 0
 
 
 # --- retention rule: the clinical record is kept, marketing is anonymised ---------------

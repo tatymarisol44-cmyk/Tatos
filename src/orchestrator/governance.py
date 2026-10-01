@@ -56,7 +56,7 @@ class Purpose(StrEnum):
     MARKETING = "marketing"  # campaigns, reminders beyond the appointment itself
     MEMORY = "memory"  # long-term semantic memory of preferences
     PHOTOS = "photos"  # before/after images in marketing
-    ANALYTICS = "analytics"  # inclusion in aggregated insights
+    ANALYTICS = "analytics"  # profiling: segments, value ranking, campaign targeting
 
 
 audit_events = Table(
