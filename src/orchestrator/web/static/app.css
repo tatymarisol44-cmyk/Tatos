@@ -195,3 +195,17 @@ input, select, textarea {
 .sources ol { margin: 6px 0 0; padding-left: 22px; }
 .sources li { margin: 4px 0; }
 .sources .excerpt { color: var(--muted); font-size: 12px; }
+
+/* --- human review (A32) --- */
+.held { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--warn); border-radius: var(--radius); background: var(--surface-2); }
+.held.rejected { border-color: var(--err); }
+.composer-note { margin: 0 0 6px; font-size: 13px; color: var(--warn); }
+.reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.review-card { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.review-card textarea, .review-card input { width: 100%; font: inherit; }
+.review-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.review-actions { display: flex; gap: 8px; }
+.review-actions .approve { background: var(--ok); color: #fff; border: 0; border-radius: 8px; padding: 6px 14px; }
+.review-actions .reject:hover { color: var(--err); }
+.badge.risk-high { background: var(--err); color: #fff; }
+.badge.risk-medium { background: var(--warn); color: #fff; }

@@ -1082,3 +1082,29 @@ async def test_a27_oversized_body_is_refused_early(c: httpx.AsyncClient) -> None
     # Document upload has its own, larger limit (~380 KB here, over the 256 KB default).
     doc = {"title": "Manual", "text": "é" * 190_000}
     assert (await c.post("/v1/knowledge/documents", json=doc, headers=SERVICE)).status_code == 201
+
+
+async def test_a32_requester_polls_the_outcome_without_seeing_the_draft(
+    o: Orchestrator, c: httpx.AsyncClient
+) -> None:
+    assert isinstance(o.llm, FakeLLM)
+    o.llm.agent_replies = ["BORRADOR_SIN_REVISAR"]
+    reception = await staff(c, "maria", "reception")
+    held = await c.post(
+        "/v1/chat",
+        json={"question": "hola", "force_review": True, "thread_id": "t32"},
+        headers=reception,
+    )
+    assert held.json()["status"] == "pending_review"
+    pending = (await c.get("/v1/threads/t32", headers=reception)).json()
+    assert pending == {
+        "thread_id": "t32",
+        "status": "pending_review",
+        "answer": None,
+        "sources": [],
+    }
+    await o.resolve_review("acme", "t32", approved=False, reviewer="dr")
+    rejected = (await c.get("/v1/threads/t32", headers=reception)).json()
+    assert rejected["status"] == "rejected" and rejected["answer"] is None
+    assert "BORRADOR" not in str(pending) + str(rejected)
+    assert (await c.get("/v1/threads/nope", headers=reception)).status_code == 404

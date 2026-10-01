@@ -58,6 +58,8 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python }}
       - run: uv sync
+      # Chromium for the console's browser test (tests/test_console_e2e.py).
+      - run: uv run playwright install --with-deps chromium
       - run: uv run pytest --junitxml=junit.xml --cov-report=xml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

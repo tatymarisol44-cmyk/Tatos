@@ -41,6 +41,9 @@ dev = [
     "types-pyyaml>=6.0",
     "pre-commit>=4.0",
     "fakeredis[lua]>=2.26",
+    # Browser test of the console (tests/test_console_e2e.py); browsers are installed
+    # separately: `uv run playwright install chromium`.
+    "playwright>=1.48",
 ]
 
 [build-system]

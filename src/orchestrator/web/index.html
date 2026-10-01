@@ -26,6 +26,7 @@
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="true">Agents</button>
         <button type="button" role="tab" id="tab-knowledge" aria-controls="panel-knowledge" aria-selected="false">Knowledge</button>
+        <button type="button" role="tab" id="tab-reviews" aria-controls="panel-reviews" aria-selected="false">Reviews <span id="reviews-count" class="badge" hidden></span></button>
       </div>
 
       <section id="panel-agents" class="panel" role="tabpanel" aria-labelledby="tab-agents">
@@ -58,6 +59,15 @@
         </div>
         <ul id="docs" class="agents"></ul>
       </section>
+
+      <section id="panel-reviews" class="panel" role="tabpanel" aria-labelledby="tab-reviews" hidden>
+        <div class="catalog-head">
+          <p class="hint">Answers held for a person before anyone sees them (clinical advice, high risk). Approve as is, edit then approve, or reject.</p>
+          <button type="button" id="reviews-refresh" class="ghost">Refresh</button>
+          <p id="reviews-status" class="muted small" role="status"></p>
+        </div>
+        <ul id="reviews" class="reviews"></ul>
+      </section>
     </aside>
 
     <main class="main">
@@ -74,6 +84,7 @@
         </div>
       </section>
 
+      <p id="composer-note" class="composer-note" role="status" hidden></p>
       <form id="composer" class="composer">
         <textarea id="question" rows="2" maxlength="20000" placeholder="Describe what you need…" aria-label="Your request" required></textarea>
         <button type="submit" id="send">Send</button>

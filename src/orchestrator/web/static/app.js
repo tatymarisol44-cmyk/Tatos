@@ -8,7 +8,9 @@ const state = {
   agents: [],
   pinned: [], // single mode: at most one agent; team mode: up to 8
   busy: false,
+  held: null, // { threadId, bubble, timer } while the answer waits for a reviewer
 };
+const POLL_MS = 5000;
 
 const store = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
@@ -221,6 +223,7 @@ function markStep(view, plan, result) {
   li.querySelector(".step-time").textContent = result.duration_s != null ? `${result.duration_s}s` : "";
   const slot = li.querySelector(".step-slot");
   if (result.error) slot.append(el("div", { class: "error small", text: `Failed: ${result.error}` }));
+  else if (result.output == null) slot.append(el("div", { class: "muted small", text: "Contribution visible to reviewers only." }));
   else slot.append(el("details", {}, el("summary", { text: "Contribution" }), markdownNode(result.output, "answer step-out")));
   // Steps whose dependencies are now all finished start running.
   const finished = new Set([...view.querySelectorAll('[data-status="done"], [data-status="failed"]')].map((n) => n.dataset.step));
@@ -230,8 +233,71 @@ function markStep(view, plan, result) {
   }
 }
 
+// --- answers held for human review (audit finding A32) ---------------------------
+function lockComposer(reason) {
+  const note = $("#composer-note");
+  note.hidden = !reason;
+  note.textContent = reason || "";
+  $("#question").disabled = Boolean(reason);
+  $("#send").disabled = Boolean(reason) || state.busy;
+}
+
+function heldNode(risk) {
+  const reasons = risk?.reasons?.length ? ` (${risk.reasons.join(", ")})` : "";
+  return el("div", { class: "held" },
+    el("b", { text: "Waiting for a human review" }),
+    el("div", { class: "muted small", text: `A reviewer must approve this answer before it is shown${reasons}. This page checks every few seconds.` }));
+}
+
+function showFinal(bubble, status) {
+  if (status.status === "completed") {
+    bubble.replaceChildren(markdownNode(status.answer || ""));
+    const sources = sourcesView(status.sources);
+    if (sources) bubble.append(sources);
+  } else if (status.status === "rejected") {
+    bubble.replaceChildren(el("div", { class: "held rejected" },
+      el("b", { text: "Not approved" }),
+      el("div", { class: "muted small", text: "A reviewer rejected this answer. Ask again or contact the team." })));
+  } else if (status.status === "blocked") {
+    bubble.replaceChildren(el("div", { class: "error", text: "Blocked by guardrails." }));
+  }
+}
+
+function stopHold() {
+  if (state.held) clearTimeout(state.held.timer);
+  state.held = null;
+  lockComposer(null);
+}
+
+function hold(threadId, bubble, risk) {
+  stopHold();
+  bubble.replaceChildren(heldNode(risk));
+  state.held = { threadId, bubble, timer: null };
+  lockComposer("This conversation is waiting for a reviewer. Start a new conversation to ask something else.");
+  const poll = async () => {
+    if (!state.held || state.held.threadId !== threadId) return;
+    try {
+      const resp = await fetch(`/v1/threads/${encodeURIComponent(threadId)}`, { headers: headers() });
+      if (resp.ok) {
+        const status = await resp.json();
+        if (status.status !== "pending_review") {
+          showFinal(bubble, status);
+          stopHold();
+          return;
+        }
+      } else if (resp.status === 401 || resp.status === 404) {
+        bubble.append(el("div", { class: "error small", text: (await apiError(resp)).message }));
+        stopHold();
+        return;
+      }
+    } catch { /* offline for a moment: try again */ }
+    if (state.held?.threadId === threadId) state.held.timer = setTimeout(poll, POLL_MS);
+  };
+  state.held.timer = setTimeout(poll, POLL_MS);
+}
+
 async function send(question) {
-  if (state.busy || !question.trim()) return;
+  if (state.busy || state.held || !question.trim()) return;
   state.busy = true;
   $("#send").disabled = true;
 
@@ -251,6 +317,8 @@ async function send(question) {
   let plan = null;
   let planNode = null;
   let finishedSteps = 0;
+  let risk = null;
+  let finished = false;
   try {
     const resp = await fetch("/v1/chat/stream", { method: "POST", headers: headers(), body: JSON.stringify(body) });
     if (!resp.ok) throw await apiError(resp);
@@ -272,13 +340,17 @@ async function send(question) {
         if (++finishedSteps === plan.steps.length) {
           working.textContent = plan.steps.length > 1 ? "Synthesizing the team's answer…" : "Finishing…";
         }
+      } else if (event === "review") {
+        risk = data.risk;
+        bubble.replaceChildren(heldNode(risk));
       } else if (event === "done") {
+        finished = true;
         if (data.blocked) {
           bubble.replaceChildren(el("div", { class: "error", text: `Blocked by guardrails: ${data.guardrails.reasons.join(", ")}` }));
+        } else if (data.status === "pending_review") {
+          hold(data.thread_id, bubble, data.review?.risk || risk);
         } else {
-          bubble.replaceChildren(markdownNode(data.answer));
-          const sources = sourcesView(data.sources);
-          if (sources) bubble.append(sources);
+          showFinal(bubble, data);
         }
         const usage = usageLine(data.usage);
         if (usage) meta.append(usage);
@@ -288,11 +360,17 @@ async function send(question) {
       }
       scrollDown();
     }
+    if (!finished && state.threadId) throw new Error("connection lost");
   } catch (err) {
-    bubble.replaceChildren(el("div", { class: "error", text: err.message }));
+    if (state.threadId && err.message === "connection lost") {
+      // The run may still finish on the server: pick its outcome up from there.
+      hold(state.threadId, bubble, risk);
+    } else {
+      bubble.replaceChildren(el("div", { class: "error", text: err.message }));
+    }
   } finally {
     state.busy = false;
-    $("#send").disabled = false;
+    $("#send").disabled = Boolean(state.held);
     scrollDown();
   }
 }
@@ -359,12 +437,71 @@ function sourcesView(sources) {
       el("div", { class: "excerpt", text: `${s.excerpt}${s.excerpt.length >= 300 ? "…" : ""}` })))));
 }
 
+// --- review queue -------------------------------------------------------------
+async function loadReviews() {
+  const status = $("#reviews-status");
+  const count = $("#reviews-count");
+  try {
+    const resp = await fetch("/v1/reviews", { headers: headers() });
+    if (resp.status === 403) {
+      $("#reviews").replaceChildren();
+      status.textContent = "This key cannot review answers (needs the reviewer role).";
+      count.hidden = true;
+      return;
+    }
+    if (!resp.ok) throw await apiError(resp);
+    const items = await resp.json();
+    $("#reviews").replaceChildren(...items.map(reviewCard));
+    status.textContent = items.length ? `${items.length} waiting` : "Nothing waiting for review.";
+    count.textContent = String(items.length);
+    count.hidden = !items.length;
+  } catch (err) {
+    status.textContent = `Could not load reviews: ${err.message}`;
+  }
+}
+
+function reviewCard(item) {
+  const p = item.payload || {};
+  const reasons = p.risk?.reasons || [];
+  const edit = el("textarea", { rows: "6", "aria-label": "Answer to send" });
+  edit.value = p.draft_answer || "";
+  const feedback = el("input", { placeholder: "Note for the record (optional)", maxlength: "2000", "aria-label": "Feedback" });
+  const msg = el("p", { class: "muted small", role: "status" });
+  const decide = async (approved) => {
+    const body = { approved, feedback: feedback.value.trim() || null };
+    if (approved && edit.value !== (p.draft_answer || "")) body.edited_answer = edit.value;
+    msg.textContent = "Saving…";
+    try {
+      const resp = await fetch(`/v1/reviews/${encodeURIComponent(item.thread_id)}`, {
+        method: "POST", headers: headers(), body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw await apiError(resp);
+      await loadReviews();
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  };
+  return el("li", { class: "review-card" },
+    el("div", { class: "review-head" },
+      el("span", { class: `badge risk-${p.risk?.level || "unknown"}`, text: `risk: ${p.risk?.level || "?"}` }),
+      ...reasons.map((r) => el("span", { class: "badge", text: r })),
+      el("span", { class: "muted small", text: new Date(item.created_at).toLocaleString() })),
+    el("div", { class: "small" }, el("b", { text: "Question: " }), document.createTextNode(p.question || "")),
+    el("details", { open: "" }, el("summary", { class: "small", text: "Draft (edit before approving if needed)" }), edit),
+    feedback,
+    el("div", { class: "review-actions" },
+      el("button", { type: "button", class: "approve", onclick: () => decide(true) }, "Approve"),
+      el("button", { type: "button", class: "ghost reject", onclick: () => decide(false) }, "Reject")),
+    msg);
+}
+
 function selectTab(name) {
-  for (const tab of ["agents", "knowledge"]) {
+  for (const tab of ["agents", "knowledge", "reviews"]) {
     $(`#tab-${tab}`).setAttribute("aria-selected", String(tab === name));
     $(`#panel-${tab}`).hidden = tab !== name;
   }
   if (name === "knowledge") loadDocs();
+  if (name === "reviews") loadReviews();
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -375,10 +512,13 @@ document.addEventListener("DOMContentLoaded", () => {
     store.set("agency.apiKey", key.value.trim());
     loadAgents();
     if (!$("#panel-knowledge").hidden) loadDocs();
+    loadReviews();
   });
 
   $("#tab-agents").addEventListener("click", () => selectTab("agents"));
   $("#tab-knowledge").addEventListener("click", () => selectTab("knowledge"));
+  $("#tab-reviews").addEventListener("click", () => selectTab("reviews"));
+  $("#reviews-refresh").addEventListener("click", loadReviews);
   $("#doc-file").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
   $("#doc-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -397,6 +537,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#division").addEventListener("change", renderAgents);
   $("#toggle-catalog").addEventListener("click", () => $("#catalog").classList.toggle("open"));
   $("#new-thread").addEventListener("click", () => {
+    stopHold();
     state.threadId = null;
     $("#thread").replaceChildren(el("p", { class: "muted small", text: "New conversation." }));
   });
@@ -419,4 +560,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderPinned();
   loadAgents();
+  loadReviews();
 });

@@ -98,10 +98,14 @@ curl -s localhost:8000/v1/knowledge/documents -H "X-API-Key: key1" -H "Content-T
 ```bash
 # A dental clinic: held answer, review, CRM, insights, campaign
 TENANT_PACKS='{"acme": "dental"}' uv run agency serve
-curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "X-Actor: dr.lopez" -H "Content-Type: application/json" \
+# The service key (API_KEYS) creates one key per person; the audit trail records its owner.
+curl -s localhost:8000/v1/admin/staff -H "X-API-Key: key1" -H "Content-Type: application/json" \
+  -d '{"name": "dr.lopez", "roles": ["reviewer"]}'                                  # -> {"key": "sk_..."}
+curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: application/json" \
   -d '{"question": "¿Qué dosis de ibuprofeno tomo tras la extracción?", "subject_id": "p-001"}'   # -> pending_review
-curl -s localhost:8000/v1/reviews -H "X-API-Key: key1"
-curl -s localhost:8000/v1/reviews/<thread_id> -H "X-API-Key: key1" -H "X-Actor: dr.lopez" \
+curl -s localhost:8000/v1/threads/<thread_id> -H "X-API-Key: key1"                   # -> pending_review, no draft
+curl -s localhost:8000/v1/reviews -H "X-API-Key: sk_..."
+curl -s localhost:8000/v1/reviews/<thread_id> -H "X-API-Key: sk_..." \
   -H "Content-Type: application/json" -d '{"approved": true, "edited_answer": "Llámenos a la clínica."}'
 curl -s localhost:8000/v1/insights/summary -H "X-API-Key: key1"
 ```
@@ -150,10 +154,11 @@ docker compose up --build
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /` | Web console: agent catalog, single/team mode, live team progress. |
+| `GET /` | Web console: agent catalog, single/team mode, live team progress, held answers shown as "waiting for review" (polled until decided), and a Reviews tab to approve, edit or reject. |
 | `POST /v1/chat` | Answer. Body: `question`, `mode` (`single`\|`team`), optional `thread_id`, `agent_id` (single) or `agent_ids` (team), `subject_id`, `force_review`. Returns `status` (`completed`, `blocked`, `pending_review`, `rejected`), `route_log`, `evidence`, `citations`, `decision_record`. 409 while the thread waits for review. |
 | `POST /v1/chat/stream` | Same, as Server-Sent Events: `start`, `guardrails`, `knowledge`, `evidence`, `routing` or `plan`, one `step` per specialist, `review` (if held), `done`. |
 | `GET /v1/reviews[?state=]` · `GET/POST /v1/reviews/{thread_id}` | Human-review queue; approve (optionally editing) or reject, and the workflow resumes. |
+| `GET /v1/threads/{thread_id}` | Where a conversation stands (`pending_review`, `completed` with the approved answer, `rejected`, `blocked`); never the draft. |
 | `PUT/GET /v1/subjects/{id}/consents[/{purpose}]` | Opt-in consents per purpose. |
 | `GET /v1/subjects/{id}/export` · `DELETE /v1/subjects/{id}` | Data-subject access/portability and erasure. |
 | `GET /v1/audit[?subject_id=]` | Audit trail of the caller's tenant. |
@@ -169,7 +174,7 @@ docker compose up --build
 | `POST /a2a` | A2A JSON-RPC `message/send`; `contextId` ↔ `thread_id`; message metadata `{"mode": "team"}` for a team. |
 | `GET /healthz`, `/readyz` | Liveness / readiness (index built). |
 
-Auth is `X-API-Key`, mapped to a tenant via `API_KEYS="key1:tenant-a,key2:tenant-b"`. Threads and every business record are namespaced per tenant; another tenant's id answers 404 like a missing one. `X-Actor` names the person acting, for the audit trail.
+Auth is `X-API-Key`, mapped to a tenant via `API_KEYS="key1:tenant-a,key2:tenant-b"`. Threads and every business record are namespaced per tenant; another tenant's id answers 404 like a missing one. People get their own keys (`sk_` staff with roles via `POST /v1/admin/staff`, `pk_` patients); the audit trail records the key's owner and `X-Actor` is ignored.
 
 ```bash
 curl -s localhost:8000/v1/chat -H "X-API-Key: key1" -H "Content-Type: application/json" \

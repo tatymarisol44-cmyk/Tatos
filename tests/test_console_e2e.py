@@ -1,0 +1,119 @@
+"""Browser test of the console's human-review flow (audit finding A32).
+
+A receptionist asks a clinical question and sees it held; a dentist approves it from
+the Reviews tab; the receptionist's page picks up the approved answer by itself. A
+rejected answer never reaches the receptionist's page. Needs Playwright and Chromium
+(`uv run --with playwright python -m playwright install chromium`); skipped otherwise."""
+
+from __future__ import annotations
+
+import socket
+import threading
+import time
+from collections.abc import Iterator
+from typing import Any
+
+import httpx
+import pytest
+
+from orchestrator.api.app import create_app
+from orchestrator.catalog import Catalog
+from orchestrator.config import Settings
+from orchestrator.llm import FakeLLM
+from orchestrator.service import Orchestrator
+
+sync_api = pytest.importorskip("playwright.sync_api")
+
+SERVICE = {"X-API-Key": "test-key"}
+CLINICAL = "¿Qué dosis de ibuprofeno tomo?"
+DRAFT = "BORRADOR_SIN_REVISAR"
+POLL_WAIT_MS = 15_000  # the console polls every 5 s
+
+
+@pytest.fixture
+def server(settings: Settings, catalog: Catalog) -> Iterator[str]:
+    import uvicorn
+
+    settings.tenant_packs = {"acme": "dental"}
+    llm = FakeLLM(agent_replies=[DRAFT] * 10)
+    app = create_app(settings, Orchestrator(settings, catalog=catalog, llm=llm))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=srv.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 15
+    while not srv.started and time.time() < deadline:
+        time.sleep(0.05)
+    assert srv.started, "server did not start"
+    yield f"http://127.0.0.1:{port}"
+    srv.should_exit = True
+    thread.join(timeout=10)
+
+
+def _key(base: str, name: str, *roles: str) -> str:
+    resp = httpx.post(
+        f"{base}/v1/admin/staff", json={"name": name, "roles": list(roles)}, headers=SERVICE
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["key"])
+
+
+def _open(browser: Any, base: str, key: str, errors: list[str]) -> Any:
+    page = browser.new_page()
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.goto(base)
+    page.fill("#api-key", key)
+    page.dispatch_event("#api-key", "change")
+    return page
+
+
+def _ask(page: Any, question: str) -> None:
+    page.fill("#question", question)
+    page.press("#question", "Enter")
+
+
+def test_a32_held_answer_is_shown_reviewed_and_never_leaked(server: str) -> None:
+    reception = _key(server, "maria", "reception")
+    dentist = _key(server, "dr.lopez", "reviewer")
+    errors: list[str] = []
+    expect = sync_api.expect
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except sync_api.Error as exc:  # Playwright is installed but Chromium is not
+            pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
+        asker = _open(browser, server, reception, errors)
+
+        # 1. Held: an explicit state instead of an empty answer, and a locked composer.
+        _ask(asker, CLINICAL)
+        expect(asker.get_by_text("Waiting for a human review")).to_be_visible()
+        expect(asker.locator("#question")).to_be_disabled()
+        assert DRAFT not in asker.content()
+
+        # 2. The dentist sees it in the Reviews tab, edits the draft and approves it.
+        reviewer = _open(browser, server, dentist, errors)
+        reviewer.click("#tab-reviews")
+        card = reviewer.locator(".review-card").first
+        expect(card).to_contain_text(CLINICAL)
+        card.locator("textarea").fill("Llámenos al consultorio, por favor.")
+        card.get_by_role("button", name="Approve").click()
+        expect(reviewer.get_by_text("Nothing waiting for review.")).to_be_visible()
+
+        # 3. The receptionist's page picks the approved answer up by itself.
+        expect(asker.get_by_text("Llámenos al consultorio, por favor.")).to_be_visible(
+            timeout=POLL_WAIT_MS
+        )
+        expect(asker.locator("#question")).to_be_enabled()
+
+        # 4. A rejected answer: the draft never reaches the receptionist's page.
+        asker.click("#new-thread")
+        _ask(asker, CLINICAL)
+        expect(asker.get_by_text("Waiting for a human review")).to_be_visible()
+        reviewer.click("#reviews-refresh")
+        reviewer.locator(".review-card").first.get_by_role("button", name="Reject").click()
+        expect(asker.get_by_text("Not approved")).to_be_visible(timeout=POLL_WAIT_MS)
+        assert DRAFT not in asker.content()
+        browser.close()
+    assert errors == []

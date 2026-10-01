@@ -860,6 +860,29 @@ class Orchestrator:
             _sources(snapshot.values.get("knowledge", [])),
         )
 
+    async def thread_status(self, tenant: str, thread_id: str) -> dict[str, Any]:
+        """Poll a staff conversation, e.g. after its answer was held for review (A32).
+        Never the draft: while held, and after a rejection, there is no answer."""
+        snapshot = await self.graph.aget_state(self._config(tenant, thread_id))
+        if not snapshot.values:
+            raise KeyError(thread_id)
+        if snapshot.next:
+            return {
+                "thread_id": thread_id,
+                "status": "pending_review",
+                "answer": None,
+                "sources": [],
+            }
+        values = snapshot.values
+        status = "blocked" if values.get("blocked") else (values.get("status") or "completed")
+        done = status == "completed"
+        return {
+            "thread_id": thread_id,
+            "status": status,
+            "answer": values.get("answer") if done else None,
+            "sources": _sources(values.get("knowledge", [])) if done else [],
+        }
+
     @staticmethod
     def patient_view(
         thread_id: str, status: str, answer: str | None, sources: list[dict[str, Any]]

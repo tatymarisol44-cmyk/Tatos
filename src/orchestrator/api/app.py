@@ -282,6 +282,20 @@ def create_app(
         if not await orch(request).knowledge.delete(admin.tenant, doc_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
 
+    @app.get("/v1/threads/{thread_id}", tags=["orchestration"])
+    async def thread_status(
+        request: Request,
+        thread_id: Annotated[str, FastAPIPath(max_length=128, pattern=r"^[\w-]+$")],
+        principal: Staff,
+    ) -> dict[str, Any]:
+        """Where a conversation stands: `pending_review` (no answer yet), `completed` with
+        the approved answer, `rejected` or `blocked`. For polling after a held answer;
+        the draft itself is only on /v1/reviews, for reviewers."""
+        try:
+            return await orch(request).thread_status(principal.tenant, thread_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found") from exc
+
     @app.delete("/v1/threads/{thread_id}", status_code=204, tags=["privacy"])
     async def delete_thread(
         request: Request,
