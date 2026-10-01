@@ -55,6 +55,8 @@ jobs:
       # Sessions in a non-UTC zone, like many managed databases: this once broke the
       # audit-chain hashes (timestamps came back as -05:00).
       PGTZ: America/Guayaquil
+      # pg_dump/pg_restore 17 (the server's major) for the backup/restore drill.
+      PG_BIN: /usr/lib/postgresql/17/bin
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
@@ -62,6 +64,10 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python }}
       - run: uv sync
+      - name: Postgres 17 client tools (backup/restore drill)
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
       # Chromium for the console's browser test (tests/test_console_e2e.py).
       - run: uv run playwright install --with-deps chromium
       - run: uv run pytest --junitxml=junit.xml --cov-report=xml

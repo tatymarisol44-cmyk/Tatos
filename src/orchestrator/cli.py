@@ -203,7 +203,7 @@ async def _audit_verify(anchors: list[dict[str, Any]], tenant: str | None) -> in
     return 0 if all(r["ok"] for r in results.values()) else 1
 
 
-async def _db(action: str, revision: str | None, message: str | None) -> None:
+async def _db(action: str, revision: str | None, message: str | None) -> int:
     from alembic import command
 
     from orchestrator import migrate
@@ -218,7 +218,9 @@ async def _db(action: str, revision: str | None, message: str | None) -> None:
                 await conn.run_sync(lambda c: command.stamp(migrate._config(c), revision or "head"))
         elif action == "revision":
             await migrate.autogenerate(engine, message or "schema change")
-        _print({"current": await migrate.current(engine), "head": migrate.head()})
+        found, expected = await migrate.current(engine), migrate.head()
+        _print({"current": found, "head": expected})
+        return 1 if action == "check" and found != expected else 0
     finally:
         await engine.dispose()
 
@@ -274,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     p_verify.add_argument("--anchors", type=Path, help="JSON lines from audit-anchor")
     p_verify.add_argument("--tenant")
     p_db = sub.add_parser("db", help="Schema migrations (Alembic)")
-    p_db.add_argument("action", choices=["upgrade", "current", "stamp", "revision"])
+    p_db.add_argument("action", choices=["upgrade", "current", "check", "stamp", "revision"])
     p_db.add_argument("revision", nargs="?", help="Target revision (default: head)")
     p_db.add_argument("-m", "--message", help="revision: what changed")
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
@@ -302,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--older-than-days must be >= 1")
         _run(_retention(days, args.dry_run))
     elif args.cmd == "db":
-        _run(_db(args.action, args.revision, args.message))
+        return _run(_db(args.action, args.revision, args.message))
     elif args.cmd == "audit-anchor":
         _run(_audit_anchor())
     elif args.cmd == "audit-verify":
