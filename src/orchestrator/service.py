@@ -870,6 +870,19 @@ class Orchestrator:
             "sources": [{"n": s["n"], "title": s["title"]} for s in sources],
         }
 
+    async def consent_prompt(self, tenant: str, subject_id: str) -> dict[str, Any]:
+        """What the app shows on sign-in or before booking: the current choices and the
+        questions still unanswered. Each purpose is asked once; an answer, yes or no,
+        is never asked again (the patient changes it in their profile)."""
+        current = await self.consents.get(tenant, subject_id)
+        prompts = packs.pack_for(self.settings, tenant).consent_prompts
+        ask = [
+            {"purpose": purpose, **prompts[purpose].model_dump(), "preselected": None}
+            for purpose in packs.PROMPTED_PURPOSES
+            if purpose not in current
+        ]
+        return {"consents": current, "ask": ask, "footer": packs.CONSENT_FOOTER}
+
     async def set_own_consent(
         self, tenant: str, subject_id: str, purpose: Purpose, granted: bool
     ) -> dict[str, Any]:

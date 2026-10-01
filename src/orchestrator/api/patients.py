@@ -65,6 +65,14 @@ async def offers_seen(request: Request, p: Me) -> dict[str, int]:
     return {"marked": await orch(request).campaigns.mark_seen(p.tenant, _subject(p))}
 
 
+@router.get("/consents")
+async def my_consent_prompt(request: Request, p: Me) -> dict[str, Any]:
+    """Call on first sign-in and before booking: `ask` lists the consents not answered
+    yet (each is asked once). Show `yes_label` and `no_label` with equal weight, neither
+    pre-selected, and always the `footer`; then PUT each answer."""
+    return await orch(request).consent_prompt(p.tenant, _subject(p))
+
+
 @router.put("/consents/{purpose}")
 async def set_my_consent(
     body: PatientConsentIn, request: Request, purpose: Purpose, p: Me

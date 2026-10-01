@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from orchestrator.config import Settings
 
@@ -70,6 +70,52 @@ class CampaignPolicy(BaseModel):
     forbid_clinical_terms: bool = False
 
 
+class ConsentPrompt(BaseModel):
+    """How the app asks for one consent: what the patient gains, in plain words. The
+    pack writes the pitch; the rules that make it a free choice are not configurable
+    (`CONSENT_FOOTER`, equal options, nothing pre-selected)."""
+
+    title: str = Field(min_length=1, max_length=80)
+    benefit: str = Field(min_length=1, max_length=300)  # what the patient gets
+    detail: str = Field(min_length=1, max_length=400)  # what is and is not done with it
+    yes_label: str = Field(default="Sí, acepto", max_length=40)
+    no_label: str = Field(default="No, gracias", max_length=40)
+
+
+# Purposes the app asks about, in this order (treatment rests on another legal basis).
+PROMPTED_PURPOSES = ("marketing", "analytics", "memory")
+# Shown under every consent question, whatever the pack says: consent tied to the service
+# is not freely given (GDPR Art. 7(4)), so the app must say that care never depends on it.
+CONSENT_FOOTER = (
+    "Es voluntario: tu atención y tus citas no dependen de tu respuesta. "
+    "Puedes cambiarla cuando quieras en Mi perfil."
+)
+
+
+def _default_prompts() -> dict[str, ConsentPrompt]:
+    return {
+        "marketing": ConsentPrompt(
+            title="Recordatorios y beneficios",
+            benefit="Te avisamos cuando te toque volver y te enviamos ofertas pensadas "
+            "para ti, como máximo unas pocas veces al mes.",
+            detail="Primero en la app; por Telegram solo si no la abres. Responde STOP "
+            "en cualquier momento para dejar de recibirlos.",
+        ),
+        "analytics": ConsentPrompt(
+            title="Ofertas que sí te sirvan",
+            benefit="Usamos tu historial de visitas para proponerte lo que de verdad "
+            "necesitas, y no promociones al azar.",
+            detail="Solo dentro de este negocio. Nunca vendemos ni compartimos tus datos.",
+        ),
+        "memory": ConsentPrompt(
+            title="Que el asistente te recuerde",
+            benefit="El asistente recuerda tus preferencias (horario, canal, idioma) "
+            "para que no tengas que repetirlas.",
+            detail="Solo preferencias de una lista cerrada; nunca datos de salud.",
+        ),
+    }
+
+
 class Pack(BaseModel):
     id: str
     name: str
@@ -78,6 +124,26 @@ class Pack(BaseModel):
     memory: MemoryPolicy = Field(default_factory=MemoryPolicy)
     crm: CrmPolicy = Field(default_factory=CrmPolicy)
     campaigns: CampaignPolicy = Field(default_factory=CampaignPolicy)
+    consent_prompts: dict[str, ConsentPrompt] = Field(default_factory=_default_prompts)
+
+    @field_validator("consent_prompts")
+    @classmethod
+    def _every_prompted_purpose(cls, value: dict[str, ConsentPrompt]) -> dict[str, ConsentPrompt]:
+        missing = sorted(set(PROMPTED_PURPOSES) - set(value))
+        extra = sorted(set(value) - set(PROMPTED_PURPOSES))
+        if missing or extra:
+            raise ValueError(f"consent_prompts: missing {missing}, unknown {extra}")
+        return value
+
+    @model_validator(mode="after")
+    def _honest_prompts(self) -> Pack:
+        """The consent pitch obeys the same advertising rules as the campaigns."""
+        for purpose, prompt in self.consent_prompts.items():
+            text = f"{prompt.title} {prompt.benefit} {prompt.detail}".lower()
+            banned = [c for c in self.campaigns.banned_claims if c.lower() in text]
+            if banned:
+                raise ValueError(f"consent_prompts.{purpose}: banned claims {banned}")
+        return self
 
 
 @lru_cache

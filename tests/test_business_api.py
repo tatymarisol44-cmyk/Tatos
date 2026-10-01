@@ -440,3 +440,19 @@ def test_a2a_holds_reviewed_answers(client: TestClient) -> None:
     assert "review" in reply["parts"][0]["text"]
     again = client.post("/a2a", json=rpc, headers=ACME).json()
     assert again["error"]["code"] == -32001
+
+
+def test_consent_prompt_asks_each_purpose_once(client: TestClient) -> None:
+    ana = _patient_key(client, "p-ana")
+    first = client.get("/v1/me/consents", headers=ana).json()
+    assert [q["purpose"] for q in first["ask"]] == ["marketing", "analytics", "memory"]
+    assert all(q["preselected"] is None for q in first["ask"])  # nothing ticked for them
+    assert "no dependen de tu respuesta" in first["footer"]  # care never depends on it
+    assert first["ask"][0]["title"] == "Tu sonrisa, al día"  # the dental pack's pitch
+    # A "no" is an answer: it is not asked again (it can be changed in the profile).
+    client.put("/v1/me/consents/marketing", json={"granted": False}, headers=ana)
+    client.put("/v1/me/consents/analytics", json={"granted": True}, headers=ana)
+    later = client.get("/v1/me/consents", headers=ana).json()
+    assert [q["purpose"] for q in later["ask"]] == ["memory"]
+    assert later["consents"]["marketing"]["granted"] is False
+    assert client.get("/v1/me/consents", headers=ACME).status_code == 403  # patients only

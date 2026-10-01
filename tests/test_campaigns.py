@@ -422,3 +422,41 @@ async def test_subject_rights_cover_campaign_history(clinic: Orchestrator) -> No
     assert sum(counts.values()) == 1
     [row] = await _rows(clinic, c["id"])
     assert row["patient_id"].startswith("anon:") and row["sent_at"] is None
+
+
+async def test_daily_progress_while_the_window_runs(
+    clinic: Orchestrator, settings: Settings
+) -> None:
+    for i in range(10):
+        await _dormant(clinic, f"p{i}")
+    settings.campaign_default_holdout_pct = 50
+    c = await clinic.campaigns.create(
+        "acme",
+        name="c",
+        kind="reactivation",
+        segment="dormant",
+        channel="telegram",
+        template=GOOD,
+        actor="ana",
+    )
+    await clinic.campaigns.approve("acme", c["id"], "owner")
+    sent = await clinic.campaigns.send("acme", c["id"], "ana")
+    treated = [r["patient_id"] for r in await _rows(clinic, c["id"]) if r["arm"] == "treatment"]
+    for pid in treated:
+        await clinic.crm.create_appointment(
+            "acme",
+            pid,
+            starts_at=utcnow() + timedelta(days=5),
+            duration_min=30,
+            kind="checkup",
+            price=50,
+            actor="bot",
+        )
+    day_12 = datetime.fromisoformat(sent["sent_at"]) + timedelta(days=12)
+    results = await clinic.campaigns.results("acme", c["id"], now=day_12)
+    assert results["status"] == "provisional"
+    assert results["progress"] == {"day": 12, "of": 30, "pct": 40.0}
+    assert len(results["daily"]) == 12
+    assert results["daily"][0] == {"day": 1, "treatment": len(treated), "control": 0}
+    final = await clinic.campaigns.results("acme", c["id"], now=day_12 + timedelta(days=30))
+    assert final["progress"]["pct"] == 100.0 and len(final["daily"]) == 30

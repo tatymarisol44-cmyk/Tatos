@@ -31,3 +31,28 @@ campaigns:
     - miracle
     - milagro
   forbid_clinical_terms: true
+# Asked once in the patient app (on first sign-in or before booking). Honest pitch only:
+# the app adds that it is voluntary and that care never depends on it.
+consent_prompts:
+  marketing:
+    title: Tu sonrisa, al día
+    benefit: >-
+      Te avisamos cuando toque tu control o limpieza y te contamos primero los beneficios
+      de la clínica, para que no se te pase ningún control.
+    detail: >-
+      Como máximo 2 mensajes al mes, primero en la app. Nunca hablamos de tu salud en
+      estos mensajes. Responde STOP cuando quieras para dejar de recibirlos.
+  analytics:
+    title: Beneficios hechos para ti
+    benefit: >-
+      Con tu historial de visitas te proponemos lo que te conviene (por ejemplo, un
+      horario rápido si sueles tener poco tiempo) en lugar de promociones al azar.
+    detail: >-
+      Solo lo usa esta clínica, en grupos y con revisión de una persona. Nunca vendemos
+      ni compartimos tus datos, y tu historia clínica no se usa para publicidad.
+  memory:
+    title: Que no tengas que repetirlo
+    benefit: >-
+      El asistente recuerda cómo prefieres que te atiendan (horario, canal, idioma) para
+      agendar más rápido.
+    detail: Solo preferencias de una lista cerrada; nunca datos de salud.

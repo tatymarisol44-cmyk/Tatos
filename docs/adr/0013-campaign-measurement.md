@@ -34,6 +34,12 @@ Time zero is the moment the campaign was queued, the same for both arms. A conve
 - Before `t0 + window` the result is `provisional`: counts and rates, but no test and no conclusion.
 - After that it is `final`. Bookings outside the window never count, so the final analysis is the same every time it is requested. That makes it one pre-specified look, not repeated testing.
 
+**Watching it run.** While the window is open, results carry:
+- `progress`: the day of the window, for example day 12 of 30, 40 %;
+- `daily`: cumulative bookings per arm for each day so far.
+
+Owners asked to compare the two curves day by day. The curves are descriptive. The test and the verdict still wait for 100 %, so watching the curves is not repeated testing.
+
 **How it is tested (A18).**
 - Fisher's exact test (two-sided), Wilson 95 % intervals per arm and Newcombe's hybrid score interval for the difference (`stats.py`). They are checked against published values and SciPy. Unlike the z-test, they are valid for zero, rare and small counts.
 - The conclusion has four possible outcomes:

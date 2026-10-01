@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -1066,26 +1067,24 @@ class CampaignService:
             rows = (await conn.execute(query)).all()
             # Anonymised rows lost the link to their bookings: reported, not scored.
             scored = [r for r in rows if not r.patient_id.startswith(ANON_PREFIX)]
-            booked: set[str] = set()
+            # When each scored patient first booked inside the window.
+            first_booking: dict[str, datetime] = {}
             if scored and campaign["mode"] == LIVE:
-                booked = set(
-                    (
-                        await conn.execute(
-                            select(appointments.c.patient_id)
-                            .where(
-                                and_(
-                                    appointments.c.tenant == tenant,
-                                    appointments.c.patient_id.in_([r.patient_id for r in scored]),
-                                    appointments.c.created_at > start,
-                                    appointments.c.created_at <= window_end,
-                                )
-                            )
-                            .distinct()
+                bookings = await conn.execute(
+                    select(appointments.c.patient_id, appointments.c.created_at).where(
+                        and_(
+                            appointments.c.tenant == tenant,
+                            appointments.c.patient_id.in_([r.patient_id for r in scored]),
+                            appointments.c.created_at > start,
+                            appointments.c.created_at <= window_end,
                         )
                     )
-                    .scalars()
-                    .all()
                 )
+                for pid, created in bookings:
+                    when = aware(created) or created
+                    if pid not in first_booking or when < first_booking[pid]:
+                        first_booking[pid] = when
+        booked = set(first_booking)
         attrition: dict[str, dict[str, int]] = {"treatment": {}, "control": {}}
         for r in rows:
             status = "anonymised" if r.patient_id.startswith(ANON_PREFIX) else r.status
@@ -1118,6 +1117,30 @@ class CampaignService:
             "note": "descriptive only: who was reached is not random, so it is not "
             "compared with the control arm",
         }
+        # Day-by-day view while the window runs: how far along it is and the cumulative
+        # bookings per arm. For watching the trend, not for a verdict (that waits for 100%).
+        elapsed = max(0.0, (min(now, window_end) - start).total_seconds() / 86400)
+        out["progress"] = {
+            "day": min(days, math.ceil(elapsed)),
+            "of": days,
+            "pct": round(100 * min(1.0, elapsed / days), 1) if days else 100.0,
+        }
+        out["daily"] = [
+            {
+                "day": d,
+                **{
+                    k: sum(
+                        1
+                        for r in scored
+                        if r.arm == k
+                        and r.patient_id in first_booking
+                        and first_booking[r.patient_id] <= start + timedelta(days=d)
+                    )
+                    for k in ("treatment", "control")
+                },
+            }
+            for d in range(1, out["progress"]["day"] + 1)
+        ]
         if now < window_end:
             return {
                 **out,
