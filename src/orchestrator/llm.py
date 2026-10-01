@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from orchestrator import usage
 from orchestrator.config import Settings
 from orchestrator.telemetry import tracer
 
@@ -67,16 +68,24 @@ class LiteLLMClient:
                 num_retries=self.settings.llm_num_retries,
                 fallbacks=self.settings.llm_fallback_models or None,
             )
-            usage = getattr(resp, "usage", None)
+            cost: float | None
             try:
                 cost = float(litellm.completion_cost(completion_response=resp))
             except Exception:  # unknown pricing for local/self-hosted models
-                cost = 0.0
+                cost = None
+            tokens = getattr(resp, "usage", None)
             result = LLMResult(
                 text=resp.choices[0].message.content or "",
                 model=getattr(resp, "model", model) or model,
-                input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                input_tokens=getattr(tokens, "prompt_tokens", 0) or 0,
+                output_tokens=getattr(tokens, "completion_tokens", 0) or 0,
+                cost_usd=cost or 0.0,
+            )
+            usage.record(
+                "llm",
+                result.model,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
                 cost_usd=cost,
             )
             span.set_attribute("gen_ai.response.model", result.model)
@@ -119,6 +128,17 @@ class FakeLLM:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> LLMResult:
+        result = await self._complete(messages, model=model)
+        usage.record(
+            "llm",
+            result.model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.cost_usd,
+        )
+        return result
+
+    async def _complete(self, messages: list[Message], *, model: str) -> LLMResult:
         self.calls.append(messages)
         system = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
         question = messages[-1]["content"]

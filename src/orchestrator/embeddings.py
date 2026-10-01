@@ -10,6 +10,8 @@ import re
 import unicodedata
 from typing import Protocol
 
+from orchestrator import usage
+
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9+#.-]*")
 _STOPWORDS = frozenset(
     """a an and are as at be but by can do does for from how i in is it me my of on or our
@@ -86,4 +88,11 @@ class LiteLLMEmbedder:
             batch = texts[start : start + self.batch_size]
             resp = await litellm.aembedding(model=self.model, input=batch)
             out.extend(list(item["embedding"]) for item in resp.data)
+            cost: float | None
+            try:
+                cost = float(litellm.completion_cost(completion_response=resp))
+            except Exception:
+                cost = None
+            tokens = getattr(getattr(resp, "usage", None), "prompt_tokens", 0) or 0
+            usage.record("embedding", self.model, input_tokens=tokens, cost_usd=cost)
         return out

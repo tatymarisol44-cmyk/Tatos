@@ -115,6 +115,8 @@ async def test_invented_citation_is_regenerated(settings: Settings, catalog: Cat
     assert verdicts == ["regenerate", "ok"]
     # The regeneration was told exactly what was wrong.
     assert "[7]" in llm.calls[-1][-1]["content"]
+    # Prueba 28 (A28): both generations are billed, not only the one that was kept.
+    assert result.usage["total"]["llm_calls"] == len(llm.calls)
 
 
 async def test_citations_that_stay_invalid_are_stripped(

@@ -14,6 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from orchestrator import packs
+from orchestrator import usage as ledger
 from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
@@ -158,7 +159,10 @@ def _usage(state: dict[str, Any]) -> dict[str, Any]:
     elif state.get("answer_usage"):
         usage["agent"] = state["answer_usage"]
     parts = [p for v in usage.values() for p in (v if isinstance(v, list) else [v])]
-    usage["total"] = _total(parts)
+    # The stages above are what the answer is made of; the total comes from the ledger,
+    # which also counts discarded attempts, memory extraction and embeddings (A28).
+    entries = ledger.current()
+    usage["total"] = ledger.summarize(entries) if entries is not None else _total(parts)
     return usage
 
 
@@ -549,8 +553,9 @@ class Orchestrator:
             )
             if subject_id:
                 await self.subject_threads.link(tenant, thread_id, subject_id)
-            state = await self.graph.ainvoke(inputs, config)
-            result = self._result(thread_id, mode, state)
+            with ledger.metered():
+                state = await self.graph.ainvoke(inputs, config)
+                result = self._result(thread_id, mode, state)
             await self._after_run(tenant, thread_id, subject_id, actor, result)
             return result
 
@@ -628,15 +633,16 @@ class Orchestrator:
         if not await self.reviews.claim(tenant, thread_id, decision):
             raise ReviewNotFoundError(thread_id)
         config = self._config(tenant, thread_id)
-        try:
-            state = await self.graph.ainvoke(Command(resume=decision), config)
-        except Exception:
-            # The thread is still paused at its checkpoint: the review goes back to pending.
-            await self.reviews.release(tenant, thread_id)
-            raise
-        snapshot = await self.graph.aget_state(config)
-        mode: Mode = "team" if snapshot.values.get("mode") == "team" else "single"
-        result = self._result(thread_id, mode, state)
+        with ledger.metered():
+            try:
+                state = await self.graph.ainvoke(Command(resume=decision), config)
+            except Exception:
+                # Still paused at its checkpoint: the review goes back to pending.
+                await self.reviews.release(tenant, thread_id)
+                raise
+            snapshot = await self.graph.aget_state(config)
+            mode: Mode = "team" if snapshot.values.get("mode") == "team" else "single"
+            result = self._result(thread_id, mode, state)
         status = "approved" if approved else "rejected"
         async with self.db.engine.begin() as conn:  # final status and its audit event
             await self.reviews.finish(tenant, thread_id, status, conn)
@@ -694,6 +700,11 @@ class Orchestrator:
                 await self.leases.release(tenant, thread_id, holder)
 
         async def run() -> AsyncIterator[tuple[str, dict[str, Any]]]:
+            with ledger.metered():
+                async for item in stream():
+                    yield item
+
+        async def stream() -> AsyncIterator[tuple[str, dict[str, Any]]]:
             yield "start", {"thread_id": thread_id, "mode": mode}
             interrupts: tuple[Any, ...] = ()
             async for chunk in self.graph.astream(inputs, config, stream_mode="updates"):

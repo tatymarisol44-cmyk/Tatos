@@ -34,7 +34,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send, interrupt
 
-from orchestrator import evidence
+from orchestrator import evidence, usage
 from orchestrator.catalog import AgentSpec, Catalog
 from orchestrator.config import Settings
 from orchestrator.governance import ConsentRegistry, Purpose
@@ -162,6 +162,8 @@ def build_graph(
                 span.record_exception(exc)
                 log.warning("remote agent %s failed (%s); answering locally", agent.id, exc)
             else:
+                # The remote agent's own model spend is not visible to us: unknown, not 0.
+                usage.record("a2a", f"a2a/{agent.id}", cost_usd=None)
                 return LLMResult(text, f"a2a/{agent.id}"), {"status": "ok"}
         result = await llm.complete(messages, model=settings.llm_model)
         return result, {"status": "fallback", "error": "remote agent unavailable"}

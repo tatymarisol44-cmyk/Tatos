@@ -224,3 +224,16 @@ async def test_qdrant_memory_store(settings: Settings) -> None:
     assert await memory.erase("acme", "p-1") == 1
     assert await memory.recall("acme", "p-1", "telegram") == []
     assert await memory.store.purge_expired(utcnow() + timedelta(days=400)) == 1
+
+
+async def test_a28_memory_extraction_is_metered(
+    orchestrator: Orchestrator, fake_llm: FakeLLM
+) -> None:
+    # Prueba 20: answer + memory extraction made two LLM calls; usage reported one.
+    await _consent(orchestrator)
+    before = len(fake_llm.calls)
+    result = await orchestrator.chat("Prefiero la tarde.", tenant="acme", subject_id="p-1")
+    made = len(fake_llm.calls) - before  # router + agent + memory extractor
+    assert made == 3
+    assert result.usage["total"]["llm_calls"] == made
+    assert result.usage["total"]["cost_status"] == "known"
