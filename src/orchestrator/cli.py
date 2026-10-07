@@ -225,6 +225,35 @@ async def _db(action: str, revision: str | None, message: str | None) -> int:
         await engine.dispose()
 
 
+def _pack_cmd(
+    action: str, pack_id: str | None, strict: bool, parser: argparse.ArgumentParser
+) -> int:
+    from orchestrator import packs
+
+    try:
+        loaded = packs.load_packs()
+    except ValueError as exc:  # a pack that does not validate must stop the pipeline
+        print(f"invalid pack: {exc}", file=sys.stderr)
+        return 1
+    if action == "list":
+        _print([packs.summarize(p) for p in loaded.values()])
+    elif action == "show":
+        if pack_id not in loaded:
+            parser.error(f"unknown pack {pack_id!r}; available: {sorted(loaded)}")
+        _print(loaded[pack_id].model_dump(mode="json"))
+    else:
+        failures = packs.strict_failures(loaded) if strict else []
+        _print(
+            {
+                "packs": len(loaded),
+                "unverified_refs": {p.id: len(packs.unverified_refs(p)) for p in loaded.values()},
+                "strict_failures": failures,
+            }
+        )
+        return 1 if failures else 0
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -279,6 +308,14 @@ def main(argv: list[str] | None = None) -> int:
     p_db.add_argument("action", choices=["upgrade", "current", "check", "stamp", "revision"])
     p_db.add_argument("revision", nargs="?", help="Target revision (default: head)")
     p_db.add_argument("-m", "--message", help="revision: what changed")
+    p_pack = sub.add_parser("pack", help="Profession packs: list, validate, show")
+    p_pack.add_argument("action", choices=["list", "validate", "show"])
+    p_pack.add_argument("pack_id", nargs="?", help="show: the pack to print")
+    p_pack.add_argument(
+        "--strict",
+        action="store_true",
+        help="validate: fail if a production pack rests on unverified legal references",
+    )
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -315,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
             else []
         )
         return _run(_audit_verify(anchors, args.tenant))
+    elif args.cmd == "pack":
+        return _pack_cmd(args.action, args.pack_id, args.strict, parser)
     elif args.cmd == "serve":
         import uvicorn
 

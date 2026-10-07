@@ -1,0 +1,176 @@
+id: ec-mental-health-base
+name: Mental health, Ecuador (base)
+description: >-
+  Shared base for the psychologist and psychiatrist packs in Ecuador. It cannot serve a
+  tenant by itself. Legal references carry the status they really have (docs/packs/RESEARCH.md):
+  `read` means the primary text was read, `secondary` a summary only, `to_verify` unconfirmed.
+abstract: true
+jurisdiction:
+  country: EC
+  refs:
+    - id: LOSM-9
+      instrument: "Ley Orgánica de Salud Mental (R.O. Supl. 1 No. 471, 2024-01-05)"
+      article: "9(j)"
+      status: read
+      note: "Right to informed consent and to confidentiality of the diagnosis"
+    - id: LOSM-12
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "12"
+      status: read
+      note: "Free and informed consent, verbal or written, recorded by a health professional and kept in the clinical record"
+    - id: LOSM-13
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "13"
+      status: read
+      note: "Consent of an adult who cannot give it"
+    - id: LOSM-14
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "14"
+      status: read
+      note: "Minors: the parents consent and the minor must be heard; a parent with a history of violence cannot consent"
+    - id: LOSM-15
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "15"
+      status: read
+      note: "No prior consent when there is vital risk to the person or to third parties"
+    - id: LOSM-39
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "39"
+      status: read
+      note: "Voluntary internment needs prior informed consent and the team's recommendation"
+    - id: LOSM-40
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "40"
+      status: read
+      note: "Involuntary internment in an emergency, for the shortest time"
+    - id: LOSM-41
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "41"
+      status: read
+      note: "Involuntary internment outside emergencies needs a court order; the file carries the clinical record and the team's report"
+    - id: LOSM-42
+      instrument: "Ley Orgánica de Salud Mental"
+      article: "42"
+      status: read
+      note: "Requirements for internment; the Defensoría del Pueblo is notified"
+    - id: LOPDP-7
+      instrument: "Ley Orgánica de Protección de Datos Personales (R.O. 5to Supl. 459, 2021-05-26)"
+      article: "7(6)"
+      status: read
+      note: "Processing is lawful to protect vital interests of the data subject or another person"
+    - id: LOPDP-26
+      instrument: "Ley Orgánica de Protección de Datos Personales"
+      article: "26"
+      status: read
+      note: "Sensitive data: explicit consent, or vital interests only if the person cannot consent"
+    - id: LOPDP-30
+      instrument: "Ley Orgánica de Protección de Datos Personales"
+      article: "30"
+      status: read
+      note: "Duty of confidentiality for everyone in the processing, complementary to professional secrecy"
+    - id: LOPDP-31
+      instrument: "Ley Orgánica de Protección de Datos Personales"
+      article: "31"
+      status: read
+      note: "Health data: prior consent, except vital interests of a person who cannot consent, or care by a professional bound by secrecy"
+    - id: RLOSM
+      instrument: "Reglamento General a la Ley Orgánica de Salud Mental (D.E. 645, R.O. 3er Supl. 697, 2024-12-04)"
+      status: to_verify
+      note: "Only its existence was confirmed; consent instruments and protocols are not read"
+    - id: HCU-RETENTION
+      instrument: "Historia Clínica Única (A.M. 138 of 2008)"
+      status: secondary
+      note: "Minimum 15 years from the last visit (5 active + 10 passive); the source is a secondary summary"
+    - id: ETH-PSY
+      instrument: "Deontological code of Ecuadorian psychologists"
+      status: to_verify
+      note: "Professional secrecy; the primary source was not found"
+    - id: TELEHEALTH
+      instrument: "Ecuadorian telehealth rules"
+      status: to_verify
+      note: "Not found"
+profession:
+  can_prescribe: false
+  can_use_controlled_prescription: false
+review:
+  divisions: [healthcare, finance, paid-media]
+  clinical: true
+memory:
+  preferences: [schedule, channel, language, tone, reminder]
+crm:
+  recall_months: 3
+campaigns:
+  max_messages_per_month: 2
+  max_discount_pct: 10
+  banned_claims:
+    - guaranteed
+    - garantizado
+    - garantizada
+    - cura
+    - curación
+    - sin efectos secundarios
+    - 100%
+    - milagro
+  forbid_clinical_terms: true
+safety:
+  crisis:
+    escalate_to: [treating_professional, on_duty_contact]
+    auto_contact_third_parties: false
+  minors:
+    age_of_majority: 18
+    guardian_consent_required: true
+    minor_must_be_heard: true
+documents:
+  - id: consent_therapy
+    title: Informed consent for therapy
+    kind: consent
+    legal_basis: [LOSM-12, LOPDP-26]
+    retention_years: 15
+  - id: consent_guardian
+    title: Consent of the parent or legal guardian for a minor
+    kind: consent
+    legal_basis: [LOSM-14]
+    retention_years: 15
+  - id: consent_diary
+    title: Consent to use the emotional diary and its limits
+    kind: consent
+    legal_basis: [LOSM-12, LOPDP-26, LOPDP-31]
+    retention_years: 15
+    note: "Must state that the diary is not monitored in real time and what happens when risk is detected (lawyer's questions I1 and I3)."
+  - id: consent_voluntary_internment
+    title: Consent to voluntary internment
+    kind: consent
+    legal_basis: [LOSM-39, LOSM-42]
+    retention_years: 15
+  - id: session_note
+    title: Session note
+    kind: note
+    legal_basis: [HCU-RETENTION]
+    retention_years: 15
+  - id: psychotherapy_note
+    title: Psychotherapy note
+    kind: psychotherapy_note
+    access: author_only
+    excluded_from: [rag, memory, insights, campaigns, models, audit_export]
+    note: "Kept apart from the clinical record. The concept comes from other jurisdictions; whether Ecuador recognises it is lawyer's question D2."
+  - id: diary_entry
+    title: Emotional diary entry
+    kind: patient_entry
+    signature: none
+    access: patient_and_treating
+    excluded_from: [rag, memory, insights, campaigns, models]
+    note: "Written by the patient; never answered by the AI and never an analytics signal."
+  - id: referral
+    title: Referral
+    kind: referral
+    retention_years: 15
+  - id: internment_report
+    title: Report of the interdisciplinary team for a court
+    kind: report
+    legal_basis: [LOSM-41, LOSM-42]
+    retention_years: 15
+  - id: defensoria_notice
+    title: Notice of internment to the Defensoría del Pueblo
+    kind: report
+    legal_basis: [LOSM-42]
+    retention_years: 15
