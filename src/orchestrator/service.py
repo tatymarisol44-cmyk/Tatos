@@ -44,6 +44,7 @@ from orchestrator.llm import LLMClient, build_llm
 from orchestrator.memory import InMemoryMemoryStore, MemoryStore, QdrantMemoryStore, SemanticMemory
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
+from orchestrator.social import SocialAccounts
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
 
 log = logging.getLogger(__name__)
@@ -198,6 +199,7 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
+        self.social = SocialAccounts(self.db, self.audit)
         self.crm = CrmService(self.db, self.audit, settings)
         self.insights = InsightsService(self.db, self.crm, self.consents, self.llm, settings)
         self.campaigns = CampaignService(

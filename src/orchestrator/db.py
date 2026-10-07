@@ -79,7 +79,15 @@ class Database:
 
     async def start(self) -> None:
         # Imported for their side effect: each module registers its tables on `metadata`.
-        from orchestrator import auth, campaigns, crm, governance, knowledge, migrate  # noqa: F401
+        from orchestrator import (  # noqa: F401
+            auth,
+            campaigns,
+            crm,
+            governance,
+            knowledge,
+            migrate,
+            social,
+        )
 
         if self.engine.dialect.name == "sqlite":
             async with self.engine.begin() as conn:

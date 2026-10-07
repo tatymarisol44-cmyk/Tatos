@@ -13,7 +13,7 @@ MIGRATION_LOCK = 727_274
 
 def _metadata() -> Any:
     # Each module registers its tables on the shared MetaData when imported.
-    from orchestrator import auth, campaigns, crm, governance, knowledge  # noqa: F401
+    from orchestrator import auth, campaigns, crm, governance, knowledge, social  # noqa: F401
     from orchestrator.db import metadata
 
     return metadata
