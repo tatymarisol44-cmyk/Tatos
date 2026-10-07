@@ -56,7 +56,7 @@ The product will **not**, in this version:
 | Term | Definition |
 |---|---|
 | A2A | Agent-to-Agent protocol (JSON-RPC `message/send`), used to call and be called by other agents. |
-| Actor | The person performing an action, declared in the `X-Actor` header and recorded in the audit trail. |
+| Actor | The person performing an action: the owner of the per-person key (`sk_` staff, `pk_` patient) that authenticated the request, recorded in the audit trail. A client-supplied `X-Actor` header is ignored. |
 | Agent / specialist | A catalog entry (markdown system prompt, or a remote A2A service) that answers in one domain. |
 | Alert | A follow-up item coloured **yellow** or **red** by the CRM (unconfirmed appointment, unanswered quote, recall due). |
 | Audit event | An append-only record of who did what to which subject, with metadata only. |
@@ -176,7 +176,7 @@ The system runs locally (`uv run agency serve`), as a Docker Compose stack, in G
 | Clinician / reviewer (e.g. a dentist) | Reviews held answers, approves, edits or rejects them. | Basic; domain expert. | Review queue. |
 | Owner / manager | Reads insights, approves campaigns and big discounts. | Basic. | Insights, campaigns. |
 | Privacy officer (DPO) | Handles access and erasure requests, reads the audit trail. | Moderate; privacy knowledge. | Subjects, audit. |
-| Integrating developer | Embeds the API in the tenant's application and maps users to `X-Actor`. | High. | Whole API, MCP. |
+| Integrating developer | Embeds the API in the tenant's application and gives each person their own key (`POST /v1/admin/staff`, patient access keys). | High. | Whole API, MCP. |
 | End customer / patient | Talks to the business through the client application or a channel; receives campaigns. | Any. | Indirect: chat, messages. |
 | External agent | Another AI agent delegating a task over A2A. | Not applicable. | A2A. |
 
@@ -211,13 +211,13 @@ Appendix B maps each obligation to a control and its status. **This document is 
 - Python 3.12–3.13, LangGraph 1.x, FastAPI, SQLAlchemy 2 (async), Qdrant, LiteLLM.
 - The local development machine has no Docker, because firmware virtualization is disabled. The full stack is exercised in GitHub Codespaces and in CI.
 
-**Identity.** The service authenticates the application (API key), not individual users. The actor is declared by the application in `X-Actor` (pattern `[\w.@-]{1,128}`).
+**Identity.** Every person has their own key: `sk_` staff keys carry roles (reception, reviewer, owner, marketing, privacy, admin), `pk_` patient keys are bound to one subject and expire. The actor in the audit trail is the key's owner; a client-supplied `X-Actor` header is ignored (audit finding A01). A legacy service key (`API_KEYS`) identifies an application, not a person. SSO/OIDC is future work.
 
 ### 2.5 Assumptions and Dependencies
 
 **Client assumptions.**
 
-- The client application authenticates its users and sends a truthful `X-Actor`.
+- The client application gives each person their own key and never shares one key between people.
 - Subject ids are pseudonymous (patient numbers), never names or e-mails.
 - Consents recorded through the API were actually collected, and `source` identifies the evidence (for example a signed form).
 
@@ -326,7 +326,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | GOV-05 | Conversations shall be erasable per thread and per tenant, and conversations inactive for longer than `THREAD_RETENTION_DAYS` shall be purged by `agency purge-threads`. Erasing a thread shall drop its review record. | I | test_limits_and_retention, test_governance |
 | GOV-06 | Audit events shall have a configurable retention period (for example six years for HIPAA-covered tenants) and a purge job. | F | — |
 | GOV-07 | Data at rest shall be encrypted (managed Postgres/Qdrant encryption, encrypted volumes). | F (infrastructure) | — |
-| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. | F | — |
+| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Today: per-person keys with roles; SSO/OIDC is future work. | P | test_audit_regressions (A01), test_business_api |
 | GOV-09 | Organisational documents shall exist before production with real data: DPIA (GDPR Art. 35), records of processing (Art. 30), DPA/BAA with LLM and hosting providers, transfer safeguards, and a breach-notification runbook (GDPR 72 h; LOPDP term). | F | — |
 
 ### 3.7 CRM (CRM)
@@ -355,7 +355,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | CMP-05 | Results shall be an intention-to-treat comparison of every assigned patient from the moment the campaign was queued, with attrition per arm. They shall be `provisional` (no test, no conclusion) until the conversion window closes, then `final`: Fisher's exact test, Wilson intervals per arm and a Newcombe interval for the lift; "inconclusive" under 30 per arm. A simulation shall report no effect (ADR 0013). | I | test_campaigns, test_stats, test_audit_regressions (A16–A18) |
 | CMP-06 | Copy shall be editable only in `draft` or `pending_approval`. Campaigns shall be cancellable unless sent, and results shall exist only for sent campaigns. | I | test_campaigns, test_business_api |
 | CMP-07 | Messages shall be sent at each subject's best time (send-time optimisation). | F | — |
-| CMP-08 | WhatsApp Business, e-mail, Facebook/Instagram publishing and paid ads shall be supported, with ad spend held for approval and no targeting by health condition. | F | — |
+| CMP-08 | WhatsApp Business, e-mail, Facebook/Instagram publishing and paid ads shall be supported, with ad spend held for approval and no targeting by health condition. Today: Instagram and TikTok publishing with approval, incoming WhatsApp and staff replies (section 3.14). Campaigns over WhatsApp, Facebook, e-mail and paid ads are future work. | P | test_publishing, test_inbound |
 
 ### 3.9 ERP (ERP)
 
@@ -384,14 +384,14 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | SEC-04 | In production, `POSTGRES_URL` and `DATABASE_URL` shall require `sslmode` in {require, verify-ca, verify-full} unless explicitly opted out for an encrypted private network. SQLite shall be refused. | I | test_limits_and_retention, test_db |
 | SEC-05 | The console shall use a strict CSP (no inline script, no third-party origins). | I | test_team (`test_console_served_with_csp`) |
 | SEC-06 | Secrets shall live in environment/secret stores only. The Telegram token shall not appear in logs or audit events. | I | test_campaigns |
-| SEC-07 | Header, path and body fields shall be validated by pattern and length (for example `X-Actor`, subject ids and thread ids), with 422 on violation. | I | test_business_api |
+| SEC-07 | Header, path and body fields shall be validated by pattern and length (for example staff names, subject ids and thread ids), with 422 on violation. | I | test_business_api |
 | PRV-01 | Subject ids shall be pseudonymous. The insights LLM shall receive aggregates keyed by ids. The audit trail shall hold metadata only. Memory shall hold no contact or clinical data (unless the pack allows clinical data). | I | test_memory, test_crm, test_governance |
 | REL-01 | Optional stages (retrieval, memory, remote agents, synthesis, team steps) shall degrade instead of failing the request. | I | test_knowledge, test_memory, test_remote_chaos, test_team |
 | REL-02 | Concurrent-safe state changes: review resolution, campaign approval and campaign sending shall claim their state with a conditional update. | I | test_governance, test_campaigns |
 | PERF-01 | Campaign delivery, results and alerts shall use a bounded number of queries per operation (no per-recipient round trips). | I | code review; test_campaigns |
-| PERF-02 | A load test shall report p50/p95/p99 latency, throughput and error rate with a fake LLM (orchestrator overhead) and with real providers. | F | — |
+| PERF-02 | A load test shall report p50/p95/p99 latency, throughput and error rate with a fake LLM (orchestrator overhead) and with real providers. Done with the fake LLM on Postgres, one vs two processes; not yet with real providers. | P | docs/load-test.md, loadtest/locustfile.py |
 | OBS-01 | OpenTelemetry spans per graph node, team step, memory and knowledge operation and LLM call (GenAI attributes). Metrics: routed count, guardrail blocks, latency, tokens. | I | Manual: `docker compose up` + Jaeger/Prometheus. The OTLP exporter setup has no automated test (see Appendix C). |
-| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0013). | I | CI |
+| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0015). | I | CI |
 | POR-01 | Provider-agnostic LLM (LiteLLM), SQLite or Postgres, in-memory store or Qdrant. Runnable locally, with Docker Compose, in Codespaces and on Kubernetes. | I | CI, dev container |
 
 ### 3.12 Data Structure
@@ -410,6 +410,45 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | Qdrant `agency_agents_<catalog>_<embedder>` | agent vectors | Immutable per catalog and embedder version. |
 | Qdrant `knowledge_<embedder>` | tenant, doc_id, title, index, text | `tenant` is an `is_tenant` payload index. |
 | Qdrant `memory_<embedder>` | tenant, subject_id, text, created_at, expires_at, expires_ts, source_thread | `tenant` is `is_tenant`, plus subject and expiry indexes. |
+| `channel_accounts` | (tenant, account_id), network, external_id, handle, professional_id, secret_ref, audited, active, created_at, created_by | The token is never stored: `secret_ref` names it (SOC-02). |
+| `publications` | (tenant, publication_id), account_id, network, media_type, media_format, object_name, sha256, caption, brief (JSON), status, needs_owner_approval, mode, visibility, external_id, error, created/approved/published by and at | `pending_approval` → `approved` → `publishing` → `published` \| `failed` \| `uncertain`, or `cancelled`. |
+| `inbound_events` | (network, message_id), tenant, intent, received_at | Deduplication only; no message text (SOC-06). |
+| `channel_alerts` | (tenant, alert_id), network, account_id, kind, address, status, created_at, resolved_by, resolved_at | Crisis and "talk to a person"; reads audited. |
+| `channel_optouts` | (tenant, network, address_key), created_at | `address_key` is a SHA-256 of tenant, network and number: pseudonymous, not anonymous. |
+
+This table lists the main business tables, not every table (keys, audit chain heads and knowledge versions are documented in their modules).
+
+### 3.13 Profession Packs (PCK)
+
+Ecuador only for now. Every legal reference in a pack carries the status it really has: `read` (primary text read), `secondary` (summary only) or `to_verify` (ADR 0014, docs/packs/RESEARCH.md).
+
+| ID | Requirement | Status | Verification |
+|---|---|---|---|
+| PCK-01 | A pack shall be declarative YAML validated at startup: unknown keys, unknown legal references cited by a document, and duplicate ids shall be rejected. | I | test_profession_packs |
+| PCK-02 | `extends` shall merge packs; banned claims and a document's excluded surfaces shall only grow across inheritance. Abstract packs shall not serve a tenant. | I | test_profession_packs |
+| PCK-03 | A psychotherapy note shall be author-only and excluded from retrieval, memory, insights, campaigns, models and the audit export; a patient entry (diary) shall be visible to the patient and the treating professional only. A pack that says otherwise shall not load. | I | test_profession_packs, test_surfaces |
+| PCK-04 | Those two kinds shall be refused by the knowledge base for every tenant, before anything is embedded (403). | I | test_surfaces |
+| PCK-05 | The crisis policy shall never contact third parties automatically; only the treating professional and the on-duty contact are alerted. | I | test_profession_packs |
+| PCK-06 | A profession that cannot prescribe (psychologist) shall carry no prescription document. | I | test_profession_packs, test_surfaces |
+| PCK-07 | The ACESS special-prescription worksheet shall be checked against ACESS-2022-0046 Art. 6 (every field, CIE-10 shape, quantity in words matching the number, date, cédula shape), Art. 25 (prescriber) and Art. 27 (no abbreviations), each finding citing its article. The system never issues the legal form. | I | test_prescriptions |
+| PCK-08 | `agency pack validate --strict` shall fail a production pack that rests on `to_verify` references. | I | test_profession_packs |
+| PCK-09 | Clinical notes store, diary, scales (PHQ-9, GAD-7) and the tenant-as-establishment model. | F | — |
+
+### 3.14 Social Channels (SOC)
+
+Platform rules were read on 2026-10-07 from the official pages cited in `orchestrator/social.py` (ADR 0015).
+
+| ID | Requirement | Status | Verification |
+|---|---|---|---|
+| SOC-01 | Each establishment, or one professional in it, shall connect its own accounts; connecting and disabling shall be admin-only and audited. | I | test_social |
+| SOC-02 | Tokens shall never be stored in the database or returned by the API: an account names its secret, read from `SOCIAL_SECRET_<name>`. Tokens shall travel only in the Authorization header. | I | test_social, test_publishing, test_inbound |
+| SOC-03 | Every publication shall pass pre-flight checks of the platform's rules (Instagram JPEG and public URL and 100 posts per 24 h; TikTok MP4/H.264 and private until audited); a network whose rules are not read (Facebook) shall not publish. | I | test_social, test_publishing |
+| SOC-04 | Creatives shall be generated by code after the copy passes the pack's rules; a rejected creative shall leave no file. Spanish accented letters shall render. | I | test_creatives |
+| SOC-05 | A publication shall be approved by a person before publishing (by the owner too above the discount cap), published once, `uncertain` after a transport error and never retried automatically, and dry-run without a credential. | I | test_publishing |
+| SOC-06 | The WhatsApp webhook shall answer Meta's verification and accept only correctly signed notifications; messages shall be deduplicated, classified on arrival and their text never stored. | I | test_inbound |
+| SOC-07 | STOP shall record an opt-out; crisis wording and requests for a person shall open an alert for care staff; the AI shall never answer them. | I | test_inbound |
+| SOC-08 | A person may reply by WhatsApp inside the 24-hour window, never to a number that opted out; the text is not stored. | I | test_inbound |
+| SOC-09 | Template messages outside the window, campaigns over WhatsApp, Instagram and Facebook comment replies, and notifying the on-duty person outside the console. | F | — |
 
 ---
 
@@ -791,13 +830,15 @@ The prototype is the running service. It has no screenshots, because the busines
 | CRM | `POST/GET /v1/crm/patients`, `GET/PATCH /v1/crm/patients/{id}`, `POST/GET /v1/crm/appointments`, `POST /v1/crm/appointments/{id}/status`, `POST/GET /v1/crm/treatments`, `POST /v1/crm/treatments/{id}/stage`, `GET /v1/crm/alerts` |
 | Insights | `GET /v1/insights/summary`, `GET /v1/insights/segments`, `POST /v1/insights/ask` |
 | Campaigns | `POST/GET /v1/campaigns`, `GET /v1/campaigns/{id}`, `PUT /v1/campaigns/{id}/template`, `POST /v1/campaigns/{id}/approve`, `/send`, `/cancel`, `GET /v1/campaigns/{id}/results` |
+| Social channels | `GET /v1/social/rules`, `POST/GET /v1/social/accounts`, `DELETE /v1/social/accounts/{id}`, `POST/GET /v1/social/publications`, `GET /v1/social/publications/{id}`, `POST /v1/social/publications/{id}/approve`, `/publish`, `/cancel`, `GET /v1/social/alerts?state=open\|resolved\|all`, `POST /v1/social/alerts/{id}/reply`, `/resolve` |
+| Inbound channels | `POST /v1/channels/telegram/{tenant}`, `GET/POST /v1/channels/whatsapp` (exist only when their secrets are configured) |
 | Interop and operations | `GET /.well-known/agent-card.json`, `POST /a2a`, `GET /healthz`, `GET /readyz`, `GET /` (console) |
 
 ### 5.2 Sample Scenario
 
 *The values below illustrate the implemented behaviour. The answer texts depend on the configured LLM; with `LLM_BACKEND=fake` they are deterministic echoes.*
 
-**Setup.** The clinic Sonrisa Sana is tenant `sonrisa`, configured with `TENANT_PACKS='{"sonrisa": "dental"}'`. The front-desk application sends `X-API-Key` and `X-Actor: recepcion.maria`.
+**Setup.** The clinic Sonrisa Sana is tenant `sonrisa`, configured with `TENANT_PACKS='{"sonrisa": "dental"}'`. María at the front desk uses her own staff key (`X-API-Key: sk_...`, role `reception`), so the audit trail records her as the actor.
 
 **1. Registration and consent.** María registers a patient and records the consents collected on the signed intake form.
 
@@ -813,7 +854,7 @@ PUT  /v1/subjects/p-001/consents/memory      {"granted": true, "source": "intake
 POST /v1/chat  {"question": "Prefiero citas por la tarde. ¿Tienen algo el jueves?", "subject_id": "p-001"}
 ```
 
-The response has `status: completed` and `memory: {"recalled": 0, "stored": 1}`. Weeks later, a new conversation recalls "Prefiero citas por la tarde." without Ana repeating it.
+The response has `status: completed` and `memory: {"recalled": 0, "stored": 1}`. What is stored is a preference from a closed list, `schedule: afternoon` ("Prefers afternoon appointments"), never Ana's own words. Weeks later, a new conversation recalls it without Ana repeating it.
 
 **3. A clinical question is held.** After an extraction, Ana asks:
 
@@ -825,7 +866,7 @@ POST /v1/chat  {"question": "¿Qué dosis de ibuprofeno tomo después de la extr
 
 Ana's app shows "Your question is being reviewed by the clinic". A follow-up on `t-77` returns 409 until the review is resolved.
 
-**4. The dentist reviews.** Dr. López (`X-Actor: dr.lopez`) opens the queue and replaces the draft:
+**4. The dentist reviews.** Dr. López, with his own staff key (role `reviewer`), opens the queue and replaces the draft:
 
 ```http
 GET  /v1/reviews
@@ -923,7 +964,7 @@ For further information about this document and the project, contact the project
 | Audit controls | HIPAA 164.312(b) | Append-only audit trail with actor; record openings audited | I |
 | Transmission security | HIPAA 164.312(e); GDPR Art. 32 | TLS required for Postgres in prod; HTTPS at the ingress | I (ingress TLS: deployment) |
 | Encryption at rest | GDPR Art. 32; HIPAA addressable | Managed database/volume encryption | F (infrastructure) |
-| Access control and unique user identification | HIPAA 164.312(a); GDPR Art. 32 | API key per tenant; `X-Actor` declared by the application | P (SSO/RBAC: F) |
+| Access control and unique user identification | HIPAA 164.312(a); GDPR Art. 32 | Per-person keys with roles (`sk_` staff, `pk_` patient); the actor is the key's owner | P (SSO: F) |
 | Processor agreements | GDPR Art. 28; HIPAA BAA | DPA/BAA with LLM, hosting and Telegram providers; zero-retention LLM settings where available | F (organisational) |
 | International transfers | GDPR Arts. 44–49; LOPDP | Provider region choice; transfer mechanism (adequacy, SCCs) | F (organisational) |
 | Records of processing, DPIA | GDPR Arts. 30, 35 | To be written from this SRS (sections 2.2, 3.12, Appendix C) | F |
@@ -934,8 +975,8 @@ For further information about this document and the project, contact the project
 
 1. **Identity.** Per-person keys with roles replaced the declared `X-Actor` (audit A01). SSO/OIDC is still future work (GOV-08).
 2. **Edited answers and phone numbers.** The output guard redacts phone numbers in reviewer-edited text too, including the clinic's own number. An allow-list of the tenant's public contact data would fix this.
-3. **No deployment pipeline.** The Kubernetes base now runs Redis for the shared rate limit (audit A30), but nothing deploys images with health checks and rollback yet.
-4. **Schema migrations.** Tables are created with `create_all`. Alembic is needed before the first breaking change.
+3. **Deployment pipeline not yet run.** A health-gated deploy with automatic rollback exists and is rehearsed on kind in CI (`deploy.yml`, `deploy/scripts/rollout.sh`), but CI has never run because the repository has not been pushed (item 11).
+4. **Schema migrations.** Alembic versions every change (0001–0005); SQLite in development still uses `create_all`, and a test checks that the migrations build the same schema as the models.
 5. **Audit growth.** There is no audit retention job yet (GOV-06).
 6. **Alert and insight queries** run at request time. Large tenants will need materialised aggregates or caching.
 7. **Lift is the effect of assignment.** Intention to treat among eligible patients (ADR 0013): with many failed or skipped deliveries it understates the effect of receiving the message; the attrition table shows by how much. No power calculation is made before sending.
@@ -943,3 +984,6 @@ For further information about this document and the project, contact the project
 9. **Local environment.** The development machine cannot run Docker (firmware virtualization disabled). The Postgres integration test, the Java suite and the Docker builds run only in CI or Codespaces.
 10. **Telemetry export untested.** `setup_telemetry` (OTLP exporters) has no automated test; the spans and metrics themselves are exercised by the suite through the no-op provider. A test with an in-memory span exporter would close this.
 11. **Not yet run end to end.** The CI-only checks for the new code (Postgres flow, `test_db_postgres.py`) and the Docker/Kubernetes deployment have not been executed yet, because the repository has not been pushed.
+12. **Legal references not confirmed.** Several references in the Ecuadorian packs are `secondary` or `to_verify` (docs/packs/RESEARCH.md); no pack is marked production until a lawyer confirms them (PCK-08). Open owner decisions are listed in docs/DECISIONS-PENDING.md.
+13. **Heuristic crisis routing.** Crisis wording in incoming messages is matched by phrases tuned for recall; it can miss paraphrases and voice notes. It only decides who must look, and the list must be reviewed with the practice's professionals.
+14. **Platform integrations untested live.** The Instagram, TikTok and WhatsApp adapters follow the official documentation read on 2026-10-07 and are tested against a simulated network; no call has reached a real platform yet (no accounts, no app review). Facebook page rules are unread, so Facebook cannot publish.
