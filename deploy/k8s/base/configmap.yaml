@@ -30,3 +30,8 @@ data:
   RATE_LIMIT_ON_OUTAGE: local
   # Use the pricing map bundled with the pinned LiteLLM instead of fetching it at startup.
   LITELLM_LOCAL_MODEL_COST_MAP: "True"
+  # Rendered creatives (ADR 0015). The root filesystem is read-only: only /tmp is writable.
+  # With GCS_BUCKET set this is just a per-pod cache; the bucket is the source of truth.
+  MEDIA_DIR: /tmp/media
+  # GCS_BUCKET: creativos-<practice>   # set once the bucket exists (DECISIONS-PENDING A3)
+  MEDIA_URL_TTL_MINUTES: "60"

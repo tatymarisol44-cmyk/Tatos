@@ -33,8 +33,9 @@ def object_name(tenant: str, publication_id: str, suffix: str) -> str:
 class MediaStore(Protocol):
     async def put(self, name: str, source: Path, content_type: str) -> None: ...
 
-    def local_path(self, name: str) -> Path | None:
-        """A readable local copy (for uploads that send the file itself), if any."""
+    async def local_file(self, name: str) -> Path | None:
+        """A readable local copy, for uploads that send the file itself (TikTok). Replicas
+        do not share disks, so a store backed by a bucket fetches it when missing."""
         ...
 
     async def signed_url(self, name: str) -> str | None:
@@ -59,7 +60,10 @@ class LocalMediaStore:
         target.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copyfile, source, target)
 
-    def local_path(self, name: str) -> Path | None:
+    def path_for(self, name: str) -> Path:
+        return self._path(name)
+
+    async def local_file(self, name: str) -> Path | None:
         path = self._path(name)
         return path if path.exists() else None
 
@@ -71,25 +75,28 @@ class GcsMediaStore:
     """Google Cloud Storage. Credentials come from the environment (Application Default
     Credentials: a workload identity in production, a key file only in development)."""
 
-    def __init__(
-        self, bucket: str, ttl: timedelta, client: Any = None, cache_dir: Path | None = None
-    ) -> None:
+    def __init__(self, bucket: str, ttl: timedelta, cache_dir: Path, client: Any = None) -> None:
         if client is None:  # pragma: no cover - needs Google credentials
             from google.cloud import storage
 
             client = storage.Client()
         self.bucket = client.bucket(bucket)
         self.ttl = ttl
-        self.cache = LocalMediaStore(cache_dir) if cache_dir else None
+        self.cache = LocalMediaStore(cache_dir)
 
     async def put(self, name: str, source: Path, content_type: str) -> None:
         blob = self.bucket.blob(name)
         await asyncio.to_thread(blob.upload_from_filename, str(source), content_type=content_type)
-        if self.cache is not None:
-            await self.cache.put(name, source, content_type)
+        await self.cache.put(name, source, content_type)
 
-    def local_path(self, name: str) -> Path | None:
-        return self.cache.local_path(name) if self.cache else None
+    async def local_file(self, name: str) -> Path | None:
+        cached = await self.cache.local_file(name)
+        if cached is not None:
+            return cached
+        target = self.cache.path_for(name)  # created on another replica: fetch it
+        target.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self.bucket.blob(name).download_to_filename, str(target))
+        return target
 
     async def signed_url(self, name: str) -> str | None:
         blob = self.bucket.blob(name)
@@ -104,6 +111,6 @@ def build_media_store(settings: Settings) -> MediaStore:
         return GcsMediaStore(
             settings.gcs_bucket,
             timedelta(minutes=settings.media_url_ttl_minutes),
-            cache_dir=settings.media_dir,
+            settings.media_dir,
         )
     return LocalMediaStore(settings.media_dir)

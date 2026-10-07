@@ -345,7 +345,7 @@ class PublicationService:
                     media_url=url,
                     caption=pub["caption"],
                 )
-            video = self.store.local_path(pub["object_name"])
+            video = await self.store.local_file(pub["object_name"])
             if video is None:
                 raise PublishError("tiktok: the video is not available locally")
             return await TikTokPublisher(client, self.settings.tiktok_api_base).publish(

@@ -375,6 +375,10 @@ class FakeBlob:
     def upload_from_filename(self, filename: str, content_type: str) -> None:
         self.calls.append(("upload", (self.name, Path(filename).name, content_type)))
 
+    def download_to_filename(self, filename: str) -> None:
+        self.calls.append(("download", self.name))
+        Path(filename).write_bytes(b"from the bucket")
+
     def generate_signed_url(self, **kwargs: Any) -> str:
         self.calls.append(("sign", kwargs))
         return f"https://storage.googleapis.com/bucket/{self.name}?X-Goog-Signature=x"
@@ -408,7 +412,19 @@ async def test_gcs_store_uploads_and_signs_v4_urls_that_expire(tmp_path: Path) -
     assert ("upload", ("acme/p1.jpg", "in.jpg", "image/jpeg")) in client.calls
     sign = next(kw for kind, kw in client.calls if kind == "sign")
     assert sign == {"version": "v4", "expiration": timedelta(minutes=60), "method": "GET"}
-    assert store.local_path("acme/p1.jpg") is not None  # cached for file uploads
+    assert await store.local_file("acme/p1.jpg") is not None  # cached for file uploads
+    assert not any(kind == "download" for kind, _ in client.calls)
+
+
+async def test_another_replica_fetches_the_file_from_the_bucket(tmp_path: Path) -> None:
+    # Replicas do not share disks: the one that publishes may not be the one that rendered.
+    client = FakeClient()
+    other = GcsMediaStore(
+        "creativos", timedelta(minutes=60), client=client, cache_dir=tmp_path / "b"
+    )
+    path = await other.local_file("acme/p1.mp4")
+    assert path is not None and path.read_bytes() == b"from the bucket"
+    assert ("download", "acme/p1.mp4") in client.calls
 
 
 def test_object_names_are_confined(tmp_path: Path) -> None:
@@ -421,4 +437,4 @@ def test_object_names_are_confined(tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             object_name(tenant, pub, suffix)
     with pytest.raises(ValueError, match="escapes"):
-        LocalMediaStore(tmp_path).local_path("../outside.jpg")
+        LocalMediaStore(tmp_path).path_for("../outside.jpg")

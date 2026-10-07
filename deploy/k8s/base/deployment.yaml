@@ -4,6 +4,8 @@
 #     --from-literal=POSTGRES_URL='postgresql://user:pass@host:5432/agency?sslmode=require' \
 #     --from-literal=DATABASE_URL='postgresql+psycopg://user:pass@host:5432/agency?sslmode=require' \
 #     --from-literal=TELEGRAM_BOT_TOKEN=... \
+#     --from-literal=META_APP_SECRET=... --from-literal=WHATSAPP_VERIFY_TOKEN=... \
+#     --from-literal=SOCIAL_SECRET_<NAME>=...   # one per connected account (its secret_ref)
 #     --from-literal=ANTHROPIC_API_KEY=... --from-literal=OPENAI_API_KEY=...
 apiVersion: apps/v1
 kind: Deployment

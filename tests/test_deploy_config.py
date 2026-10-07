@@ -29,6 +29,15 @@ def _k8s(kind: str, name: str) -> dict[str, Any]:
     raise AssertionError(f"{kind}/{name} not found")
 
 
+def test_media_dir_is_on_a_writable_mount() -> None:
+    """The root filesystem is read-only; rendered creatives must go under a mounted /tmp."""
+    media_dir = _k8s("ConfigMap", "agency-orchestrator-config")["data"]["MEDIA_DIR"]
+    api = _k8s("Deployment", "agency-orchestrator")["spec"]["template"]["spec"]["containers"][0]
+    assert api["securityContext"]["readOnlyRootFilesystem"] is True
+    mounts = [m["mountPath"] for m in api["volumeMounts"]]
+    assert any(media_dir == m or media_dir.startswith(m.rstrip("/") + "/") for m in mounts)
+
+
 def test_base_images_are_pinned_by_digest() -> None:
     dockerfiles = [ROOT / "Dockerfile", ROOT / "agents" / "jvm-specialist" / "Dockerfile"]
     for path in dockerfiles:

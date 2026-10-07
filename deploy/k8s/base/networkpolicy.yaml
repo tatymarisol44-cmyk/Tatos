@@ -39,9 +39,12 @@ spec:
     - ports: [{port: 8000}]
 ---
 # What the API may call: its in-cluster dependencies, the OTel collector, managed
-# Postgres, and HTTPS for the LLM providers / Telegram. Cloud metadata endpoints are
-# excluded so a compromised pod cannot read node credentials. For tighter control,
-# replace 0.0.0.0/0 with your Postgres CIDR and route 443 through an egress gateway.
+# Postgres, and HTTPS for the LLM providers, Telegram, Meta, TikTok and Google Cloud
+# Storage. Cloud metadata endpoints are excluded so a compromised pod cannot read node
+# credentials; note that keyless Google credentials (GKE Workload Identity) are served
+# from that endpoint, so using them means opening it on purpose (DECISIONS-PENDING A8).
+# For tighter control, replace 0.0.0.0/0 with your Postgres CIDR and route 443 through an
+# egress gateway.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
