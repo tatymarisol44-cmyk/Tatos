@@ -82,6 +82,7 @@ class Database:
         from orchestrator import (  # noqa: F401
             auth,
             campaigns,
+            clinical_records,
             crm,
             establishment,
             governance,

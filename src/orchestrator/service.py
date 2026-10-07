@@ -19,6 +19,7 @@ from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
+from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, utcnow
@@ -204,6 +205,7 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.professionals = Professionals(self.db, self.audit, settings)
+        self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.publications = PublicationService(
@@ -380,6 +382,7 @@ class Orchestrator:
             "consents": await self.consents.get(tenant, subject_id),
             "memory": [f.to_dict() for f in await self.memory.export(tenant, subject_id)],
             "crm": await self.crm.export_subject(tenant, subject_id),
+            "clinical_record": await self.clinical.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "conversations": await self._subject_conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],

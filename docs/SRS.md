@@ -412,6 +412,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | Qdrant `memory_<embedder>` | tenant, subject_id, text, created_at, expires_at, expires_ts, source_thread | `tenant` is `is_tenant`, plus subject and expiry indexes. |
 | `channel_accounts` | (tenant, account_id), network, external_id, handle, professional_id, secret_ref, audited, active, created_at, created_by | The token is never stored: `secret_ref` names it (SOC-02). |
 | `publications` | (tenant, publication_id), account_id, network, media_type, media_format, object_name, sha256, caption, brief (JSON), status, needs_owner_approval, mode, visibility, external_id, error, created/approved/published by and at | `pending_approval` → `approved` → `publishing` → `published` \| `failed` \| `uncertain`, or `cancelled`. |
+| `clinical_documents` | (tenant, document_id), patient_id, doc_type, kind, access, author_id, professional_id, pack_id, body, sha256, amends, created_at | Append-only; `author_only` rows are psychotherapy notes (PCK-11). |
 | `professionals` | (tenant, professional_id), display_name, pack_id, staff_id, active, created_at, created_by | Each professional's own profession pack (PCK-10). |
 | `inbound_events` | (network, message_id), tenant, intent, received_at | Deduplication only; no message text (SOC-06). |
 | `channel_alerts` | (tenant, alert_id), network, account_id, kind, address, status, created_at, resolved_by, resolved_at | Crisis and "talk to a person"; reads audited. |
@@ -435,7 +436,8 @@ Ecuador only for now. Every legal reference in a pack carries the status it real
 | PCK-08 | `agency pack validate --strict` shall fail a production pack that rests on `to_verify` references. | I | test_profession_packs |
 | PCK-09 | PHQ-9 and GAD-7 shall be scored with the original papers' severity bands, reported as bands and never as a diagnosis; any PHQ-9 item-9 answer above zero shall be flagged for a person whatever the total. | I | test_scales |
 | PCK-10 | An establishment (tenant) shall register professionals, each with a non-abstract profession pack; an account given to a professional shall name a registered, active one, and marketing shall follow that professional's pack (the establishment's pack otherwise). | I | test_establishment |
-| PCK-11 | Clinical notes store, diary, and scale item texts in Spanish. | F | — |
+| PCK-11 | Clinicians shall write append-only entries into a patient's record, typed by their own pack (corrections amend, never overwrite). A psychotherapy note shall be visible to its author only, not to other clinicians or an admin key, and not even listed for them; reception shall have no access; every read shall be audited without content. A data-subject export shall include the record but withhold psychotherapy notes, reporting how many. | I | test_clinical_records |
+| PCK-12 | Patient diary store and scale item texts in Spanish. | F | — |
 
 ### 3.14 Social Channels (SOC)
 
@@ -834,6 +836,7 @@ The prototype is the running service. It has no screenshots, because the busines
 | Insights | `GET /v1/insights/summary`, `GET /v1/insights/segments`, `POST /v1/insights/ask` |
 | Campaigns | `POST/GET /v1/campaigns`, `GET /v1/campaigns/{id}`, `PUT /v1/campaigns/{id}/template`, `POST /v1/campaigns/{id}/approve`, `/send`, `/cancel`, `GET /v1/campaigns/{id}/results` |
 | Establishment | `POST/GET /v1/admin/professionals`, `DELETE /v1/admin/professionals/{id}` |
+| Clinical record | `POST/GET /v1/clinical/patients/{id}/documents`, `GET /v1/clinical/documents/{id}` |
 | Social channels | `GET /v1/social/rules`, `POST/GET /v1/social/accounts`, `DELETE /v1/social/accounts/{id}`, `POST/GET /v1/social/publications`, `GET /v1/social/publications/{id}`, `POST /v1/social/publications/{id}/approve`, `/publish`, `/cancel`, `GET /v1/social/alerts?state=open\|resolved\|all`, `POST /v1/social/alerts/{id}/reply`, `/resolve` |
 | Inbound channels | `POST /v1/channels/telegram/{tenant}`, `GET/POST /v1/channels/whatsapp` (exist only when their secrets are configured) |
 | Interop and operations | `GET /.well-known/agent-card.json`, `POST /a2a`, `GET /healthz`, `GET /readyz`, `GET /` (console) |

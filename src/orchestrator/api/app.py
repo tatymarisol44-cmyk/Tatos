@@ -21,6 +21,7 @@ from orchestrator.api import (
     a2a,
     business,
     channels,
+    clinical,
     establishment,
     patients,
     publications,
@@ -128,6 +129,7 @@ def create_app(
     app.include_router(social.router)
     app.include_router(publications.router)
     app.include_router(establishment.router)
+    app.include_router(clinical.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:
