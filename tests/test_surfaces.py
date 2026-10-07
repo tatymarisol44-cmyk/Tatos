@@ -61,7 +61,7 @@ def test_clinical_prohibitions_survive_inheritance(pack_id: str) -> None:
     assert set(note.excluded_from) >= set(packs.PSYCHOTHERAPY_NOTE_EXCLUDED)
     assert set(entry.excluded_from) >= set(packs.PATIENT_ENTRY_EXCLUDED)
     assert pack.safety.crisis.auto_contact_third_parties is False
-    assert "cura" in pack.campaigns.banned_claims  # the base's ban is still there
+    assert "curación" in pack.campaigns.banned_claims  # the base's ban is still there
 
 
 def test_both_packs_are_servable_and_report_their_open_references() -> None:

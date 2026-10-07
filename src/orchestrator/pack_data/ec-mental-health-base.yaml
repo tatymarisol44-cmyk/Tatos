@@ -106,7 +106,12 @@ campaigns:
     - guaranteed
     - garantizado
     - garantizada
-    - cura
+    # Phrases, not the bare word: matching is by substring, and "cura" alone would also
+    # block harmless words such as "procura" or "oscura".
+    - la cura
+    - te cura
+    - curamos
+    - cura definitiva
     - curación
     - sin efectos secundarios
     - 100%

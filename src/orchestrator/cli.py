@@ -254,6 +254,48 @@ def _pack_cmd(
     return 0
 
 
+def _creative_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    from pydantic import ValidationError
+
+    from orchestrator import creatives, packs
+    from orchestrator.social import PUBLISHING
+
+    loaded = packs.load_packs()
+    if args.pack not in loaded or loaded[args.pack].abstract:
+        parser.error(f"unknown or abstract pack {args.pack!r}")
+    try:
+        brief = creatives.Brief(
+            title=args.title, points=args.point, cta=args.cta, practice_name=args.practice
+        )
+        if args.kind == "infographic":
+            made = creatives.render_infographic(brief, loaded[args.pack], args.out, args.format)
+        else:
+            made = creatives.render_video(
+                brief, loaded[args.pack], args.out, get_settings(), args.format
+            )
+    except ValidationError as exc:
+        print(f"invalid brief: {exc.errors(include_url=False)}", file=sys.stderr)
+        return 1
+    except creatives.CreativeRejected as exc:
+        print(f"copy rejected by the {args.pack} pack: {exc.violations}", file=sys.stderr)
+        return 1
+    except (creatives.CreativeUnavailable, creatives.CreativeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    _print(
+        {
+            "path": str(made.path),
+            "media": f"{made.media_type}/{made.media_format}",
+            "size": [made.width, made.height],
+            "sha256": made.sha256,
+            "needs_owner_approval": made.needs_owner_approval,
+            # Before upload: Instagram will also need a public URL (M3).
+            "preflight": {n: made.preflight(n).__dict__ for n in PUBLISHING},
+        }
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agency")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -316,6 +358,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="validate: fail if a production pack rests on unverified legal references",
     )
+    p_creative = sub.add_parser(
+        "creative", help="Render a marketing infographic (JPEG) or video (MP4) from a brief"
+    )
+    p_creative.add_argument("kind", choices=["infographic", "video"])
+    p_creative.add_argument(
+        "--pack", required=True, help="Its copy rules apply, e.g. ec-psychologist"
+    )
+    p_creative.add_argument("--title", required=True)
+    p_creative.add_argument("--point", action="append", required=True, help="Repeat, up to 5")
+    p_creative.add_argument("--cta", default="")
+    p_creative.add_argument("--practice", required=True, help="Name shown in the footer")
+    p_creative.add_argument("--format", choices=["feed", "story", "square"], default=None)
+    p_creative.add_argument("--out", type=Path, required=True)
     p_serve = sub.add_parser("serve", help="Run the HTTP API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -354,6 +409,9 @@ def main(argv: list[str] | None = None) -> int:
         return _run(_audit_verify(anchors, args.tenant))
     elif args.cmd == "pack":
         return _pack_cmd(args.action, args.pack_id, args.strict, parser)
+    elif args.cmd == "creative":
+        args.format = args.format or ("feed" if args.kind == "infographic" else "story")
+        return _creative_cmd(args, parser)
     elif args.cmd == "serve":
         import uvicorn
 

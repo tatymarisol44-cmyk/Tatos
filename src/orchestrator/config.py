@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     # Telegram sends it in X-Telegram-Bot-Api-Secret-Token on every webhook call
     # (setWebhook secret_token). Without it the inbound endpoint is disabled.
     telegram_webhook_secret: SecretStr | None = None
+    # Program that renders marketing videos (a name on PATH or a full path).
+    ffmpeg_binary: str = "ffmpeg"
+    ffmpeg_timeout_seconds: int = Field(default=120, ge=5, le=1800)
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000
