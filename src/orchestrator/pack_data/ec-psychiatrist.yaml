@@ -1,0 +1,61 @@
+id: ec-psychiatrist
+name: Psychiatrist, Ecuador
+description: >-
+  Psychiatric practice in Ecuador. Médicos may prescribe, including narcotic and psychotropic
+  medicines on the numbered ACESS special prescription. The system never issues that legal
+  form: it checks a worksheet and stores the ACESS form number. Not production-ready while it
+  rests on unverified references (agency pack validate --strict).
+extends: ec-mental-health-base
+jurisdiction:
+  country: EC
+  refs:
+    - id: LOS-168
+      instrument: "Ley Orgánica de Salud (as quoted in Resolución ACESS-2022-0046)"
+      article: "168"
+      status: read
+      note: "Health professionals who may prescribe: médicos, odontólogos and obstetrices"
+    - id: ACESS-0046-4-6
+      instrument: "Resolución ACESS-2022-0046"
+      article: "4-6"
+      status: read
+      note: "The special prescription is the only legal document for narcotic and psychotropic medicines: numbered by ACESS, original plus copy, with a QR code and the fields listed in Art. 6, including a current CIE-10 diagnosis code"
+    - id: ACESS-0046-25
+      instrument: "Resolución ACESS-2022-0046"
+      article: "25"
+      status: read
+      note: "Only médicos (general and specialist) and odontólogos prescribe these medicines, on the ACESS special prescription"
+    - id: ACESS-0046-27
+      instrument: "Resolución ACESS-2022-0046"
+      article: "27"
+      status: read
+      note: "Digital filling of the original and the copy is valid; legible, no abbreviations, no corrections"
+    - id: HCE-2017
+      instrument: "Acuerdo Ministerial 0009-2017, electronic clinical record (R.O. 968, 2017-03-22)"
+      status: secondary
+      note: "Known only from a quotation inside Resolución ACESS-2022-0046"
+profession:
+  can_prescribe: true
+  can_use_controlled_prescription: true
+  registry: "Title registered with ACESS; the registry number is printed on the special prescription (ACESS-0046 Art. 6)"
+documents:
+  - id: prescription
+    title: Prescription (ordinary)
+    kind: prescription
+    legal_basis: [LOS-168]
+    retention_years: 15
+    note: "A draft the doctor reviews and signs outside the system. The generic name goes first."
+  - id: controlled_worksheet
+    title: Worksheet for the special prescription (narcotic or psychotropic)
+    kind: controlled_prescription_worksheet
+    legal_basis: [ACESS-0046-4-6, ACESS-0046-25, ACESS-0046-27]
+    retention_years: 15
+    note: "Not the legal document. The legal document is the numbered ACESS form; the system checks the Art. 6 fields and records its number."
+  - id: medical_certificate
+    title: Medical certificate
+    kind: certificate
+    validity_days: 30
+  - id: medication_followup
+    title: Medication follow-up
+    kind: record
+    legal_basis: [HCU-RETENTION]
+    retention_years: 15

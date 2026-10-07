@@ -35,7 +35,9 @@ from orchestrator.config import Settings, get_settings
 from orchestrator.governance import ThreadBusyError
 from orchestrator.guardrails import check_input
 from orchestrator.knowledge import KnowledgeRejected
+from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
+from orchestrator.surfaces import SurfaceDenied, ensure_allowed
 from orchestrator.telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
@@ -259,6 +261,10 @@ def create_app(
                 status.HTTP_413_CONTENT_TOO_LARGE,
                 f"document exceeds {settings.knowledge_max_doc_chars} characters",
             )
+        try:  # a clinical kind shut out of retrieval is refused before anything is embedded
+            ensure_allowed(pack_for(settings, tenant), body.kind, "rag")
+        except SurfaceDenied as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
         try:
             info = await orch(request).knowledge.add(tenant, body.title, body.text, body.doc_id)
         except KnowledgeRejected as exc:

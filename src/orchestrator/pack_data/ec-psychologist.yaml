@@ -1,0 +1,42 @@
+id: ec-psychologist
+name: Clinical psychologist, Ecuador
+description: >-
+  Private practice or centre of clinical psychologists in Ecuador. A psychologist does not
+  prescribe: the pack offers a referral to psychiatry instead of any prescription document.
+  Not production-ready while it rests on unverified references (agency pack validate --strict).
+extends: ec-mental-health-base
+jurisdiction:
+  country: EC
+  refs:
+    - id: REG-PSY
+      instrument: "Registration of the psychologist's title (MSP and SENESCYT)"
+      status: secondary
+      note: "Taken from a search summary, not from the regulation"
+profession:
+  can_prescribe: false
+  can_use_controlled_prescription: false
+  registry: "Registered title in psychology (REG-PSY, to be confirmed)"
+documents:
+  - id: consent_online
+    title: Consent for online sessions
+    kind: consent
+    legal_basis: [LOSM-12, TELEHEALTH]
+    retention_years: 15
+    note: "The telehealth rules were not found; the text waits for the lawyer (question G2)."
+  - id: attendance_certificate
+    title: Certificate of attendance
+    kind: certificate
+    validity_days: 30
+    note: "States attendance only, never a diagnosis."
+  - id: psychological_report
+    title: Psychological report
+    kind: report
+    legal_basis: [ETH-PSY]
+    retention_years: 15
+    note: "Court, school or employer requests have their own limits; see lawyer's question E2."
+  - id: scale_result
+    title: Result of a standardized scale
+    kind: record
+    legal_basis: [HCU-RETENTION]
+    retention_years: 15
+    note: "A score is shown with its item alerts; it is never a diagnosis."

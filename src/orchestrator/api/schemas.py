@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from orchestrator.auth import Role
+from orchestrator.packs import DocumentKind
 
 # Pseudonymous data-subject id (patient/customer number): never a name or an e-mail.
 SUBJECT_ID = r"^[\w.-]{1,64}$"
@@ -210,6 +211,11 @@ class DocumentIn(BaseModel):
         max_length=64,
         pattern=r"^[\w.-]+$",
         description="Reuse an id to replace a document; omit to create a new one.",
+    )
+    kind: DocumentKind | None = Field(
+        default=None,
+        description="What this document is. Omit it for ordinary company content (an FAQ, "
+        "a price list). Clinical kinds that are shut out of retrieval are refused.",
     )
 
 
