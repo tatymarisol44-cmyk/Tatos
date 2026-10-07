@@ -4,7 +4,7 @@ A multi-agent orchestration service over **260+ specialist agents** from [The Ag
 
 It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation, in both directions: other agents can call the orchestrator, and specialists written in other languages, such as the included **Java/Spring Boot agent**, join its catalog).
 
-On top of the orchestrator sits an **AI-native CRM with governance (ERM)** for small businesses, with dental clinics as the first vertical: patients, appointments and treatment plans with traffic-light follow-ups, SQL-computed insights explained in natural language, loyalty campaigns measured against a holdout group, **human review of high-risk answers** (LangGraph `interrupt` + checkpoint), consent management, an audit trail, data-subject export/erasure, and consent-gated **semantic memory** per customer. What differs between business types lives in **industry packs** (YAML), not code. The full requirements are in the [SRS](docs/SRS.md).
+On top of the orchestrator sits an **AI-native CRM with governance (ERM)** for small businesses, with dental clinics as the first vertical: patients, appointments and treatment plans with traffic-light follow-ups, SQL-computed insights explained in natural language, loyalty campaigns measured against a holdout group, **human review of high-risk answers** (LangGraph `interrupt` + checkpoint), consent management, an audit trail, data-subject export/erasure, and consent-gated **semantic memory** per customer. What differs between business types lives in **industry packs** (YAML), not code. For health professions in Ecuador the packs become **profession profiles** (psychologist, psychiatrist) with cited legal references, and a **marketing module** generates ads and videos by code, publishes them on Instagram and TikTok after human approval, and answers WhatsApp with crisis messages routed to a person. The full requirements are in the [SRS](docs/SRS.md); open owner decisions in [DECISIONS-PENDING](docs/DECISIONS-PENDING.md).
 
 ```mermaid
 flowchart LR
@@ -87,10 +87,10 @@ curl -s localhost:8000/v1/knowledge/documents -H "X-API-Key: key1" -H "Content-T
 
 | Module | What it does |
 |---|---|
-| **Industry packs** | `general`, `dental`, `retail` (YAML in `src/orchestrator/pack_data/`): which answers need review, pipeline stages, recall interval, alert thresholds, banned marketing claims, frequency caps. `TENANT_PACKS='{"clinica-sonrisa": "dental"}'`. |
+| **Industry packs** | `general`, `dental`, `retail`, `ec-psychologist`, `ec-psychiatrist` (YAML in `src/orchestrator/pack_data/`; see the next section): which answers need review, pipeline stages, recall interval, alert thresholds, banned marketing claims, frequency caps. `TENANT_PACKS='{"clinica-sonrisa": "dental"}'`. |
 | **Human review** ([ADR 0009](docs/adr/0009-human-review-and-governance.md)) | `risk_score` holds answers with clinical advice, from reviewed divisions (dental: healthcare, finance, paid-media), after a flagged injection, or with `force_review`. The graph pauses (`status: pending_review`, `answer: null`, thread locked with 409) until `POST /v1/reviews/{thread}` approves (optionally with edited text, re-checked for PII) or rejects it. A rejected draft never enters the conversation history. |
 | **Audit & consents** | Append-only, hash-chained audit events (actor from the caller's key, subject, action; metadata only). Opt-in consents per purpose (`treatment`, `marketing`, `memory`, `photos`, `analytics`), each change audited. `GET /v1/subjects/{id}/export` and `DELETE /v1/subjects/{id}` implement access/portability and erasure, retaining the clinical record as restricted where the law requires it. |
-| **Semantic memory** ([ADR 0010](docs/adr/0010-semantic-memory.md)) | With the `memory` consent, durable non-clinical facts ("prefers afternoons") are extracted, deduplicated, given an expiry and recalled in later conversations. Contact data, clinical facts and injection attempts are filtered deterministically. |
+| **Semantic memory** ([ADR 0010](docs/adr/0010-semantic-memory.md)) | With the `memory` consent, preferences from a closed list (schedule, channel, language, tone, reminder: "prefers afternoon appointments") are stored with an expiry and recalled in later conversations. There is no free-text memory, so contact data and clinical facts have nowhere to go. |
 | **CRM** ([ADR 0011](docs/adr/0011-crm-and-sql-insights.md)) | Patients, appointments (status machine), treatment plans (pack pipeline). Traffic-light alerts: unconfirmed appointments (48 h yellow, 24 h red), unanswered quotes, recalls due. Every record read by a person is audited. |
 | **Insights** | SQL-computed RFM segments and high-value patients (only patients with the `analytics` consent), operational counts, no-show risk of upcoming visits, pipeline value, naive forecast. `POST /v1/insights/ask` has an LLM explain them from aggregates keyed by pseudonymous ids; it never computes numbers. |
 | **Campaigns** ([ADR 0012](docs/adr/0012-loyalty-campaigns-with-holdout.md)) | Recall, reactivation, pending-treatment, referral, birthday, education. Copy is checked against the pack (claims, clinical details, placeholders, STOP opt-out) and approved by a person (plus the owner for big discounts). Eligibility (consent, channel) is decided before a deterministic holdout split; delivery is app-first with a Telegram fallback and a shared monthly cap. Results are intention to treat, provisional until the conversion window closes, then Fisher's exact test with confidence intervals ([ADR 0013](docs/adr/0013-campaign-measurement.md)). `mode: simulation` rehearses a campaign without delivering or measuring anything. |
@@ -108,6 +108,28 @@ curl -s localhost:8000/v1/reviews -H "X-API-Key: sk_..."
 curl -s localhost:8000/v1/reviews/<thread_id> -H "X-API-Key: sk_..." \
   -H "Content-Type: application/json" -d '{"approved": true, "edited_answer": "Llámenos a la clínica."}'
 curl -s localhost:8000/v1/insights/summary -H "X-API-Key: key1"
+```
+
+## Health professions (Ecuador) and the marketing module
+
+Research with the legal sources and the status each one really has (read, secondary, to verify) is in [docs/packs/RESEARCH.md](docs/packs/RESEARCH.md); the designs are [ADR 0014](docs/adr/0014-profession-packs.md) and [ADR 0015](docs/adr/0015-social-channels.md).
+
+| Module | What it does |
+|---|---|
+| **Profession packs** | `ec-mental-health-base` (abstract) → `ec-psychologist`, `ec-psychiatrist`. Each legal reference cites the article and its status; `agency pack validate --strict` refuses a production pack that rests on an unverified one. Hard rules live in validators: a psychotherapy note is author-only, a patient's diary entry is visible to the patient and the treating professional only, a crisis never triggers automatic contact with third parties, a psychologist cannot carry a prescription. Inheritance can add prohibitions, never lift them. |
+| **Establishment** | One tenant = one practice with several professionals, each on their own pack (`/v1/admin/professionals`). |
+| **Surfaces guard** | Psychotherapy notes and diary entries are refused by the knowledge base (and shut out of memory, insights, campaigns and models) for every tenant, before anything is embedded. |
+| **Special prescription** | Checks the worksheet for the numbered ACESS form (ACESS-2022-0046 Arts. 6, 25, 27): every field, CIE-10 shape, quantity in words matching the number, no abbreviations. The system never issues the legal form. |
+| **Scales** | PHQ-9 and GAD-7 scoring with the original severity bands (never a diagnosis); PHQ-9 item 9 is always flagged for a person. |
+| **Accounts and platform rules** | Each professional connects their own WhatsApp, Instagram, TikTok, Facebook or Telegram account. Tokens never touch the database (the account names a secret). Platform rules are data with their official source, and every publication passes pre-flight checks (Instagram JPEG + public URL + 100/day; TikTok private until audited; Facebook refused until its rules are read). |
+| **Creatives by code** | `agency creative infographic` or `video`: JPEG infographics (Pillow) and MP4/H.264 slideshow videos (ffmpeg), after the copy passes the pack's rules. Ships Atkinson Hyperlegible (OFL) so Spanish accents render. |
+| **Publishing** | Approval by a person (and the owner above the discount cap), published once, `uncertain` and never retried after a transport error, dry run without a credential. Media go to Google Cloud Storage with V4 signed URLs that expire. |
+| **Incoming WhatsApp** | Meta verification and signature check, deduplication, STOP opt-outs (pseudonymous), and alerts for staff on crisis wording or "I want to talk to a person". Message text is never stored; the AI never answers a crisis; staff reply inside the 24-hour window. |
+
+```bash
+uv run agency pack validate --strict
+uv run agency creative infographic --pack ec-psychologist --title "Cuidar tu mente también es salud" \
+  --point "Hablarlo ayuda." --cta "Agenda tu cita" --practice "Consultorio Demo" --out ad.jpg
 ```
 
 ## Polyglot specialists over A2A
@@ -256,7 +278,8 @@ docs/adr/         architecture decision records
 
 - **Production deploy needs a cluster.** `deploy.yml` rehearses every green `main` on a kind cluster (healthy rollout, then a broken image rolled back automatically); the production job is manual behind the `production` environment and needs its `KUBECONFIG` secret. Load and backup/restore evidence: [docs/load-test.md](docs/load-test.md), `deploy/backup/`.
 - **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
-- **Channels:** Telegram only (outbound). Inbound booking by bot, WhatsApp Business, Facebook/Instagram publishing and paid ads (with approval before spend) are planned; Meta's APIs need app review.
+- **Channels:** Telegram campaigns; Instagram and TikTok publishing; incoming WhatsApp with staff replies. None has reached a real platform yet (no accounts or app review); the adapters follow the official docs and are tested against a simulated network. WhatsApp templates and campaigns, Facebook, comment replies and paid ads are next.
+- **Legal confirmation pending.** Several Ecuadorian references are `secondary` or `to_verify`, so no health pack is marked production; see [DECISIONS-PENDING](docs/DECISIONS-PENDING.md).
 - **Identity:** per-person API keys (`sk_` staff keys with roles, `pk_` patient keys bound to one subject); `X-Actor` is ignored. SSO/OIDC is future work.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.
