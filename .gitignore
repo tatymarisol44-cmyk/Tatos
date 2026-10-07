@@ -10,3 +10,5 @@ junit.xml
 eval-report.json
 .env
 dist/
+# Internal drafts for the owner's lawyer: legal uncertainty is not for a public history.
+docs/packs/*.docx
