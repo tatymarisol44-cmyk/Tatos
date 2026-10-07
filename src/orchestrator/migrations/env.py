@@ -18,6 +18,7 @@ def _metadata() -> Any:
         campaigns,
         crm,
         governance,
+        inbound,
         knowledge,
         publishing,
         social,

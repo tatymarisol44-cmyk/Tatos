@@ -7,7 +7,7 @@ deployment fills, and the responses only say whether it is set."""
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
@@ -82,6 +82,30 @@ async def list_accounts(
     professional_id: Annotated[str | None, Query(max_length=64, pattern=r"^[\w.-]+$")] = None,
 ) -> list[dict[str, Any]]:
     return await orch(request).social.list(p.tenant, professional_id)
+
+
+Care = Annotated[Principal, Depends(requires(Role.RECEPTION, Role.REVIEWER, Role.OWNER))]
+
+
+@router.get("/alerts")
+async def list_alerts(
+    request: Request,
+    p: Care,
+    state: Annotated[Literal["open", "resolved", "all"], Query()] = "open",
+) -> list[dict[str, Any]]:
+    """Crisis and "talk to a person" alerts from incoming messages. The caller's number is
+    shown so someone can call back; every read is audited."""
+    return await orch(request).inbound.alerts(p.tenant, p.id, None if state == "all" else state)
+
+
+@router.post("/alerts/{alert_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
+async def resolve_alert(
+    request: Request,
+    alert_id: Annotated[str, FastAPIPath(max_length=32, pattern=r"^[0-9a-f]+$")],
+    p: Care,
+) -> None:
+    if not await orch(request).inbound.resolve(p.tenant, alert_id, p.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "open alert not found")
 
 
 @router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

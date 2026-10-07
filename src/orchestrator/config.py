@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     publish_poll_attempts: int = Field(default=10, ge=1, le=60)
     publish_poll_seconds: float = Field(default=3.0, ge=0, le=60)
     publish_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+    # WhatsApp webhook (ADR 0015, M4). Meta checks the endpoint with the verify token and
+    # signs every notification with the App Secret (X-Hub-Signature-256). Without both,
+    # the endpoint does not exist (404).
+    whatsapp_verify_token: SecretStr | None = None
+    meta_app_secret: SecretStr | None = None
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000

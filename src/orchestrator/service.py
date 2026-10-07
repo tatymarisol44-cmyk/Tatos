@@ -33,6 +33,7 @@ from orchestrator.governance import (
 )
 from orchestrator.graph import build_graph
 from orchestrator.guardrails import redact_pii
+from orchestrator.inbound import InboundService
 from orchestrator.insights import InsightsService
 from orchestrator.knowledge import (
     ChunkStore,
@@ -202,6 +203,7 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.social = SocialAccounts(self.db, self.audit)
+        self.inbound = InboundService(self.db, self.audit)
         self.publications = PublicationService(
             self.db, self.audit, self.social, build_media_store(settings), settings
         )

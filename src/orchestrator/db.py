@@ -84,6 +84,7 @@ class Database:
             campaigns,
             crm,
             governance,
+            inbound,
             knowledge,
             migrate,
             publishing,
