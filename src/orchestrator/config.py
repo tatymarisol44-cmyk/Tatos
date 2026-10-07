@@ -134,6 +134,8 @@ class Settings(BaseSettings):
     # the endpoint does not exist (404).
     whatsapp_verify_token: SecretStr | None = None
     meta_app_secret: SecretStr | None = None
+    # Sending (Cloud API). v25.0 is the version in Meta's guide read on 2026-10-07.
+    whatsapp_graph_base: str = "https://graph.facebook.com/v25.0"
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000

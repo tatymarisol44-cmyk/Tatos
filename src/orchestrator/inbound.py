@@ -9,7 +9,10 @@
   personal data); it is enough to suppress future sends without keeping the number.
 * **Crisis and requests for a person** open an alert for the practice's staff, with the
   number so a professional can call back. The AI never answers these, and nothing is sent
-  automatically: the wording of any automatic reply waits for the owner's lawyer (L3)."""
+  automatically: the wording of any automatic reply waits for the owner's lawyer (L3).
+* **A person may reply** to an alert by WhatsApp inside the 24-hour customer service window
+  (counted from the alert, which is conservative), unless the number opted out. The reply's
+  text is not stored; the audit records that a reply was sent, by whom and how it went."""
 
 from __future__ import annotations
 
@@ -17,15 +20,26 @@ import hashlib
 import logging
 import re
 import uuid
+from datetime import timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import Column, DateTime, String, Table, and_, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from orchestrator.config import Settings
 from orchestrator.crisis import classify
-from orchestrator.db import Database, metadata, utcnow
+from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog
-from orchestrator.social import channel_accounts
+from orchestrator.publishers import PublishError, WhatsAppSender
+from orchestrator.social import channel_accounts, resolve_secret
+
+SERVICE_WINDOW = timedelta(hours=24)
+
+
+class ReplyRefused(ValueError):
+    """The reply cannot be sent (opted out, window closed, account disabled)."""
+
 
 log = logging.getLogger(__name__)
 
@@ -80,9 +94,77 @@ def _alert(row: Any) -> dict[str, Any]:
 
 
 class InboundService:
-    def __init__(self, db: Database, audit: AuditLog) -> None:
+    def __init__(
+        self,
+        db: Database,
+        audit: AuditLog,
+        settings: Settings,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.db = db
         self.audit = audit
+        self.settings = settings
+        self.transport = transport  # tests replace the network
+
+    async def reply(self, tenant: str, alert_id: str, actor: str, body: str) -> dict[str, Any]:
+        """A person's reply to an alert. Returns the outcome, never the text."""
+        query = (
+            select(channel_alerts, channel_accounts.c.external_id, channel_accounts.c.secret_ref)
+            .join(
+                channel_accounts,
+                and_(
+                    channel_accounts.c.tenant == channel_alerts.c.tenant,
+                    channel_accounts.c.account_id == channel_alerts.c.account_id,
+                    channel_accounts.c.active.is_(True),
+                ),
+                isouter=True,
+            )
+            .where(and_(channel_alerts.c.tenant == tenant, channel_alerts.c.alert_id == alert_id))
+        )
+        async with self.db.engine.connect() as conn:
+            row = (await conn.execute(query)).first()
+        if row is None:
+            raise KeyError(alert_id)
+        if row.network != "whatsapp":
+            raise ReplyRefused(f"replies by {row.network} are not supported")
+        if row.external_id is None:
+            raise ReplyRefused("the account is disabled")
+        if await self.is_opted_out(tenant, row.network, row.address):
+            raise ReplyRefused("the person asked not to be contacted [WA-OPT-IN]")
+        created = aware(row.created_at)
+        if created is None or utcnow() - created > SERVICE_WINDOW:
+            raise ReplyRefused(
+                "outside the 24-hour window only an approved template may be sent [WA-WINDOW]"
+            )
+
+        token = resolve_secret(row.secret_ref)
+        message_id: str | None = None
+        if token is None:
+            outcome = "dry_run"
+        else:
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self.settings.publish_timeout_seconds, transport=self.transport
+                ) as client:
+                    message_id = await WhatsAppSender(
+                        client, self.settings.whatsapp_graph_base
+                    ).send_text(
+                        phone_number_id=row.external_id, token=token, to=row.address, body=body
+                    )
+                outcome = "sent"
+            except PublishError as exc:
+                outcome = "failed"
+                log.warning("whatsapp reply failed: %s", exc)
+            except httpx.TransportError:
+                outcome = "uncertain"  # may have been delivered: never retried automatically
+        await self.audit.record(
+            tenant,
+            actor,
+            f"channel_alert.reply_{outcome}",
+            f"channel_alert/{alert_id}",
+            details={"message_id": message_id},
+        )
+        return {"alert_id": alert_id, "outcome": outcome, "message_id": message_id}
 
     async def account_for(self, network: str, external_id: str) -> tuple[str, str] | None:
         """The one tenant and account an incoming platform id belongs to; None if unknown

@@ -131,6 +131,32 @@ class InstagramPublisher:
         )
 
 
+class WhatsAppSender:
+    """Free-form service message inside the 24-hour window that opens when the person
+    writes (read on 2026-10-07: POST /<PHONE_NUMBER_ID>/messages on graph.facebook.com)."""
+
+    def __init__(self, client: httpx.AsyncClient, base: str) -> None:
+        self.client = client
+        self.base = base.rstrip("/")
+
+    async def send_text(self, *, phone_number_id: str, token: str, to: str, body: str) -> str:
+        response = await self.client.post(
+            f"{self.base}/{phone_number_id}/messages",
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "text",
+                "text": {"preview_url": False, "body": body},
+            },
+            headers=_auth(token),
+        )
+        messages = _json(response, "whatsapp send").get("messages") or []
+        if not messages or not isinstance(messages[0], dict) or not messages[0].get("id"):
+            raise PublishError("whatsapp send: no message id")
+        return str(messages[0]["id"])
+
+
 class TikTokPublisher:
     def __init__(self, client: httpx.AsyncClient, base: str) -> None:
         self.client = client

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.api.security import require_staff, requires
 from orchestrator.auth import Principal, Role
+from orchestrator.inbound import ReplyRefused
 from orchestrator.service import Orchestrator
 from orchestrator.social import (
     NETWORKS,
@@ -96,6 +97,27 @@ async def list_alerts(
     """Crisis and "talk to a person" alerts from incoming messages. The caller's number is
     shown so someone can call back; every read is audited."""
     return await orch(request).inbound.alerts(p.tenant, p.id, None if state == "all" else state)
+
+
+class ReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/alerts/{alert_id}/reply")
+async def reply_to_alert(
+    body: ReplyIn,
+    request: Request,
+    alert_id: Annotated[str, FastAPIPath(max_length=32, pattern=r"^[0-9a-f]+$")],
+    p: Care,
+) -> dict[str, Any]:
+    """A person writes back by WhatsApp, inside the 24-hour window and only if the number
+    did not opt out. The text is sent, not stored."""
+    try:
+        return await orch(request).inbound.reply(p.tenant, alert_id, p.id, body.text)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "alert not found") from exc
+    except ReplyRefused as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
 
 @router.post("/alerts/{alert_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)

@@ -8,12 +8,15 @@ import hashlib
 import hmac
 import json
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+import orchestrator.inbound as inbound_module
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
@@ -214,6 +217,118 @@ def test_an_account_claimed_by_two_tenants_routes_nowhere(
     assert post(client, payload(CRISIS_TEXT)) == 200
     assert client.get("/v1/social/alerts", headers=ADMIN).json() == []
     assert client.get("/v1/social/alerts", headers=GLOBEX).json() == []
+
+
+TOKEN = "EAAG-synthetic-wa-token"
+
+
+def open_alert(client: TestClient) -> str:
+    connect(client)
+    post(client, payload("Quiero hablar con una persona"))
+    return str(client.get("/v1/social/alerts", headers=ADMIN).json()[0]["alert_id"])
+
+
+def reply(
+    client: TestClient, alert_id: str, text: str = "Hola, soy la psicóloga. Te llamo ahora."
+) -> Any:
+    return client.post(f"/v1/social/alerts/{alert_id}/reply", json={"text": text}, headers=ADMIN)
+
+
+def test_a_person_replies_inside_the_window(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    seen: list[httpx.Request] = []
+
+    def meta(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"messages": [{"id": "wamid.out1"}]})
+
+    monkeypatch.setenv("SOCIAL_SECRET_WA_DEMO", TOKEN)
+    orch.inbound.transport = httpx.MockTransport(meta)
+    alert_id = open_alert(client)
+    done = reply(client, alert_id).json()
+    assert done == {"alert_id": alert_id, "outcome": "sent", "message_id": "wamid.out1"}
+    sent = json.loads(seen[0].content)
+    assert seen[0].url.path == f"/v25.0/{NUMBER_ID}/messages"
+    assert sent["to"] == SENDER and sent["type"] == "text"
+    assert seen[0].headers["Authorization"] == f"Bearer {TOKEN}"
+    audit = client.get("/v1/audit", headers=ADMIN).text
+    assert "channel_alert.reply_sent" in audit and "Te llamo" not in audit and TOKEN not in audit
+
+
+def test_reply_without_a_credential_runs_dry(app: tuple[TestClient, Orchestrator]) -> None:
+    client, _ = app
+    assert reply(client, open_alert(client)).json()["outcome"] == "dry_run"
+
+
+def test_reply_is_refused_after_stop(app: tuple[TestClient, Orchestrator]) -> None:
+    client, _ = app
+    alert_id = open_alert(client)
+    post(client, payload("STOP", "wamid.stop"))
+    refused = reply(client, alert_id)
+    assert refused.status_code == 409 and "WA-OPT-IN" in refused.json()["detail"]
+    assert reply(client, "0123456789ab").status_code == 404
+
+
+def test_reply_outside_the_window_is_refused(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = app
+    alert_id = open_alert(client)
+    later = inbound_module.utcnow() + inbound_module.SERVICE_WINDOW + timedelta(minutes=1)
+    monkeypatch.setattr(inbound_module, "utcnow", lambda: later)
+    refused = reply(client, alert_id)
+    assert refused.status_code == 409 and "WA-WINDOW" in refused.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("handler", "outcome"),
+    [
+        (lambda r: httpx.Response(400, json={"error": {"code": 131047}}), "failed"),
+        (lambda r: httpx.Response(200, json={}), "failed"),
+    ],
+)
+def test_reply_failures_are_reported(
+    app: tuple[TestClient, Orchestrator],
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Any,
+    outcome: str,
+) -> None:
+    client, orch = app
+    monkeypatch.setenv("SOCIAL_SECRET_WA_DEMO", TOKEN)
+    orch.inbound.transport = httpx.MockTransport(handler)
+    assert reply(client, open_alert(client)).json()["outcome"] == outcome
+
+
+def test_reply_transport_error_is_uncertain(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+
+    def broken(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    monkeypatch.setenv("SOCIAL_SECRET_WA_DEMO", TOKEN)
+    orch.inbound.transport = httpx.MockTransport(broken)
+    assert reply(client, open_alert(client)).json()["outcome"] == "uncertain"
+
+
+def test_reply_needs_an_active_account_and_its_own_tenant(
+    app: tuple[TestClient, Orchestrator],
+) -> None:
+    client, _ = app
+    alert_id = open_alert(client)
+    assert (
+        client.post(
+            f"/v1/social/alerts/{alert_id}/reply", json={"text": "x"}, headers=GLOBEX
+        ).status_code
+        == 404
+    )
+    account = client.get("/v1/social/accounts", headers=ADMIN).json()[0]["account_id"]
+    client.delete(f"/v1/social/accounts/{account}", headers=ADMIN)
+    refused = reply(client, alert_id)
+    assert refused.status_code == 409 and "disabled" in refused.json()["detail"]
 
 
 def test_alerts_are_for_care_staff_and_their_own_tenant(
