@@ -86,6 +86,7 @@ class Database:
             governance,
             knowledge,
             migrate,
+            publishing,
             social,
         )
 

@@ -10,5 +10,7 @@ junit.xml
 eval-report.json
 .env
 dist/
+# Rendered creatives in development (MEDIA_DIR); production keeps them in the bucket.
+media/
 # Internal drafts for the owner's lawyer: legal uncertainty is not for a public history.
 docs/packs/*.docx

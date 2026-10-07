@@ -116,6 +116,20 @@ class Settings(BaseSettings):
     ffmpeg_binary: str = "ffmpeg"
     ffmpeg_timeout_seconds: int = Field(default=120, ge=5, le=1800)
 
+    # --- Publishing (ADR 0015, M3) -----------------------------------------
+    # Rendered creatives. Without GCS_BUCKET they stay on local disk, which no platform
+    # can reach, so Instagram publishing is refused by its pre-flight check.
+    media_dir: Path = Path("media")
+    gcs_bucket: str | None = None
+    # How long a platform may fetch a creative (V4 signed URL; Google's maximum is 7 days).
+    media_url_ttl_minutes: int = Field(default=60, ge=5, le=7 * 24 * 60)
+    # Pin a Graph API version here (e.g. .../v23.0) once the Meta app exists.
+    meta_graph_base: str = "https://graph.instagram.com"
+    tiktok_api_base: str = "https://open.tiktokapis.com"
+    publish_poll_attempts: int = Field(default=10, ge=1, le=60)
+    publish_poll_seconds: float = Field(default=3.0, ge=0, le=60)
+    publish_timeout_seconds: float = Field(default=30.0, ge=1, le=300)
+
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000
     # Whole request body, enforced as it arrives (413). Document upload gets more room:

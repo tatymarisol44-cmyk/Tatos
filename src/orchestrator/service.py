@@ -41,7 +41,9 @@ from orchestrator.knowledge import (
     QdrantChunkStore,
 )
 from orchestrator.llm import LLMClient, build_llm
+from orchestrator.media_store import build_media_store
 from orchestrator.memory import InMemoryMemoryStore, MemoryStore, QdrantMemoryStore, SemanticMemory
+from orchestrator.publishing import PublicationService
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.social import SocialAccounts
@@ -200,6 +202,9 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.social = SocialAccounts(self.db, self.audit)
+        self.publications = PublicationService(
+            self.db, self.audit, self.social, build_media_store(settings), settings
+        )
         self.crm = CrmService(self.db, self.audit, settings)
         self.insights = InsightsService(self.db, self.crm, self.consents, self.llm, settings)
         self.campaigns = CampaignService(

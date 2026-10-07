@@ -27,6 +27,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "alembic>=1.14",
     "pillow>=11",
+    "google-cloud-storage>=2.18",
 ]
 
 [project.scripts]
