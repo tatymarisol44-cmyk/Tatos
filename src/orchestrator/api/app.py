@@ -17,7 +17,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
-from orchestrator.api import a2a, business, channels, patients, publications, social
+from orchestrator.api import (
+    a2a,
+    business,
+    channels,
+    establishment,
+    patients,
+    publications,
+    social,
+)
 from orchestrator.api.body_limit import BodySizeLimit
 from orchestrator.api.schemas import (
     AgentSummary,
@@ -119,6 +127,7 @@ def create_app(
     app.include_router(channels.router)
     app.include_router(social.router)
     app.include_router(publications.router)
+    app.include_router(establishment.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:

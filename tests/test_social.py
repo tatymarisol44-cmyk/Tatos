@@ -125,6 +125,17 @@ def test_secrets_come_from_the_environment_only(monkeypatch: pytest.MonkeyPatch)
 def client(settings: Settings, catalog: Catalog) -> Iterator[TestClient]:
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     with TestClient(create_app(settings, orch)) as c:
+        # Accounts given to a professional must name a registered one.
+        for headers in (ACME, GLOBEX):
+            professional = {
+                "professional_id": "dr-demo",
+                "display_name": "Dr Demo",
+                "pack_id": "general",
+            }
+            assert (
+                c.post("/v1/admin/professionals", json=professional, headers=headers).status_code
+                == 201
+            )
         yield c
 
 

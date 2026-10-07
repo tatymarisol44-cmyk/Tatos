@@ -23,6 +23,7 @@ from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, utcnow
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
+from orchestrator.establishment import Professionals
 from orchestrator.governance import (
     AuditLog,
     ConsentRegistry,
@@ -202,7 +203,8 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
-        self.social = SocialAccounts(self.db, self.audit)
+        self.professionals = Professionals(self.db, self.audit, settings)
+        self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.publications = PublicationService(
             self.db, self.audit, self.social, build_media_store(settings), settings

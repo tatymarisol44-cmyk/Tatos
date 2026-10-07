@@ -37,9 +37,10 @@ from sqlalchemy import (
 from orchestrator import creatives
 from orchestrator.config import Settings
 from orchestrator.db import Database, metadata, utcnow
+from orchestrator.establishment import ProfessionalError
 from orchestrator.governance import AuditLog
 from orchestrator.media_store import MediaStore, object_name
-from orchestrator.packs import pack_for
+from orchestrator.packs import Pack, pack_for
 from orchestrator.publishers import InstagramPublisher, PublishError, PublishResult, TikTokPublisher
 from orchestrator.risk import check_copy
 from orchestrator.social import PUBLISHING, SocialAccounts, check_publish, resolve_secret
@@ -105,6 +106,11 @@ class PublicationService:
         self.settings = settings
         self.transport = transport  # tests replace the network
 
+    async def _pack_for(self, tenant: str, professional_id: str | None) -> Pack:
+        if self.social.professionals is not None:
+            return await self.social.professionals.pack_for(tenant, professional_id)
+        return pack_for(self.settings, tenant)
+
     def _where(self, tenant: str, publication_id: str, *extra: Any) -> Any:
         return and_(
             publications.c.tenant == tenant,
@@ -151,7 +157,11 @@ class PublicationService:
             raise PublicationError("tiktok photos need a verified domain; publish a video")
         if not caption.strip() or len(caption) > MAX_CAPTION:
             raise PublicationError(f"the caption needs 1 to {MAX_CAPTION} characters")
-        pack = pack_for(self.settings, tenant)
+        # The rules of the profession of whoever the account belongs to.
+        try:
+            pack = await self._pack_for(tenant, account["professional_id"])
+        except ProfessionalError as exc:
+            raise PublicationError(str(exc)) from exc
         caption_check = check_copy(caption, pack)
         if not caption_check.ok:
             raise creatives.CreativeRejected(caption_check.violations)

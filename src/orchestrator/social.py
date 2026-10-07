@@ -23,6 +23,7 @@ from typing import Any, Literal
 from sqlalchemy import Boolean, Column, DateTime, Index, String, Table, and_, insert, select, update
 
 from orchestrator.db import Database, metadata, utcnow
+from orchestrator.establishment import Professionals
 from orchestrator.governance import AuditLog
 
 Network = Literal["whatsapp", "instagram", "facebook", "tiktok", "telegram"]
@@ -281,9 +282,13 @@ def _account(row: Any) -> dict[str, Any]:
 
 
 class SocialAccounts:
-    def __init__(self, db: Database, audit: AuditLog) -> None:
+    def __init__(
+        self, db: Database, audit: AuditLog, professionals: Professionals | None = None
+    ) -> None:
         self.db = db
         self.audit = audit
+        # An account given to a professional must name a registered, active one.
+        self.professionals = professionals
 
     async def add(
         self,
@@ -299,6 +304,8 @@ class SocialAccounts:
     ) -> dict[str, Any]:
         if not re.fullmatch(REF_PATTERN, secret_ref):
             raise ValueError("secret_ref must be an upper-case name such as WA_CLINIC_MAIN")
+        if professional_id is not None and self.professionals is not None:
+            await self.professionals.require_active(tenant, professional_id)
         account_id = uuid.uuid4().hex[:12]
         same = and_(
             channel_accounts.c.tenant == tenant,

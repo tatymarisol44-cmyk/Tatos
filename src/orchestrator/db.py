@@ -83,6 +83,7 @@ class Database:
             auth,
             campaigns,
             crm,
+            establishment,
             governance,
             inbound,
             knowledge,

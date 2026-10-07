@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.api.security import require_staff, requires
 from orchestrator.auth import Principal, Role
+from orchestrator.establishment import ProfessionalError
 from orchestrator.inbound import ReplyRefused
 from orchestrator.service import Orchestrator
 from orchestrator.social import (
@@ -74,6 +75,8 @@ async def connect_account(body: AccountIn, request: Request, p: Admin) -> dict[s
         )
     except AccountConflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ProfessionalError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.get("/accounts")
