@@ -432,7 +432,8 @@ Ecuador only for now. Every legal reference in a pack carries the status it real
 | PCK-06 | A profession that cannot prescribe (psychologist) shall carry no prescription document. | I | test_profession_packs, test_surfaces |
 | PCK-07 | The ACESS special-prescription worksheet shall be checked against ACESS-2022-0046 Art. 6 (every field, CIE-10 shape, quantity in words matching the number, date, cédula shape), Art. 25 (prescriber) and Art. 27 (no abbreviations), each finding citing its article. The system never issues the legal form. | I | test_prescriptions |
 | PCK-08 | `agency pack validate --strict` shall fail a production pack that rests on `to_verify` references. | I | test_profession_packs |
-| PCK-09 | Clinical notes store, diary, scales (PHQ-9, GAD-7) and the tenant-as-establishment model. | F | — |
+| PCK-09 | PHQ-9 and GAD-7 shall be scored with the original papers' severity bands, reported as bands and never as a diagnosis; any PHQ-9 item-9 answer above zero shall be flagged for a person whatever the total. | I | test_scales |
+| PCK-10 | Clinical notes store, diary, scale item texts in Spanish, and the tenant-as-establishment model. | F | — |
 
 ### 3.14 Social Channels (SOC)
 
