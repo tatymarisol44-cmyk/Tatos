@@ -566,13 +566,14 @@ function arrowNavigation(container, items, activate) {
 }
 
 function selectTab(name) {
-  for (const tab of ["agents", "knowledge", "reviews"]) {
+  for (const tab of ["agents", "knowledge", "reviews", "patients"]) {
     $(`#tab-${tab}`).setAttribute("aria-selected", String(tab === name));
     $(`#tab-${tab}`).tabIndex = tab === name ? 0 : -1;
     $(`#panel-${tab}`).hidden = tab !== name;
   }
   if (name === "knowledge") loadDocs();
   if (name === "reviews") loadReviews();
+  if (name === "patients") loadPatients(); // clinic.js
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -595,6 +596,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#tab-agents").addEventListener("click", () => selectTab("agents"));
   $("#tab-knowledge").addEventListener("click", () => selectTab("knowledge"));
   $("#tab-reviews").addEventListener("click", () => selectTab("reviews"));
+  $("#tab-patients").addEventListener("click", () => selectTab("patients"));
   $("#reviews-refresh").addEventListener("click", loadReviews);
   $("#doc-file").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
   $("#doc-form").addEventListener("submit", async (e) => {

@@ -216,6 +216,8 @@ def test_the_console_meets_wcag_aa_and_works_by_keyboard(
         expect(reviewer.locator("#tab-knowledge")).to_be_focused()
         expect(reviewer.locator("#panel-knowledge")).to_be_visible()
         reviewer.keyboard.press("End")
+        expect(reviewer.locator("#tab-patients")).to_be_focused()
+        reviewer.keyboard.press("ArrowLeft")
         expect(reviewer.locator("#tab-reviews")).to_be_focused()
         expect(reviewer.locator(".review-card").first).to_be_visible()
         assert reviewer.get_attribute("#tab-agents", "tabindex") == "-1"  # one tab stop
@@ -270,3 +272,77 @@ def test_a_model_outage_reads_as_a_clear_message_and_keeps_the_text(
         assert "Internal Server Error" not in page.content()
         browser.close()
     assert errors == []
+
+
+def test_a_psychologist_designs_applies_and_files_without_leaving_the_console(
+    server: str, subprocess_loop: None
+) -> None:
+    """The clinical workspace: build a test in the form, apply it and PHQ-9 to a patient,
+    see score, band and alert, attach a signed consent. WCAG AA checked on each view."""
+    vera = _key(server, "dra.vera", "reviewer")
+    created = httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "p-ui-1", "display_name": "Paciente Sintético"},
+        headers=SERVICE,
+    )
+    assert created.status_code == 201, created.text
+    errors: list[str] = []
+    violations: list[str] = []
+    expect = sync_api.expect
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except sync_api.Error as exc:
+            pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
+        page = _open(browser, server, vera, errors, bypass_csp=True)
+        page.click("#tab-patients")
+        page.click("#open-tests")
+        expect(page.get_by_role("heading", name="Tests", exact=True)).to_be_focused()
+        expect(page.locator("#composer")).to_be_hidden()  # the workspace replaces the chat
+        violations += _axe(page, "tests view")
+
+        # A template in one click, then a test of her own, built in the form.
+        page.get_by_role("button", name="Add PHQ-9 (depression)").click()
+        expect(page.get_by_text("PHQ-9 (depresión)").first).to_be_visible()
+        page.fill("input[name=name]", "Bienestar semanal")
+        page.fill("input[name=text-q1]", "Duermo bien")
+        page.get_by_role("button", name="+ Add item").click()
+        page.fill("input[name=text-q2]", "Me siento agobiado")
+        page.check("input[name=reverse-q2]")
+        page.fill("textarea[name=bands]", "0-2: bajo (high)\n3-6: adecuado (none)")
+        page.fill("textarea[name=alerts]", "q1 <= 0: Revisar el sueño")
+        page.fill("input[name=source]", "Instrumento propio")
+        page.check("input[name=attestation]")
+        page.get_by_role("button", name="Save test").click()
+        expect(page.get_by_text("Saved “Bienestar semanal” (v1).")).to_be_visible()
+
+        # Apply it to the patient: score, band and the alert, visibly.
+        page.get_by_role("button", name="← Back to the assistant").click()
+        expect(page.locator("#composer")).to_be_visible()
+        page.get_by_role("button", name="Paciente Sintético p-ui-1").click()
+        page.select_option("#apply-instrument", label="Bienestar semanal (v1)")
+        page.get_by_label("Nunca").first.check()  # q1 = 0
+        page.locator("fieldset.item").nth(1).get_by_label("Siempre").check()  # q2 = 3 -> 0
+        page.get_by_role("button", name="Save result").click()
+        expect(page.get_by_role("alert").filter(has_text="Revisar el sueño").first).to_be_visible()
+        expect(page.locator(".result").first).to_contain_text("Score 0 · bajo")
+        violations += _axe(page, "patient view")
+
+        # A signed consent attached to the record.
+        page.set_input_files(
+            "input[name=file]",
+            files=[
+                {
+                    "name": "consentimiento.pdf",
+                    "mimeType": "application/pdf",
+                    "buffer": b"%PDF-1.4\n% sintetico\n%%EOF\n",
+                }
+            ],
+        )
+        page.fill("input[name=label]", "Consentimiento firmado")
+        page.get_by_role("button", name="Upload").click()
+        expect(page.get_by_role("button", name="Download consentimiento.pdf")).to_be_visible()
+        violations += _axe(page, "patient view with a document")
+        browser.close()
+    assert errors == []
+    assert violations == [], "\n".join(violations)

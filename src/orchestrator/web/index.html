@@ -6,6 +6,7 @@
   <title>Agency Console</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/clinic.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +28,7 @@
         <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="true">Agents</button>
         <button type="button" role="tab" id="tab-knowledge" aria-controls="panel-knowledge" aria-selected="false">Knowledge</button>
         <button type="button" role="tab" id="tab-reviews" aria-controls="panel-reviews" aria-selected="false">Reviews <span id="reviews-count" class="badge" hidden></span></button>
+        <button type="button" role="tab" id="tab-patients" aria-controls="panel-patients" aria-selected="false">Patients</button>
       </div>
 
       <section id="panel-agents" class="panel" role="tabpanel" aria-labelledby="tab-agents">
@@ -68,6 +70,16 @@
         </div>
         <ul id="reviews" class="reviews"></ul>
       </section>
+
+      <section id="panel-patients" class="panel" role="tabpanel" aria-labelledby="tab-patients" hidden>
+        <div class="catalog-head">
+          <p class="hint">Open a patient to apply a test, see results or attach documents. Clinical data: every access is audited.</p>
+          <input id="patient-search" type="search" placeholder="Search patients…" aria-label="Search patients">
+          <button type="button" id="open-tests" class="ghost">Manage tests</button>
+          <p id="patients-status" class="muted small" role="status"></p>
+        </div>
+        <ul id="patients" class="agents"></ul>
+      </section>
     </aside>
 
     <main class="main">
@@ -84,6 +96,7 @@
         </div>
       </section>
 
+      <section id="workspace" class="workspace" hidden></section>
       <p id="composer-note" class="composer-note" role="status" hidden></p>
       <form id="composer" class="composer">
         <textarea id="question" rows="2" maxlength="20000" placeholder="Describe what you need…" aria-label="Your request" required></textarea>

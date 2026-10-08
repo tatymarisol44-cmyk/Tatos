@@ -42,6 +42,8 @@
 }
 
 * { box-sizing: border-box; }
+/* `hidden` always wins over a component's own display rule (.composer is flex, ...). */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -227,3 +229,25 @@ input, select, textarea {
 .provenance-approved { color: var(--ok); }
 .error[role="alert"] { display: grid; gap: 6px; }
 .error[role="alert"] p { margin: 0; }
+
+/* --- clinical workspace (clinic.js) --- */
+.workspace { flex: 1; overflow: auto; padding: 16px clamp(16px, 4vw, 48px) 32px; display: grid; gap: 16px; align-content: start; }
+.ws-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ws-title { font-size: 20px; margin: 0; }
+.ws-section { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px 16px; display: grid; gap: 10px; }
+.ws-section h2 { font-size: 16px; margin: 0; }
+.ws-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ws-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ws-form { display: grid; gap: 10px; }
+.ws-form.inline { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
+.ws-form input, .ws-form select, .ws-form textarea { font: inherit; width: 100%; }
+.field { display: grid; gap: 4px; font-size: 13px; }
+.item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: grid; gap: 6px; }
+.item legend { font-weight: 600; padding: 0 4px; }
+.choice { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.choice input { width: auto; }
+.result { display: grid; gap: 2px; padding: 8px 12px; border-left: 4px solid var(--border); background: var(--surface-2); border-radius: 6px; }
+.result.severity-moderate { border-left-color: var(--warn); }
+.result.severity-high { border-left-color: var(--err); }
+.result .alert { margin: 4px 0 0; color: var(--err); font-weight: 600; }
+.approve { background: var(--ok); color: var(--on-ok); border: 0; border-radius: 8px; padding: 6px 14px; justify-self: start; }
