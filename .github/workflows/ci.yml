@@ -236,7 +236,7 @@ jobs:
       # Image names match deploy/k8s/base/kustomization.yaml, whatever the repository is
       # called (registry names must be lower-case; the owner name already is).
       - id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/agency-orchestrator
           tags: |
@@ -244,7 +244,7 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
       - id: meta-jvm
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/agency-orchestrator-jvm-agent
           tags: |
