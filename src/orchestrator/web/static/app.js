@@ -487,6 +487,9 @@ function sourcesView(sources) {
 // resolved ones removed.
 let reviewsRequest = 0;
 const reviewKey = (item) => `${item.thread_id}|${item.created_at}`;
+// What the reviewer typed, per review: even if a card is ever rebuilt (CI found a
+// second, rarer path on py3.13), it comes back with the edit, never with the AI draft.
+const reviewEdits = new Map();
 
 async function loadReviews() {
   const status = $("#reviews-status");
@@ -517,8 +520,10 @@ async function loadReviews() {
 function reviewCard(item) {
   const p = item.payload || {};
   const reasons = p.risk?.reasons || [];
+  const key = reviewKey(item);
   const edit = el("textarea", { rows: "6", "aria-label": "Answer to send" });
-  edit.value = p.draft_answer || "";
+  edit.value = reviewEdits.has(key) ? reviewEdits.get(key) : p.draft_answer || "";
+  edit.addEventListener("input", () => reviewEdits.set(key, edit.value));
   const feedback = el("input", { placeholder: "Note for the record (optional)", maxlength: "2000", "aria-label": "Feedback" });
   const msg = el("p", { class: "muted small", role: "status" });
   const decide = async (approved) => {
@@ -530,12 +535,13 @@ function reviewCard(item) {
         method: "POST", headers: headers(), body: JSON.stringify(body),
       });
       if (!resp.ok) throw await apiError(resp);
+      reviewEdits.delete(key);
       await loadReviews();
     } catch (err) {
       msg.textContent = err.message;
     }
   };
-  return el("li", { class: "review-card", "data-review": reviewKey(item) },
+  return el("li", { class: "review-card", "data-review": key },
     el("div", { class: "review-head" },
       el("span", { class: `badge risk-${p.risk?.level || "unknown"}`, text: `risk: ${p.risk?.level || "?"}` }),
       ...reasons.map((r) => el("span", { class: "badge", text: r })),

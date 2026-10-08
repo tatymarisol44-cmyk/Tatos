@@ -125,6 +125,12 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
         expect(reviewer.locator(".review-card textarea").first).to_have_value(
             "Llámenos al consultorio, por favor."
         )
+        # Worst case: the card is rebuilt from scratch. The edit still comes back.
+        reviewer.evaluate("document.querySelector('#reviews').replaceChildren()")
+        with reviewer.expect_response(lambda r: r.url.endswith("/v1/reviews")):
+            reviewer.click("#reviews-refresh")
+        card = reviewer.locator(".review-card").first
+        expect(card.locator("textarea")).to_have_value("Llámenos al consultorio, por favor.")
         card.get_by_role("button", name="Approve").click()
         expect(reviewer.get_by_text("Nothing waiting for review.")).to_be_visible()
 
