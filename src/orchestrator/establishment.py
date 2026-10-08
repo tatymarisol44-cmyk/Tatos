@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, String, Table, and_, insert, select, update
 
+from orchestrator.auth import STAFF, principals
 from orchestrator.config import Settings
 from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
@@ -35,6 +36,10 @@ professionals = Table(
 
 class ProfessionalError(ValueError):
     """Unknown or abstract pack, duplicate id, or an inactive professional."""
+
+
+class UnknownStaffError(ProfessionalError):
+    """`staff_id` names no active staff key of this tenant."""
 
 
 def _row(row: Any) -> dict[str, Any]:
@@ -71,6 +76,21 @@ class Professionals:
             )
             if existing.first() is not None:
                 raise ProfessionalError(f"professional {professional_id!r} already exists")
+            if staff_id is not None:
+                # Only a live staff key of this same tenant; a link to a name that does not
+                # exist yet would hand the pack to whoever is later given that name.
+                staff = await conn.execute(
+                    select(principals.c.id).where(
+                        and_(
+                            principals.c.tenant == tenant,
+                            principals.c.id == staff_id,
+                            principals.c.kind == STAFF,
+                            principals.c.revoked_at.is_(None),
+                        )
+                    )
+                )
+                if staff.first() is None:
+                    raise UnknownStaffError(f"no active staff key named {staff_id!r}")
             await conn.execute(
                 insert(professionals).values(
                     tenant=tenant,

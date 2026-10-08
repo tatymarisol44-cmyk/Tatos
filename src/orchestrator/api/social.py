@@ -141,7 +141,10 @@ async def alert_notifications(
     p: Care,
 ) -> list[dict[str, Any]]:
     """Who was told, on which channel, and how it went."""
-    return await orch(request).oncall.notifications(p.tenant, alert_id)
+    try:
+        return await orch(request).oncall.notifications(p.tenant, alert_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "alert not found") from exc
 
 
 @router.post("/alerts/{alert_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)

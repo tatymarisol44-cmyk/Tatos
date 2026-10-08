@@ -45,7 +45,10 @@ async def write_document(
 async def list_documents(
     patient_id: PatientId, request: Request, p: Clinician
 ) -> list[dict[str, Any]]:
-    return await service(request).list(p, patient_id)
+    try:
+        return await service(request).list(p, patient_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
 
 
 @router.get("/documents/{document_id}")

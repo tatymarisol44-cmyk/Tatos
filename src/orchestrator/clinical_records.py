@@ -198,6 +198,11 @@ class ClinicalRecords:
         return {"documents": shared, "psychotherapy_notes_withheld": len(rows) - len(shared)}
 
     async def list(self, principal: Principal, patient_id: str) -> list[dict[str, Any]]:
+        """Raises `KeyError` for a patient this tenant does not have (another tenant's
+        patient id answers like a made-up one, not with an empty record)."""
+        known = select(patients.c.id).where(
+            and_(patients.c.tenant == principal.tenant, patients.c.id == patient_id)
+        )
         query = (
             select(clinical_documents)
             .where(
@@ -210,6 +215,8 @@ class ClinicalRecords:
             .order_by(clinical_documents.c.created_at, clinical_documents.c.document_id)
         )
         async with self.db.engine.connect() as conn:
+            if (await conn.execute(known)).first() is None:
+                raise KeyError(patient_id)
             rows = [_public(r) for r in await conn.execute(query)]
         await self.audit.record(
             principal.tenant,

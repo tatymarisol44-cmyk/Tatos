@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.api.security import require_staff, requires
 from orchestrator.auth import Principal, Role
-from orchestrator.establishment import ProfessionalError, Professionals
+from orchestrator.establishment import ProfessionalError, Professionals, UnknownStaffError
 
 router = APIRouter(prefix="/v1/admin/professionals", tags=["admin"])
 Admin = Annotated[Principal, Depends(requires(Role.ADMIN))]
@@ -42,6 +42,8 @@ async def add_professional(body: ProfessionalIn, request: Request, p: Admin) -> 
             pack_id=body.pack_id,
             staff_id=body.staff_id,
         )
+    except UnknownStaffError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     except ProfessionalError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 

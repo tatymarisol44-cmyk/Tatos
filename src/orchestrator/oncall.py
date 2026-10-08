@@ -300,6 +300,11 @@ class OnCall:
         return done
 
     async def notifications(self, tenant: str, alert_id: str) -> list[dict[str, Any]]:
+        """Raises `KeyError` for an alert this tenant does not have, so another tenant's
+        alert id answers exactly like a made-up one."""
+        owned = select(channel_alerts.c.alert_id).where(
+            and_(channel_alerts.c.tenant == tenant, channel_alerts.c.alert_id == alert_id)
+        )
         query = (
             select(alert_notifications)
             .where(
@@ -311,6 +316,8 @@ class OnCall:
             .order_by(alert_notifications.c.created_at, alert_notifications.c.notification_id)
         )
         async with self.db.engine.connect() as conn:
+            if (await conn.execute(owned)).first() is None:
+                raise KeyError(alert_id)
             return [
                 {c.name: getattr(r, c.name) for c in alert_notifications.c if c.name != "tenant"}
                 for r in await conn.execute(query)
