@@ -21,3 +21,6 @@ docs/private/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# local demo state (generated keys, media, logs)
+.demo/

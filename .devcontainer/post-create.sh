@@ -11,8 +11,14 @@ git submodule update --init --recursive
 pip install --quiet uv
 uv sync
 
+# Video creatives (TikTok/Reels) are rendered with ffmpeg.
+sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+
 echo
-echo "Ready. Next:"
+echo "Ready. MVP demo (synthetic psychology practice, every flow):"
+echo "  bash scripts/demo-codespaces.sh"
+echo
+echo "Other commands:"
 echo "  uv run pytest                       # Python suite"
 echo "  (cd agents/jvm-specialist && mvn -q verify)   # Java suite"
 echo "  docker compose up --build           # full stack -> port 8000"

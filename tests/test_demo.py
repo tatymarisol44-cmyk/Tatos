@@ -1,0 +1,83 @@
+"""The demo script must always run: CI drives the same `agency demo` steps against the app
+in memory, so a Codespace demo cannot break silently."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+
+from orchestrator.api.app import create_app
+from orchestrator.catalog import Catalog
+from orchestrator.config import Settings
+from orchestrator.demo import Demo
+from orchestrator.llm import FakeLLM
+from orchestrator.service import Orchestrator
+
+
+@pytest.fixture
+def client(settings: Settings, catalog: Catalog, tmp_path: object) -> Iterator[TestClient]:
+    settings.tenant_packs = {"acme": "ec-psychologist"}
+    settings.campaign_default_holdout_pct = 20
+    settings.meta_app_secret = SecretStr("demo-secret")
+    settings.whatsapp_verify_token = SecretStr("demo-verify")
+    settings.media_dir = tmp_path / "media"  # type: ignore[operator]
+    orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
+    with TestClient(create_app(settings, orch)) as c:
+        yield c
+
+
+def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
+    out = Demo(client, "test-key", meta_app_secret="demo-secret").run()
+    steps = {s["step"]: s for s in out["report"]}
+    assert list(steps) == [
+        "team",
+        "patients",
+        "clinical record",
+        "knowledge base",
+        "assistant",
+        "patient app (API)",
+        "engagement campaign",
+        "social media",
+        "crisis alert",
+        "privacy",
+    ]
+    assert set(out["keys"]) >= {"dra.vera", "recepcion", "marketing", "direccion", "paciente"}
+    assert steps["clinical record"]["phq9_alerts"]  # item 9 > 0 reaches a person
+    assert steps["clinical record"]["custom_test_alerts"]  # the psychologist's own rule
+    assert steps["assistant"]["clinical_question"] == "pending_review"
+    assert steps["assistant"]["after_review"] == "professional_edited"
+    assert steps["assistant"]["everyday"] == "ai_unreviewed"
+    assert steps["engagement campaign"]["mode"] == "simulation"
+    assert steps["engagement campaign"]["eligible"] >= 1
+    assert set(steps["social media"]["accounts"]) == {
+        "instagram",
+        "facebook",
+        "tiktok",
+        "telegram",
+        "whatsapp",
+    }
+    # Without credentials nothing is sent, and the report says so (never "published").
+    publications = steps["social media"]["publications"]
+    assert publications["instagram"].startswith("dry run")
+    assert publications["facebook"].startswith("refused")  # rules not verified (A6)
+    assert steps["crisis alert"]["open_alerts"] == 1
+    assert steps["privacy"]["audit_chain"]["ok"] is True
+    assert "clinical_record" in steps["privacy"]["erasure_retained"]
+
+
+def test_live_mode_writes_only_to_the_owners_own_chat(client: TestClient) -> None:
+    """With a real bot, invented chat ids could reach strangers: only the given chat id
+    is stored, every other synthetic patient has no Telegram id at all."""
+    demo = Demo(client, "test-key", telegram_chat_id="123456789")
+    demo.team()
+    ids = demo.patients()
+    service = {"X-API-Key": "test-key"}
+    chats = [
+        client.get(f"/v1/crm/patients/{pid}", headers=service).json()["telegram_chat_id"]
+        for pid in ids
+    ]
+    assert chats[0] == "123456789"
+    assert all(c is None for c in chats[1:])

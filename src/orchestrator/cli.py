@@ -217,6 +217,30 @@ async def _knowledge_reindex(tenant: str | None) -> int:
     return 1 if result["missing_text"] else 0
 
 
+def _demo_cmd(url: str, key: str, meta_secret: str | None, chat_id: str | None) -> int:
+    import httpx
+
+    from orchestrator.demo import Demo, DemoError
+
+    with httpx.Client(base_url=url.rstrip("/"), timeout=120) as client:
+        try:
+            out = Demo(client, key, meta_app_secret=meta_secret, telegram_chat_id=chat_id).run()
+        except DemoError as exc:
+            print(f"demo stopped: {exc}", file=sys.stderr)
+            return 1
+    print("\n=== Demo: synthetic psychology practice ===\n")
+    for step in out["report"]:
+        name = step.pop("step")
+        print(f"- {name}")
+        for k, v in step.items():
+            print(f"    {k}: {v}")
+    print("\nPersonal keys (synthetic demo tenant; paste one in the console's API key box):")
+    for who, k in out["keys"].items():
+        print(f"    {who:10} {k}")
+    print(f"\nConsole: {url}   API docs: {url.rstrip('/')}/docs")
+    return 0
+
+
 async def _db(action: str, revision: str | None, message: str | None) -> int:
     from alembic import command
 
@@ -369,6 +393,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_knowledge.add_argument("action", choices=["reindex"])
     p_knowledge.add_argument("--tenant", help="Only this tenant (default: all)")
+    p_demo = sub.add_parser(
+        "demo", help="Seed a synthetic psychology practice and walk every flow via the API"
+    )
+    p_demo.add_argument("--url", default="http://127.0.0.1:8000")
+    p_demo.add_argument("--key", required=True, help="The demo tenant's service key")
+    p_demo.add_argument("--meta-app-secret", help="Server's META_APP_SECRET: rehearse a crisis")
+    p_demo.add_argument(
+        "--telegram-chat-id", help="Your own chat id: the campaign is sent live to you"
+    )
     p_pack = sub.add_parser("pack", help="Profession packs: list, validate, show")
     p_pack.add_argument("action", choices=["list", "validate", "show"])
     p_pack.add_argument("pack_id", nargs="?", help="show: the pack to print")
@@ -428,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run(_audit_verify(anchors, args.tenant))
     elif args.cmd == "knowledge":
         return _run(_knowledge_reindex(args.tenant))
+    elif args.cmd == "demo":
+        return _demo_cmd(args.url, args.key, args.meta_app_secret, args.telegram_chat_id)
     elif args.cmd == "pack":
         return _pack_cmd(args.action, args.pack_id, args.strict, parser)
     elif args.cmd == "creative":
