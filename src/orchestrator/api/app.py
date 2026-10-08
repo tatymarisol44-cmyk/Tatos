@@ -14,7 +14,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
@@ -47,6 +47,7 @@ from orchestrator.config import Settings, get_settings
 from orchestrator.governance import ThreadBusyError
 from orchestrator.guardrails import check_input, person_identifiers
 from orchestrator.knowledge import KnowledgeRejected
+from orchestrator.llm import LLMUnavailable
 from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 from orchestrator.surfaces import SurfaceDenied, ensure_allowed
@@ -161,6 +162,21 @@ def create_app(
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator  # type: ignore[no-any-return]
 
+    @app.exception_handler(LLMUnavailable)
+    async def llm_unavailable(request: Request, exc: LLMUnavailable) -> JSONResponse:
+        # Only the assistant is down: agenda, CRM and records make no model calls.
+        retry = max(1, round(exc.retry_after))
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": "The assistant is temporarily unavailable. Nothing was lost; "
+                "try again shortly.",
+                "code": "llm_unavailable",
+                "retry_after": retry,
+            },
+            headers={"Retry-After": str(retry)},
+        )
+
     @app.get("/", include_in_schema=False)
     async def console() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html", headers=UI_HEADERS)
@@ -174,6 +190,10 @@ def create_app(
         o = orch(request)
         if not o.ready:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "index not ready")
+        if not await o.db_ok():
+            # Out of the load balancer until the database answers again; liveness stays
+            # green, so Kubernetes does not restart a healthy process for a remote outage.
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable")
         return {
             "status": "ready",
             "agents": len(o.catalog),

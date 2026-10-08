@@ -42,6 +42,10 @@ def head() -> str:
 
 async def upgrade(engine: AsyncEngine, revision: str = "head") -> None:
     async with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # An index build may rightly take longer than an API query is allowed to.
+            await conn.exec_driver_sql("SET LOCAL statement_timeout = 0")
+            await conn.exec_driver_sql("SET LOCAL lock_timeout = '60s'")
         await conn.run_sync(lambda sync: command.upgrade(_config(sync), revision))
 
 

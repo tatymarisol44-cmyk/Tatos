@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from orchestrator import usage
 from orchestrator.config import Settings
+from orchestrator.resilience import CircuitBreaker, CircuitOpen
 from orchestrator.telemetry import tracer
 
 Message = dict[str, str]
@@ -206,7 +207,49 @@ class FakeLLM:
         return LLMResult(f"[{title}] {question}", model, len(question) // 4, 12)
 
 
+class LLMUnavailable(RuntimeError):
+    """Every configured model failed (after LiteLLM's retries and fallbacks), or the
+    circuit is open. The API answers 503 with Retry-After; nothing else depends on it."""
+
+    def __init__(self, message: str, retry_after: float) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class GuardedLLM:
+    """Puts a circuit breaker in front of a real provider (resilience.py)."""
+
+    def __init__(self, inner: LLMClient, breaker: CircuitBreaker) -> None:
+        self.inner = inner
+        self.breaker = breaker
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResult:
+        try:
+            return await self.breaker.call(
+                lambda: self.inner.complete(
+                    messages, model=model, temperature=temperature, max_tokens=max_tokens
+                )
+            )
+        except CircuitOpen as exc:
+            raise LLMUnavailable(str(exc), exc.retry_after) from exc
+        except Exception as exc:
+            # The provider's message may quote the prompt: keep only the type.
+            raise LLMUnavailable(
+                f"model call failed ({type(exc).__name__})", self.breaker.cooldown_s
+            ) from exc
+
+
 def build_llm(settings: Settings) -> LLMClient:
     if settings.llm_backend == "fake":
         return FakeLLM()
-    return LiteLLMClient(settings)
+    breaker = CircuitBreaker(
+        "llm", failures=settings.llm_breaker_failures, cooldown_s=settings.llm_breaker_cooldown_s
+    )
+    return GuardedLLM(LiteLLMClient(settings), breaker)

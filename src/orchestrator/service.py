@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -252,6 +253,16 @@ class Orchestrator:
         await self.memory.start()
         await self.reconcile_reviews()
         self.ready = True
+
+    async def db_ok(self, timeout_s: float = 2.0) -> bool:
+        """Readiness probe: the database answers a trivial query within `timeout_s`."""
+        try:
+            async with asyncio.timeout(timeout_s), self.db.engine.connect() as conn:
+                await conn.exec_driver_sql("SELECT 1")
+        except Exception:
+            log.warning("readiness: database did not answer")
+            return False
+        return True
 
     async def close(self) -> None:
         self.ready = False

@@ -43,6 +43,21 @@ def aware(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def session_options(settings: Settings) -> str:
+    """libpq `options` that set the per-session limits on every pooled connection."""
+    return " ".join(
+        f"-c {name}={value}"
+        for name, value in (
+            ("statement_timeout", settings.postgres_statement_timeout_ms),
+            ("lock_timeout", settings.postgres_lock_timeout_ms),
+            (
+                "idle_in_transaction_session_timeout",
+                settings.postgres_idle_in_transaction_timeout_ms,
+            ),
+        )
+    )
+
+
 def build_engine(settings: Settings) -> AsyncEngine:
     url = make_url(settings.database_url.get_secret_value())
     kwargs: dict[str, Any] = {}
@@ -68,7 +83,14 @@ def build_engine(settings: Settings) -> AsyncEngine:
         # Patient and customer data must travel encrypted (GDPR Art. 32, HIPAA 164.312).
         raise ValueError("DATABASE_URL needs sslmode=require|verify-ca|verify-full in prod")
     else:
-        kwargs = {"pool_size": settings.postgres_pool_size, "pool_pre_ping": True}
+        kwargs = {
+            "pool_size": settings.postgres_pool_size,
+            "max_overflow": settings.postgres_max_overflow,
+            "pool_timeout": settings.postgres_pool_timeout_s,
+            "pool_recycle": 1800,  # below typical proxy/LB idle cut-offs
+            "pool_pre_ping": True,
+            "connect_args": {"options": session_options(settings)},
+        }
     return create_async_engine(url, **kwargs)
 
 

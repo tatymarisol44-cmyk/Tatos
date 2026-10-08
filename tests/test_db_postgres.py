@@ -91,3 +91,28 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
         assert events[0].action == "subject.erased" and events[0].ts.tzinfo is not None
     finally:
         await orch.close()
+
+
+async def test_every_session_carries_the_server_side_limits(settings: Settings) -> None:
+    """The limits are libpq `options` on each pooled connection; migrations lift them."""
+    from orchestrator.db import build_engine
+    from orchestrator.migrate import upgrade
+
+    assert POSTGRES_URL is not None
+    settings.database_url = SecretStr(
+        POSTGRES_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+    )
+    engine = build_engine(settings)
+    try:
+        async with engine.connect() as conn:
+            show = await conn.exec_driver_sql(
+                "SELECT current_setting('statement_timeout'), current_setting('lock_timeout'),"
+                " current_setting('idle_in_transaction_session_timeout')"
+            )
+            assert tuple(show.one()) == ("15s", "5s", "1min")
+            with pytest.raises(Exception, match="statement timeout"):
+                await conn.exec_driver_sql("SET statement_timeout = 50")
+                await conn.exec_driver_sql("SELECT pg_sleep(1)")
+        await upgrade(engine)  # runs with statement_timeout = 0 inside its transaction
+    finally:
+        await engine.dispose()

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0
     llm_num_retries: int = 2
+    # Circuit breaker over the provider: open after N failed calls in a row, fail fast for
+    # the cooldown, then let one trial call through (resilience.py).
+    llm_breaker_failures: int = Field(default=5, ge=1, le=100)
+    llm_breaker_cooldown_s: float = Field(default=30.0, ge=1, le=600)
 
     # --- Retrieval ---------------------------------------------------------
     embedding_backend: Literal["hashing", "litellm"] = "hashing"
@@ -190,6 +194,14 @@ class Settings(BaseSettings):
     checkpointer_backend: Literal["memory", "postgres"] = "memory"
     postgres_url: SecretStr | None = None
     postgres_pool_size: int = 10
+    # Requests wait at most this long for a pooled connection, beyond the pool size.
+    postgres_max_overflow: int = Field(default=5, ge=0, le=100)
+    postgres_pool_timeout_s: float = Field(default=10.0, ge=1, le=120)
+    # Server-side limits on every session: a runaway query, a lock queue or an abandoned
+    # transaction cannot hold a connection (and the pool) forever. Migrations lift them.
+    postgres_statement_timeout_ms: int = Field(default=15_000, ge=0)
+    postgres_lock_timeout_ms: int = Field(default=5_000, ge=0)
+    postgres_idle_in_transaction_timeout_ms: int = Field(default=60_000, ge=0)
     # Migrate DATABASE_URL to the latest schema at startup. Handy for local Compose; in
     # Kubernetes an init container runs `agency db upgrade` once, and the API only checks.
     db_auto_migrate: bool = False
