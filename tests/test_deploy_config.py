@@ -29,6 +29,42 @@ def _k8s(kind: str, name: str) -> dict[str, Any]:
     raise AssertionError(f"{kind}/{name} not found")
 
 
+GKE = ROOT / "deploy" / "k8s" / "overlays" / "gke"
+
+
+def test_base_blocks_cloud_metadata_for_every_workload() -> None:
+    for name in ("api-egress", "jvm-agent-egress"):
+        for rule in _k8s("NetworkPolicy", name)["spec"]["egress"]:
+            for peer in rule.get("to", []):
+                block = peer.get("ipBlock")
+                if block and block["cidr"] == "0.0.0.0/0":
+                    assert {"169.254.169.254/32", "169.254.170.2/32"} <= set(block["except"])
+
+
+def test_gke_overlay_opens_only_the_gke_metadata_server_to_the_api() -> None:
+    """Keyless credentials (owner's decision A8): exactly the two endpoints Google documents,
+    for the API pods only."""
+    (policy,) = _docs(GKE / "networkpolicy-gke-metadata.yaml")
+    spec = policy["spec"]
+    assert spec["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": "agency-orchestrator"}}
+    assert spec["policyTypes"] == ["Egress"]
+    opened = {(r["to"][0]["ipBlock"]["cidr"], r["ports"][0]["port"]) for r in spec["egress"]}
+    assert opened == {("169.254.169.252/32", 988), ("169.254.169.254/32", 80)}
+    assert all(len(r["to"]) == 1 and len(r["ports"]) == 1 for r in spec["egress"])
+
+
+def test_gke_overlay_runs_the_api_as_its_own_service_account() -> None:
+    (account,) = _docs(GKE / "serviceaccount.yaml")
+    assert account["metadata"]["name"] == "agency-orchestrator"
+    assert account["automountServiceAccountToken"] is False
+    kustomization = _docs(GKE / "kustomization.yaml")[0]
+    assert {"serviceaccount.yaml", "networkpolicy-gke-metadata.yaml"} <= set(
+        kustomization["resources"]
+    )
+    patch = next(p for p in kustomization["patches"] if p["target"]["kind"] == "Deployment")
+    assert "serviceAccountName" in patch["patch"] and "agency-orchestrator" in patch["patch"]
+
+
 def test_media_dir_is_on_a_writable_mount() -> None:
     """The root filesystem is read-only; rendered creatives must go under a mounted /tmp."""
     media_dir = _k8s("ConfigMap", "agency-orchestrator-config")["data"]["MEDIA_DIR"]

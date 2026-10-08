@@ -1,0 +1,29 @@
+# Production on Google Kubernetes Engine with keyless Google credentials (Workload Identity
+# Federation for GKE). Decided by the owner on 2026-10-07 (DECISIONS-PENDING A8).
+#
+# One-time setup outside the cluster (no key file is ever created):
+#   1. Enable Workload Identity Federation on the cluster and its node pools.
+#   2. Grant the API's Kubernetes ServiceAccount access to the creatives bucket only:
+#      gcloud storage buckets add-iam-policy-binding gs://BUCKET \
+#        --role=roles/storage.objectAdmin \
+#        --member=principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/PROJECT_ID.svc.id.goog/subject/ns/agency/sa/agency-orchestrator
+#   3. Set GCS_BUCKET in the ConfigMap (patch below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - serviceaccount.yaml
+  - networkpolicy-gke-metadata.yaml
+patches:
+  # The API pods (and their migrate init container) run as their own ServiceAccount, the
+  # identity the bucket permission is granted to. Other workloads keep the default one.
+  - target: {kind: Deployment, name: agency-orchestrator}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/serviceAccountName
+        value: agency-orchestrator
+  # - target: {kind: ConfigMap, name: agency-orchestrator-config}
+  #   patch: |-
+  #     - op: add
+  #       path: /data/GCS_BUCKET
+  #       value: creativos-<practice>

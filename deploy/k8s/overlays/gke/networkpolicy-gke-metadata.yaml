@@ -1,0 +1,23 @@
+# Keyless Google credentials for the API pods only. Google's troubleshooting guide for GKE
+# authentication (read on 2026-10-07): "If you have a cluster network policy, you must allow
+# egress to 169.254.169.252/32 on port 988." and "For clusters running GKE Dataplane V2, you
+# must allow egress to 169.254.169.254/32 on port 80."
+#
+# With Workload Identity Federation enabled, metadata requests are answered by the GKE
+# metadata server, which serves this Pod's federated identity, not the node's credentials.
+# The base policy keeps the metadata endpoints blocked for every other workload.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gke-metadata
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: agency-orchestrator}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 169.254.169.252/32}
+      ports: [{port: 988, protocol: TCP}]
+    - to:
+        - ipBlock: {cidr: 169.254.169.254/32}
+      ports: [{port: 80, protocol: TCP}]
