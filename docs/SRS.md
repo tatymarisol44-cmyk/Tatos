@@ -393,7 +393,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | PERF-01 | Campaign delivery, results and alerts shall use a bounded number of queries per operation (no per-recipient round trips). | I | code review; test_campaigns |
 | PERF-02 | A load test shall report p50/p95/p99 latency, throughput and error rate with a fake LLM (orchestrator overhead) and with real providers. Done with the fake LLM on Postgres, one vs two processes; not yet with real providers. | P | docs/load-test.md, loadtest/locustfile.py |
 | OBS-01 | OpenTelemetry spans per graph node, team step, memory and knowledge operation and LLM call (GenAI attributes). Metrics: routed count, guardrail blocks, latency, tokens. | I | Manual: `docker compose up` + Jaeger/Prometheus. The OTLP exporter setup has no automated test (see Appendix C). |
-| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0016). | I | CI |
+| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0017). | I | CI |
 | POR-01 | Provider-agnostic LLM (LiteLLM), SQLite or Postgres, in-memory store or Qdrant. Runnable locally, with Docker Compose, in Codespaces and on Kubernetes. | I | CI, dev container |
 
 ### 3.12 Data Structure
@@ -455,6 +455,7 @@ Platform rules were read on 2026-10-07 from the official pages cited in `orchest
 | SOC-06 | The WhatsApp webhook shall answer Meta's verification and accept only correctly signed notifications; messages shall be deduplicated, classified on arrival and their text never stored. | I | test_inbound |
 | SOC-07 | STOP shall record an opt-out; crisis wording and requests for a person shall open an alert for care staff; the AI shall never answer them. | I | test_inbound |
 | SOC-08 | A person may reply by WhatsApp inside the 24-hour window, never to a number that opted out; the text is not stored. | I | test_inbound |
+| SOC-10 | A new alert shall notify the on-call level 1 at once on every channel each contact has (Telegram, WhatsApp template, e-mail over STARTTLS); a crisis alert not acknowledged within 5 minutes shall go to the next level, once on any number of replicas, and acknowledging or resolving shall stop it. A notice shall carry no patient data (ADR 0017). | I | test_oncall |
 | SOC-09 | Template messages outside the window, campaigns over WhatsApp, Instagram and Facebook comment replies, and notifying the on-duty person outside the console. | F | — |
 
 ---

@@ -22,6 +22,7 @@ def _metadata() -> Any:
         governance,
         inbound,
         knowledge,
+        oncall,
         publishing,
         social,
     )

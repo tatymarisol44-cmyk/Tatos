@@ -142,6 +142,21 @@ class Settings(BaseSettings):
     # Sending (Cloud API). v25.0 is the version in Meta's guide read on 2026-10-07.
     whatsapp_graph_base: str = "https://graph.facebook.com/v25.0"
 
+    # --- On-call alerts (ADR 0017) ------------------------------------------
+    # An unacknowledged crisis alert goes to the next on-call level after this long.
+    alert_escalation_minutes: int = Field(default=5, ge=1, le=60)
+    # WhatsApp needs an approved template outside the 24-hour window; its body has one
+    # parameter, the alert reference. Without a template, WhatsApp notices are skipped.
+    whatsapp_alert_template: str | None = None
+    whatsapp_alert_template_language: str = "es"
+    # E-mail notices (STARTTLS). Without SMTP_HOST they run dry.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    smtp_timeout_seconds: float = Field(default=10.0, ge=1, le=60)
+
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000
     # Whole request body, enforced as it arrives (413). Document upload gets more room:

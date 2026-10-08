@@ -151,9 +151,43 @@ class WhatsAppSender:
             },
             headers=_auth(token),
         )
-        messages = _json(response, "whatsapp send").get("messages") or []
+        return self._message_id(response, "whatsapp send")
+
+    async def send_template(
+        self,
+        *,
+        phone_number_id: str,
+        token: str,
+        to: str,
+        name: str,
+        language: str,
+        parameters: list[str],
+    ) -> str:
+        """An approved template, the only message allowed outside the 24-hour window
+        (shape from Meta's template guide, read on 2026-10-07)."""
+        template: dict[str, Any] = {"name": name, "language": {"code": language}}
+        if parameters:
+            template["components"] = [
+                {"type": "body", "parameters": [{"type": "text", "text": p} for p in parameters]}
+            ]
+        response = await self.client.post(
+            f"{self.base}/{phone_number_id}/messages",
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "template",
+                "template": template,
+            },
+            headers=_auth(token),
+        )
+        return self._message_id(response, "whatsapp template")
+
+    @staticmethod
+    def _message_id(response: httpx.Response, step: str) -> str:
+        messages = _json(response, step).get("messages") or []
         if not messages or not isinstance(messages[0], dict) or not messages[0].get("id"):
-            raise PublishError("whatsapp send: no message id")
+            raise PublishError(f"{step}: no message id")
         return str(messages[0]["id"])
 
 

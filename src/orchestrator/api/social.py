@@ -123,6 +123,27 @@ async def reply_to_alert(
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
 
+@router.post("/alerts/{alert_id}/ack", status_code=status.HTTP_204_NO_CONTENT)
+async def acknowledge_alert(
+    request: Request,
+    alert_id: Annotated[str, FastAPIPath(max_length=32, pattern=r"^[0-9a-f]+$")],
+    p: Care,
+) -> None:
+    """ "I am on it": stops calling the next on-call level. The alert stays open."""
+    if not await orch(request).oncall.acknowledge(p.tenant, alert_id, p.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "open, unacknowledged alert not found")
+
+
+@router.get("/alerts/{alert_id}/notifications")
+async def alert_notifications(
+    request: Request,
+    alert_id: Annotated[str, FastAPIPath(max_length=32, pattern=r"^[0-9a-f]+$")],
+    p: Care,
+) -> list[dict[str, Any]]:
+    """Who was told, on which channel, and how it went."""
+    return await orch(request).oncall.notifications(p.tenant, alert_id)
+
+
 @router.post("/alerts/{alert_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
 async def resolve_alert(
     request: Request,

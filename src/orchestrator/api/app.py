@@ -24,6 +24,7 @@ from orchestrator.api import (
     channels,
     clinical,
     establishment,
+    oncall,
     patients,
     publications,
     social,
@@ -80,6 +81,11 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
             await orch.campaigns.run_outbox()
         except Exception:
             log.exception("outbox pass failed")
+        # On-call escalation (ADR 0017): each step is claimed, so every replica can run it.
+        try:
+            await orch.oncall.escalate_due()
+        except Exception:
+            log.exception("on-call escalation pass failed")
         await asyncio.sleep(interval)
 
 
@@ -144,6 +150,7 @@ def create_app(
     app.include_router(publications.router)
     app.include_router(establishment.router)
     app.include_router(clinical.router)
+    app.include_router(oncall.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:

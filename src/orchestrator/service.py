@@ -46,6 +46,7 @@ from orchestrator.knowledge import (
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.media_store import build_media_store
 from orchestrator.memory import InMemoryMemoryStore, MemoryStore, QdrantMemoryStore, SemanticMemory
+from orchestrator.oncall import OnCall
 from orchestrator.publishing import PublicationService
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
@@ -208,6 +209,7 @@ class Orchestrator:
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
+        self.oncall = OnCall(self.db, self.audit, settings)
         self.publications = PublicationService(
             self.db, self.audit, self.social, build_media_store(settings), settings
         )
@@ -256,6 +258,7 @@ class Orchestrator:
         if self.remote is not None:
             await self.remote.close()
         await self.campaigns.close()
+        await self.oncall.close()
         await self.checkpointer.close()
         await self.db.close()
 

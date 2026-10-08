@@ -24,7 +24,7 @@ from datetime import timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import Column, DateTime, String, Table, and_, insert, select, update
+from sqlalchemy import Column, DateTime, Integer, String, Table, and_, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from orchestrator.config import Settings
@@ -67,6 +67,12 @@ channel_alerts = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("resolved_by", String(128), nullable=True),
     Column("resolved_at", DateTime(timezone=True), nullable=True),
+    # On-call escalation (ADR 0017): the level last notified, when the next level is due
+    # (null: nothing more to do), and who took the alert, which stops the escalation.
+    Column("escalation_level", Integer, nullable=False, default=0, server_default="0"),
+    Column("next_escalation_at", DateTime(timezone=True), nullable=True),
+    Column("acknowledged_by", String(128), nullable=True),
+    Column("acknowledged_at", DateTime(timezone=True), nullable=True),
 )
 
 channel_optouts = Table(
@@ -237,6 +243,8 @@ class InboundService:
                             address=normalize_address(sender)[:32],
                             status="open",
                             created_at=now,
+                            escalation_level=0,
+                            next_escalation_at=now,  # the on-call notifier takes it now
                         )
                     )
                     await self.audit.record_in(
@@ -289,7 +297,12 @@ class InboundService:
                     channel_alerts.c.status == "open",
                 )
             )
-            .values(status="resolved", resolved_by=actor, resolved_at=utcnow())
+            .values(
+                status="resolved",
+                resolved_by=actor,
+                resolved_at=utcnow(),
+                next_escalation_at=None,  # resolved: nobody else needs to be called
+            )
         )
         async with self.db.engine.begin() as conn:
             done = (await conn.execute(query)).rowcount == 1

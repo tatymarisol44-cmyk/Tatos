@@ -146,4 +146,11 @@ async def whatsapp_webhook(
     ]
     if outcomes:
         log.info("whatsapp inbound: %s", sorted(set(outcomes)))
+    if {"crisis", "human"} & set(outcomes):
+        # Tell the on-call person now, not at the next worker pass (ADR 0017). A failure
+        # here leaves the step due, and the worker on any replica retries it.
+        try:
+            await orch.oncall.escalate_due()
+        except Exception:
+            log.exception("on-call notice failed; the worker will retry")
     return {"ok": True}
