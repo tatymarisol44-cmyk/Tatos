@@ -118,6 +118,13 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
         card = reviewer.locator(".review-card").first
         expect(card).to_contain_text(CLINICAL)
         card.locator("textarea").fill("Llámenos al consultorio, por favor.")
+        # The list refreshes while the reviewer is editing (another tab, a new held
+        # answer, a slow response): the edit must survive. CI caught this as a race.
+        with reviewer.expect_response(lambda r: r.url.endswith("/v1/reviews")):
+            reviewer.click("#reviews-refresh")
+        expect(reviewer.locator(".review-card textarea").first).to_have_value(
+            "Llámenos al consultorio, por favor."
+        )
         card.get_by_role("button", name="Approve").click()
         expect(reviewer.get_by_text("Nothing waiting for review.")).to_be_visible()
 

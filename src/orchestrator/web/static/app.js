@@ -480,11 +480,21 @@ function sourcesView(sources) {
 }
 
 // --- review queue -------------------------------------------------------------
+// A reviewer's edit must never be lost to a refresh (found by CI: a slow response
+// re-rendered the cards while a dentist was typing, and "Approve" then sent the AI
+// draft). So: answers to an older request are ignored, and a card already on screen
+// is kept as it is (with what the reviewer typed); only new reviews are added and
+// resolved ones removed.
+let reviewsRequest = 0;
+const reviewKey = (item) => `${item.thread_id}|${item.created_at}`;
+
 async function loadReviews() {
   const status = $("#reviews-status");
   const count = $("#reviews-count");
+  const mine = ++reviewsRequest;
   try {
     const resp = await fetch("/v1/reviews", { headers: headers() });
+    if (mine !== reviewsRequest) return; // a newer refresh is on its way
     if (resp.status === 403) {
       $("#reviews").replaceChildren();
       status.textContent = "This key cannot review answers (needs the reviewer role).";
@@ -493,7 +503,9 @@ async function loadReviews() {
     }
     if (!resp.ok) throw await apiError(resp);
     const items = await resp.json();
-    $("#reviews").replaceChildren(...items.map(reviewCard));
+    if (mine !== reviewsRequest) return;
+    const onScreen = new Map([...$("#reviews").children].map((card) => [card.dataset.review, card]));
+    $("#reviews").replaceChildren(...items.map((item) => onScreen.get(reviewKey(item)) || reviewCard(item)));
     status.textContent = items.length ? `${items.length} waiting` : "Nothing waiting for review.";
     count.textContent = String(items.length);
     count.hidden = !items.length;
@@ -523,7 +535,7 @@ function reviewCard(item) {
       msg.textContent = err.message;
     }
   };
-  return el("li", { class: "review-card" },
+  return el("li", { class: "review-card", "data-review": reviewKey(item) },
     el("div", { class: "review-head" },
       el("span", { class: `badge risk-${p.risk?.level || "unknown"}`, text: `risk: ${p.risk?.level || "?"}` }),
       ...reasons.map((r) => el("span", { class: "badge", text: r })),
