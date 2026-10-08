@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import re
 import uuid
@@ -91,8 +92,14 @@ def normalize_address(address: str) -> str:
     return re.sub(r"\D", "", address)
 
 
-def address_key(tenant: str, network: str, address: str) -> str:
-    return hashlib.sha256(f"{tenant}:{network}:{normalize_address(address)}".encode()).hexdigest()
+def address_key(key: bytes, tenant: str, network: str, address: str) -> str:
+    """A keyed pseudonym of a phone number (HMAC-SHA256 with PSEUDONYM_KEY, which is never
+    stored in the database). A plain hash would not do: there are only ~10^8 mobile
+    numbers in Ecuador, so anyone holding a database copy could hash them all in minutes
+    and learn who asked a mental-health practice to stop writing (re-identification test
+    in tests/test_reidentification.py)."""
+    message = f"{tenant}:{network}:{normalize_address(address)}".encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
 def _alert(row: Any) -> dict[str, Any]:
@@ -111,6 +118,7 @@ class InboundService:
         self.audit = audit
         self.settings = settings
         self.transport = transport  # tests replace the network
+        self.pseudonym_key = settings.pseudonym_secret()
 
     async def reply(self, tenant: str, alert_id: str, actor: str, body: str) -> dict[str, Any]:
         """A person's reply to an alert. Returns the outcome, never the text."""
@@ -212,7 +220,7 @@ class InboundService:
                     )
                 )
                 if intent == "stop":
-                    key = address_key(tenant, network, sender)
+                    key = address_key(self.pseudonym_key, tenant, network, sender)
                     exists = await conn.execute(
                         select(channel_optouts.c.address_key).where(
                             and_(
@@ -266,7 +274,8 @@ class InboundService:
             and_(
                 channel_optouts.c.tenant == tenant,
                 channel_optouts.c.network == network,
-                channel_optouts.c.address_key == address_key(tenant, network, address),
+                channel_optouts.c.address_key
+                == address_key(self.pseudonym_key, tenant, network, address),
             )
         )
         async with self.db.engine.connect() as conn:

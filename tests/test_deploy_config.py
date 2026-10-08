@@ -242,3 +242,13 @@ def test_deploys_are_health_gated_and_roll_back() -> None:
     assert "rollout undo" in script and "rollout status" in script
     strategy = _k8s("Deployment", "agency-orchestrator")["spec"]["strategy"]
     assert strategy["rollingUpdate"]["maxUnavailable"] == 0  # old pods serve meanwhile
+
+
+def test_the_rehearsal_has_every_secret_prod_requires() -> None:
+    # The kind rehearsal runs APP_ENV=prod: a secret prod demands but the rehearsal lacks
+    # would crash the pods in CI, not in production first.
+    ci = (ROOT / "deploy" / "k8s" / "overlays" / "ci" / "kustomization.yaml").read_text("utf-8")
+    for name in ("API_KEYS", "DATABASE_URL", "POSTGRES_URL", "PSEUDONYM_KEY"):
+        assert f"- {name}=" in ci, name
+    doc = (ROOT / "deploy" / "k8s" / "base" / "deployment.yaml").read_text("utf-8")
+    assert "PSEUDONYM_KEY" in doc  # the operator's instructions name it too

@@ -18,6 +18,10 @@ _ORIGIN = re.compile(
 )
 
 
+# Development only: prod refuses to start without its own PSEUDONYM_KEY.
+DEV_PSEUDONYM_KEY = b"dev-only-pseudonym-key-not-secret"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -256,6 +260,9 @@ class Settings(BaseSettings):
     )
     oidc_mfa_acr: list[str] = Field(default_factory=list)
     oidc_max_session_hours: float = Field(default=12, gt=0, le=24 * 30)
+    # Key of the HMAC pseudonyms (opted-out phone numbers). Required in prod; keep it out
+    # of the database and of its backups, or the pseudonyms can be reversed.
+    pseudonym_key: SecretStr | None = None
     otel_enabled: bool = False
     # Serve Prometheus metrics on this pod-internal port (0 = off). Never the API port.
     metrics_port: int = Field(default=0, ge=0, le=65535)
@@ -294,6 +301,13 @@ class Settings(BaseSettings):
         if plain:
             problems.append(f"CORS_ALLOWED_ORIGINS has plain-HTTP origins in prod: {plain}")
         return problems
+
+    def pseudonym_secret(self) -> bytes:
+        if self.pseudonym_key is not None and self.pseudonym_key.get_secret_value():
+            return self.pseudonym_key.get_secret_value().encode()
+        if self.app_env == "prod":
+            raise ValueError("APP_ENV=prod requires PSEUDONYM_KEY (32+ random bytes)")
+        return DEV_PSEUDONYM_KEY
 
     def tenant_keys(self) -> dict[str, str]:
         pairs: dict[str, str] = {}

@@ -84,7 +84,10 @@ def test_prod_refuses_an_ephemeral_profile(settings: Settings, catalog: Catalog)
         assert problem in message
     settings.prod_allow_ephemeral = True  # explicit acceptance for a demo...
     settings.database_url = SecretStr("postgresql+psycopg://u:p@db/agency?sslmode=require")
-    Orchestrator(settings, catalog=catalog, llm=FakeLLM())  # ...that still needs Postgres
+    with pytest.raises(ValueError, match="PSEUDONYM_KEY"):  # ...that still needs its keys
+        Orchestrator(settings, catalog=catalog, llm=FakeLLM())
+    settings.pseudonym_key = SecretStr("k" * 48)
+    Orchestrator(settings, catalog=catalog, llm=FakeLLM())  # ...and Postgres
 
 
 def test_build_limiter(settings: Settings) -> None:
