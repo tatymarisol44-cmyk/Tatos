@@ -14,6 +14,13 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule: {interval: weekly}
+    ignore:
+      # Development and CI run the same Postgres major as production (Cloud SQL
+      # POSTGRES_17 in deploy/terraform/data.tf) and the pg_dump 17 of the restore drill.
+      # A major upgrade is a planned migration of all three together, not a bot bump;
+      # the 18 image also moved its data directory (PGDATA) to a new path.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: maven
     directory: /agents/jvm-specialist
     schedule: {interval: weekly}
@@ -22,6 +29,12 @@ updates:
   - package-ecosystem: docker
     directory: /agents/jvm-specialist
     schedule: {interval: weekly}
+    ignore:
+      # The agent compiles for Java 21 (pom.xml) on the 21 JDK and runs on the 21 JRE.
+      # A new LTS moves the JDK, the JRE and <java.version> together, deliberately;
+      # a bot bump of the runtime alone would test one Java and ship another.
+      - dependency-name: eclipse-temurin
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: gitsubmodule
     directory: /
     schedule: {interval: weekly}
