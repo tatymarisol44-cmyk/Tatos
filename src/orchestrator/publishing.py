@@ -173,6 +173,17 @@ class PublicationService:
         if not caption_check.ok:
             raise creatives.CreativeRejected(caption_check.violations)
 
+        # The network's rules first: a creative it cannot take is refused before it is
+        # rendered (a video costs seconds of ffmpeg, and may not be renderable here at all).
+        expected = check_publish(
+            network,
+            media_type="image" if kind == "infographic" else "video",
+            media_format="jpeg" if kind == "infographic" else "mp4",
+            public_url=True,
+        )
+        if not expected.allowed:
+            raise PublicationError("; ".join(expected.problems))
+
         publication_id = uuid.uuid4().hex[:12]
         suffix = ".jpg" if kind == "infographic" else ".mp4"
         name = object_name(tenant, publication_id, suffix)

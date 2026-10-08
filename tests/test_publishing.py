@@ -153,6 +153,19 @@ def test_networks_and_kinds_that_cannot_publish(app: tuple[TestClient, Orchestra
     assert create(client, "0123456789ab").status_code == 404  # no such account
 
 
+def test_a_network_refuses_before_anything_is_rendered(
+    app: tuple[TestClient, Orchestrator], settings: Settings
+) -> None:
+    # CI once had no ffmpeg: the video was rendered first, so "cannot render" (503) hid
+    # "Facebook takes no videos" (409). The rules now come first, renderer or not.
+    client, _ = app
+    settings.ffmpeg_binary = "/nonexistent/ffmpeg"  # type: ignore[assignment]
+    response = create(client, connect(client, "facebook"), kind="video")
+    assert response.status_code == 409
+    assert "FB-PHOTOS" in response.json()["detail"]
+    assert list(settings.media_dir.rglob("*")) == []
+
+
 def test_a_disabled_account_cannot_publish(app: tuple[TestClient, Orchestrator]) -> None:
     client, _ = app
     account = connect(client)
