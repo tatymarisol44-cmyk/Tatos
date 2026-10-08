@@ -6,12 +6,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
+from pydantic import AwareDatetime, BaseModel, Field
 
+from orchestrator.agenda import AgendaError
 from orchestrator.api.schemas import PatientChatIn, PatientConsentIn
 from orchestrator.api.security import require_patient
 from orchestrator.auth import Principal
+from orchestrator.crm import CrmError
 from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.service import Orchestrator, PendingReviewError
 
@@ -113,3 +116,55 @@ async def my_thread(
         return await orch(request).portal.thread(p.tenant, _subject(p), thread_id)
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from exc
+
+
+# --- booking from the patient's app ------------------------------------------------------
+
+
+class BookIn(BaseModel):
+    professional_id: str = Field(pattern=r"^[\w.@-]{1,64}$")
+    starts_at: AwareDatetime
+
+
+@router.get("/slots")
+async def my_slots(
+    request: Request,
+    p: Me,
+    professional_id: Annotated[str, Query(pattern=r"^[\w.@-]{1,64}$")],
+    days: Annotated[int, Query(ge=1, le=60)] = 14,
+) -> list[dict[str, Any]]:
+    """Free times of a professional of the patient's practice."""
+    try:
+        return await orch(request).agenda.free_slots(p.tenant, professional_id, days=days)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc
+
+
+@router.post("/appointments", status_code=status.HTTP_201_CREATED)
+async def book(body: BookIn, request: Request, p: Me) -> dict[str, Any]:
+    """Book one of the free slots (only those: a patient cannot pick an arbitrary time)."""
+    o = orch(request)
+    try:
+        minutes = await o.agenda.is_free_slot(p.tenant, body.professional_id, body.starts_at)
+        made = await o.crm.create_appointment(
+            p.tenant,
+            _subject(p),
+            starts_at=body.starts_at,
+            duration_min=minutes,
+            kind="sesion",
+            price=0,
+            actor=p.id,
+            professional_id=body.professional_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc
+    except (AgendaError, CrmError) as exc:  # SlotTaken is a CrmError: taken meanwhile
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return {k: made[k] for k in ("id", "starts_at", "duration_min", "status", "professional_id")}
+
+
+@router.get("/calendar-link")
+async def my_calendar_link(request: Request, p: Me) -> dict[str, str]:
+    """A private iCalendar URL for the patient's own appointments."""
+    base = request.app.state.settings.public_base_url.rstrip("/")
+    return {"url": base + orch(request).agenda.feed_path(p.tenant, "patient", _subject(p))}

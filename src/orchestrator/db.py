@@ -102,6 +102,7 @@ class Database:
     async def start(self) -> None:
         # Imported for their side effect: each module registers its tables on `metadata`.
         from orchestrator import (  # noqa: F401
+            agenda,
             auth,
             campaigns,
             clinical_files,

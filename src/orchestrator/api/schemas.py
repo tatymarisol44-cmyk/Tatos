@@ -138,6 +138,9 @@ class AppointmentIn(BaseModel):
     duration_min: int = Field(default=30, ge=5, le=480)
     kind: str = Field(default="checkup", min_length=1, max_length=32)
     price: float = Field(default=0.0, ge=0, le=1_000_000)
+    professional_id: str | None = Field(
+        default=None, pattern=r"^[\w.@-]{1,64}$", description="Whose agenda: no overlaps"
+    )
 
 
 class AppointmentStatusIn(BaseModel):

@@ -9,12 +9,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
@@ -30,6 +30,7 @@ from orchestrator.api import (
     publications,
     social,
 )
+from orchestrator.api import agenda as agenda_api
 from orchestrator.api.backpressure import ModelConcurrencyLimit
 from orchestrator.api.body_limit import BodySizeLimit
 from orchestrator.api.edge import SecurityHeaders
@@ -175,6 +176,7 @@ def create_app(
     app.include_router(establishment.router)
     app.include_router(clinical.router)
     app.include_router(instruments.router)
+    app.include_router(agenda_api.router)
     app.include_router(oncall.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
@@ -220,6 +222,26 @@ def create_app(
         media_type = "video/mp4" if name.endswith(".mp4") else "image/jpeg"
         return FileResponse(
             path, media_type=media_type, headers={"Cache-Control": "private, max-age=300"}
+        )
+
+    @app.get("/calendar/{kind}/{tenant}/{owner}/{sig}.ics", include_in_schema=False)
+    async def calendar_feed(
+        request: Request,
+        kind: Literal["professional", "patient"],
+        tenant: Annotated[str, FastAPIPath(pattern=r"^[\w-]{1,64}$")],
+        owner: Annotated[str, FastAPIPath(pattern=r"^[\w.@-]{1,64}$")],
+        sig: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{40}$")],
+    ) -> Response:
+        """An iCalendar feed for a phone's calendar app, which cannot send our key: the
+        signature in the URL is the credential. Initials and times only."""
+        agenda = orch(request).agenda
+        if not agenda.feed_valid(tenant, kind, owner, sig):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        body = await agenda.ics(tenant, kind, owner, settings.practice_display_name)
+        return Response(
+            body,
+            media_type="text/calendar; charset=utf-8",
+            headers={"Cache-Control": "private, max-age=300"},
         )
 
     @app.get("/healthz", tags=["ops"])

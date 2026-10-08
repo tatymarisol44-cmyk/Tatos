@@ -153,6 +153,8 @@ class Settings(BaseSettings):
     whatsapp_verify_token: SecretStr | None = None
     # Warm automatic replies to incoming WhatsApp messages (auto_reply.py, decision P6).
     whatsapp_auto_reply: bool = True
+    # Local time of the practice: working hours and slots are written in it.
+    clinic_timezone: str = "America/Guayaquil"
     practice_display_name: str = Field(default="el consultorio", min_length=1, max_length=80)
     # Emergency lines in the crisis reply; empty = the verified default (auto_reply.py).
     crisis_help_text: str = Field(default="", max_length=500)

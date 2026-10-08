@@ -124,6 +124,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "on_call_contacts": DataClass.PERSONAL,
     "principals": DataClass.CREDENTIAL,
     "professionals": DataClass.PERSONAL,
+    "professional_hours": DataClass.INTERNAL,  # working hours, no patient
     "publications": DataClass.PUBLIC,
     "reviews": DataClass.HEALTH,  # a held answer may contain clinical advice
     "subject_threads": DataClass.HEALTH,

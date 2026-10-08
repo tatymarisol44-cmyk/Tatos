@@ -76,7 +76,10 @@ appointments = Table(
     Column("price", Numeric(12, 2), nullable=False, default=0),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+    # Who sees the patient: the professional's agenda never holds two overlapping visits.
+    Column("professional_id", String(64), nullable=True, index=True),
 )
+ACTIVE_STATUSES = ("scheduled", "confirmed")
 
 treatments = Table(
     "crm_treatments",
@@ -120,6 +123,10 @@ REVENUE_STAGES = ("accepted", "in_progress", "completed")
 
 class CrmError(ValueError):
     """Invalid CRM operation (unknown record, illegal transition, restricted patient)."""
+
+
+class SlotTaken(CrmError):
+    """The professional already has a visit that overlaps this time."""
 
 
 class NotFoundError(KeyError):
@@ -301,11 +308,15 @@ class CrmService:
         kind: str,
         price: float,
         actor: str,
+        professional_id: str | None = None,
     ) -> dict[str, Any]:
         await self._require_active(tenant, patient_id)
         aid = uuid.uuid4().hex[:12]
         now = utcnow()
+        start = _utc(starts_at)
         async with self.db.engine.begin() as conn:
+            if professional_id is not None:
+                await self._claim_time(conn, tenant, professional_id, start, duration_min)
             await conn.execute(
                 insert(appointments).values(
                     tenant=tenant,
@@ -318,6 +329,7 @@ class CrmService:
                     price=Decimal(str(price)),
                     created_at=now,
                     updated_at=now,
+                    professional_id=professional_id,
                 )
             )
             await self.audit.record_in(
@@ -329,6 +341,43 @@ class CrmService:
                 subject_id=patient_id,
             )
         return await self.get_appointment(tenant, aid)
+
+    async def _claim_time(
+        self, conn: Any, tenant: str, professional_id: str, start: datetime, minutes: int
+    ) -> None:
+        """Inside the booking transaction: lock the professional's row (two bookings for the
+        same professional wait for each other, on any replica), then refuse an overlap."""
+        from orchestrator.establishment import professionals  # avoids an import cycle
+
+        owner = await conn.execute(
+            select(professionals.c.professional_id)
+            .where(
+                and_(
+                    professionals.c.tenant == tenant,
+                    professionals.c.professional_id == professional_id,
+                    professionals.c.active.is_(True),
+                )
+            )
+            .with_for_update()
+        )
+        if owner.first() is None:
+            raise CrmError(f"unknown or inactive professional {professional_id!r}")
+        end = start + timedelta(minutes=minutes)
+        nearby = await conn.execute(
+            select(appointments.c.starts_at, appointments.c.duration_min).where(
+                and_(
+                    appointments.c.tenant == tenant,
+                    appointments.c.professional_id == professional_id,
+                    appointments.c.status.in_(ACTIVE_STATUSES),
+                    appointments.c.starts_at < end,
+                    appointments.c.starts_at > start - timedelta(hours=12),
+                )
+            )
+        )
+        for other_start, other_minutes in nearby:
+            other = _utc(other_start)
+            if other < end and other + timedelta(minutes=other_minutes) > start:
+                raise SlotTaken("the professional already has a visit at that time")
 
     async def get_appointment(self, tenant: str, appointment_id: str) -> dict[str, Any]:
         query = select(appointments).where(

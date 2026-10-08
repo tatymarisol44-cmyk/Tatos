@@ -16,6 +16,7 @@ from langgraph.types import Command
 
 from orchestrator import packs
 from orchestrator import usage as ledger
+from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
@@ -166,6 +167,7 @@ class Orchestrator:
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
+        self.agenda = Agenda(self.db, self.audit, settings)
         self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)

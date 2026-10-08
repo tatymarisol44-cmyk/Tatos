@@ -308,6 +308,7 @@ async def create_appointment(body: AppointmentIn, request: Request, p: Reception
             kind=body.kind,
             price=body.price,
             actor=p.id,
+            professional_id=body.professional_id,
         )
     except NotFoundError as exc:
         raise _not_found("patient") from exc

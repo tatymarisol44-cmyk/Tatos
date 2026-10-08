@@ -184,6 +184,24 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["professional"] = "dra-acme"
+    every_day = [
+        {"day": d, "hours": "08:00-20:00", "slot_minutes": 60}
+        for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    ]
+    _ok(c.put("/v1/agenda/professionals/dra-acme/hours", json={"hours": every_day}, headers=ACME))
+    slot = _ok(c.get("/v1/agenda/slots", params={"professional_id": "dra-acme"}, headers=ACME))[0]
+    _ok(
+        c.post(
+            "/v1/crm/appointments",
+            json={
+                "patient_id": ids["patient"],
+                "starts_at": slot["starts_at"],
+                "duration_min": 60,
+                "professional_id": "dra-acme",
+            },
+            headers=ACME,
+        )
+    )
     note = _ok(
         c.post(
             f"/v1/clinical/patients/{ids['patient']}/documents",
@@ -305,6 +323,8 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "instruments": get("/v1/clinical/instruments"),
         "instrument_results": get(f"/v1/clinical/patients/{ids['patient']}/instrument-results"),
         "files": get(f"/v1/clinical/patients/{ids['patient']}/files"),
+        "agenda": get("/v1/agenda?days=14"),
+        "hours": get(f"/v1/agenda/professionals/{ids['professional']}/hours"),
         "reviews": get("/v1/reviews"),
         "thread": get(f"/v1/threads/{ids['thread']}"),
         "accounts": get("/v1/social/accounts"),
@@ -601,6 +621,23 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/clinical/files/{file_id}"): (f"/v1/clinical/files/{i['file']}", None),
+        ("GET", "/v1/agenda"): ("/v1/agenda?days=14", None),
+        ("GET", "/v1/agenda/professionals/{professional_id}/hours"): (
+            f"/v1/agenda/professionals/{i['professional']}/hours",
+            None,
+        ),
+        ("PUT", "/v1/agenda/professionals/{professional_id}/hours"): (
+            f"/v1/agenda/professionals/{i['professional']}/hours",
+            {"hours": [{"day": "mon", "hours": "01:00-02:00", "slot_minutes": 60}]},
+        ),
+        ("GET", "/v1/agenda/slots"): (
+            f"/v1/agenda/slots?professional_id={i['professional']}",
+            None,
+        ),
+        ("POST", "/v1/agenda/professionals/{professional_id}/calendar-link"): (
+            f"/v1/agenda/professionals/{i['professional']}/calendar-link",
+            None,
+        ),
         ("GET", "/v1/admin/on-call"): ("/v1/admin/on-call", None),
         ("POST", "/v1/admin/on-call"): (
             "/v1/admin/on-call",
@@ -626,6 +663,12 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
         ("PUT", "/v1/me/consents/{purpose}"): ("/v1/me/consents/marketing", {"granted": False}),
         ("POST", "/v1/me/chat"): ("/v1/me/chat", {"question": "¿Qué dije?", "thread_id": t}),
         ("GET", "/v1/me/chat/{thread_id}"): (f"/v1/me/chat/{t}", None),
+        ("GET", "/v1/me/slots"): ("/v1/me/slots?professional_id=dra-acme", None),
+        ("POST", "/v1/me/appointments"): (
+            "/v1/me/appointments",
+            {"professional_id": "dra-acme", "starts_at": "2030-01-07T14:00:00+00:00"},
+        ),
+        ("GET", "/v1/me/calendar-link"): ("/v1/me/calendar-link", None),
     }
 
 
@@ -676,6 +719,12 @@ ADDRESSED = {
         ("GET", "/v1/clinical/patients/{patient_id}/instrument-results"),
         ("GET", "/v1/clinical/instrument-results/{result_id}"),
         ("POST", "/v1/clinical/patients/{patient_id}/files"),
+        ("GET", "/v1/agenda/professionals/{professional_id}/hours"),
+        ("PUT", "/v1/agenda/professionals/{professional_id}/hours"),
+        ("GET", "/v1/agenda/slots"),
+        ("POST", "/v1/agenda/professionals/{professional_id}/calendar-link"),
+        ("GET", "/v1/me/slots"),
+        ("POST", "/v1/me/appointments"),
         ("GET", "/v1/clinical/patients/{patient_id}/files"),
         ("GET", "/v1/clinical/files/{file_id}"),
     )
