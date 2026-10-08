@@ -144,7 +144,12 @@ def create_app(
     app.add_middleware(
         BodySizeLimit,
         max_bytes=settings.max_body_bytes,
-        overrides={"/v1/knowledge/documents": settings.max_document_body_bytes},
+        overrides={
+            "/v1/knowledge/documents": settings.max_document_body_bytes,
+            # multipart framing adds a little to the file itself
+            r"^/v1/clinical/patients/[\w.-]{1,64}/files$": settings.clinical_file_max_bytes
+            + 64 * 1024,
+        },
     )
     app.add_middleware(SecurityHeaders, hsts_max_age_seconds=settings.hsts_max_age_seconds)
     app.add_middleware(ModelConcurrencyLimit, max_inflight=settings.max_inflight_model_requests)

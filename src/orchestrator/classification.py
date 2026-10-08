@@ -108,6 +108,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "channel_alerts": DataClass.HEALTH,  # crisis wording was detected
     "channel_optouts": DataClass.PERSONAL,
     "clinical_documents": DataClass.PSYCHOTHERAPY,  # holds psychotherapy notes among others
+    "clinical_files": DataClass.PSYCHOTHERAPY,  # may hold an author-only document
     "consents": DataClass.PERSONAL,
     "contact_budget": DataClass.PERSONAL,
     "crm_appointments": DataClass.HEALTH,

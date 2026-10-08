@@ -13,6 +13,7 @@ same cap in front, so oversized bodies never reach Python at all."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 
@@ -31,10 +32,15 @@ class BodySizeLimit:
     def __init__(self, app: ASGIApp, max_bytes: int, overrides: dict[str, int]) -> None:
         self.app = app
         self.max_bytes = max_bytes
-        self.overrides = overrides  # exact path -> limit
+        # An exact path, or a regular expression when the key starts with "^" (a route
+        # with a parameter, e.g. a patient's file upload).
+        self.overrides = {k: v for k, v in overrides.items() if not k.startswith("^")}
+        self.patterns = [(re.compile(k), v) for k, v in overrides.items() if k.startswith("^")]
 
     def limit_for(self, path: str) -> int:
-        return self.overrides.get(path, self.max_bytes)
+        if path in self.overrides:
+            return self.overrides[path]
+        return next((v for rx, v in self.patterns if rx.fullmatch(path)), self.max_bytes)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":

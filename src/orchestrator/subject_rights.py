@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
+from orchestrator.clinical_files import ClinicalFiles
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.crm import CrmService
 from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, SubjectThreads
@@ -39,6 +40,7 @@ class SubjectRights:
         crm: CrmService,
         clinical: ClinicalRecords,
         instruments: Instruments,
+        files: ClinicalFiles,
         campaigns: CampaignService,
         reviews: ReviewQueue,
         audit: AuditLog,
@@ -51,6 +53,7 @@ class SubjectRights:
         self.crm = crm
         self.clinical = clinical
         self.instruments = instruments
+        self.files = files
         self.campaigns = campaigns
         self.reviews = reviews
         self.audit = audit
@@ -81,6 +84,7 @@ class SubjectRights:
             "crm": await self.crm.export_subject(tenant, subject_id),
             "clinical_record": await self.clinical.export_subject(tenant, subject_id),
             "instrument_results": await self.instruments.export_subject(tenant, subject_id),
+            "clinical_files": await self.files.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],

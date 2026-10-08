@@ -176,6 +176,9 @@ class Settings(BaseSettings):
     # KNOWLEDGE_MAX_DOC_CHARS of text can take up to ~4 bytes per character in JSON.
     max_body_bytes: int = Field(default=256 * 1024, ge=1024)
     max_document_body_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
+    # A clinical file (signed consent PDF, external report, scanned test): stored in the
+    # database, so it shares its isolation, encryption at rest and point-in-time backups.
+    clinical_file_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 

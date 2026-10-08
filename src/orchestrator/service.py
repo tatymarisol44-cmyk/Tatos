@@ -21,6 +21,7 @@ from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
+from orchestrator.clinical_files import ClinicalFiles
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
@@ -165,6 +166,7 @@ class Orchestrator:
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
+        self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.oncall = OnCall(self.db, self.audit, settings)
@@ -199,6 +201,7 @@ class Orchestrator:
             self.crm,
             self.clinical,
             self.instruments,
+            self.clinical_files,
             self.campaigns,
             self.reviews,
             self.audit,

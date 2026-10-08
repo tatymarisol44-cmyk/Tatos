@@ -211,6 +211,13 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["instrument_result"] = result["result_id"]
+    uploaded = c.post(
+        f"/v1/clinical/patients/{ids['patient']}/files",
+        files={"file": ("consent.pdf", b"%PDF-1.7 " + MARKER.encode(), "application/pdf")},
+        data={"label": "Consentimiento"},
+        headers=clinician,
+    )
+    ids["file"] = _ok(uploaded)["file_id"]
     # A held answer creates a review on an acme thread.
     held = _ok(
         c.post(
@@ -297,6 +304,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
         "instruments": get("/v1/clinical/instruments"),
         "instrument_results": get(f"/v1/clinical/patients/{ids['patient']}/instrument-results"),
+        "files": get(f"/v1/clinical/patients/{ids['patient']}/files"),
         "reviews": get("/v1/reviews"),
         "thread": get(f"/v1/threads/{ids['thread']}"),
         "accounts": get("/v1/social/accounts"),
@@ -584,6 +592,15 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/clinical/instrument-results/{i['instrument_result']}",
             None,
         ),
+        ("POST", "/v1/clinical/patients/{patient_id}/files"): (
+            f"/v1/clinical/patients/{p}/files",
+            {"__multipart__": True, "label": "intruso"},
+        ),
+        ("GET", "/v1/clinical/patients/{patient_id}/files"): (
+            f"/v1/clinical/patients/{p}/files",
+            None,
+        ),
+        ("GET", "/v1/clinical/files/{file_id}"): (f"/v1/clinical/files/{i['file']}", None),
         ("GET", "/v1/admin/on-call"): ("/v1/admin/on-call", None),
         ("POST", "/v1/admin/on-call"): (
             "/v1/admin/on-call",
@@ -658,6 +675,9 @@ ADDRESSED = {
         ("POST", "/v1/clinical/patients/{patient_id}/instrument-results"),
         ("GET", "/v1/clinical/patients/{patient_id}/instrument-results"),
         ("GET", "/v1/clinical/instrument-results/{result_id}"),
+        ("POST", "/v1/clinical/patients/{patient_id}/files"),
+        ("GET", "/v1/clinical/patients/{patient_id}/files"),
+        ("GET", "/v1/clinical/files/{file_id}"),
     )
 }
 # Ids that live in each tenant's own namespace, so globex may use the same string for its
@@ -717,6 +737,10 @@ def _call(client: TestClient, method: str, path: str, body: Any, headers: dict[s
         return client.get(path, headers=headers)
     if method == "DELETE":
         return client.delete(path, headers=headers)
+    if isinstance(body, dict) and body.get("__multipart__"):
+        form = {k: v for k, v in body.items() if k != "__multipart__"}
+        upload = {"file": ("x.pdf", b"%PDF-1.7 intruso", "application/pdf")}
+        return client.post(path, files=upload, data=form, headers=headers)
     return client.request(method, path, json=body, headers=headers)
 
 
