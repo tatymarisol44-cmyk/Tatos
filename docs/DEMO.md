@@ -37,6 +37,9 @@ To open the console, use the **Ports** tab → port 8000 → globe icon, then pa
 | Team, roles, professionals with their own packs | ✅ live |
 | 20 patients, visits, plans, consents | ✅ live (synthetic) |
 | Clinical record: session note, psychotherapy note (author only) | ✅ live |
+| **Agenda**: working hours, free slots, a patient booking from the app, double booking refused, calendar feed for the phone | ✅ live: the console's **Patients → Agenda** |
+| **Follow-up**: attendance, no-show risk with its reasons, test trends, "Needs attention" worklist | ✅ live: **Patients → Needs attention**, or the top of a patient's view |
+| **Reminders** the day before each visit | ✅ Telegram with a bot; a WhatsApp template once Meta approves it; in-app otherwise |
 | **Tests designed by the psychologist** (items, reverse scoring, subscales, bands, alerts, versions); PHQ-9 and GAD-7 templates | ✅ live: `POST /v1/clinical/instruments`, results at `/v1/clinical/patients/{id}/instrument-results` |
 | **Document management**: signed consent PDF, SHA-256, audited download | ✅ live: `/v1/clinical/patients/{id}/files` |
 | Assistant with company knowledge; clinical answers held for a human | ✅ live (Claude with the key) |

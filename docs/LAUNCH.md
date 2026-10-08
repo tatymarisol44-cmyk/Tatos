@@ -20,6 +20,10 @@ All of these run in CI on every commit:
 | Architecture rules on the import graph | `tests/test_architecture.py` |
 | Supply chain: signed images, SBOM, provenance, history secret scan, pinned actions | `.github/workflows/ci.yml` |
 | Infrastructure as code, validated | `deploy/terraform/` |
+| Clinical workspace: tests designed by the psychologist, clinical files, follow-up (ADR 0019) | `tests/test_instruments.py`, `tests/test_clinical_files.py`, `tests/test_followup.py` |
+| Agenda without double booking, calendar feeds, reminders, WhatsApp assistant without medical advice (ADR 0020) | `tests/test_agenda.py`, `tests/test_reminders.py`, `tests/test_whatsapp_assistant.py` |
+| Monthly model spend cap per practice | `tests/test_spend.py` |
+| One-command MVP demo in Codespaces | `scripts/demo-codespaces.sh`, `tests/test_demo.py`, `docs/DEMO.md` |
 
 ## 2. Repository and CI live (owner, about 30 minutes)
 
@@ -54,7 +58,8 @@ All of these run in CI on every commit:
    - the processing agreement with each clinic;
    - health advertising rules;
    - deadlines for breach notification.
-4. Contracts with the AI providers (processing agreement, zero data retention where available).
+4. Contracts with the AI providers: a data processing agreement, and zero data retention where available. This is **required before real patients use WhatsApp**, because the assistant sends the message text to the model (ADR 0020).
+5. Meta approvals for the two WhatsApp templates: the appointment reminder and the staff alert.
 
 ## 6. Pilot (owner + one clinic)
 
