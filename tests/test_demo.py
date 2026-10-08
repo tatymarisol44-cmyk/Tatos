@@ -35,6 +35,7 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
     assert list(steps) == [
         "team",
         "patients",
+        "agenda",
         "clinical record",
         "knowledge base",
         "assistant",
@@ -42,6 +43,7 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
         "engagement campaign",
         "social media",
         "crisis alert",
+        "follow-up",
         "privacy",
     ]
     assert set(out["keys"]) >= {"dra.vera", "recepcion", "marketing", "direccion", "paciente"}
@@ -64,6 +66,8 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
     assert publications["instagram"].startswith("dry run")
     assert publications["facebook"].startswith("dry run")  # photo rules verified (FB-PHOTOS)
     assert steps["crisis alert"]["open_alerts"] == 1
+    assert steps["agenda"]["double_booking"] == "refused (409)"
+    assert steps["follow-up"]["needing_attention"] >= 1  # PHQ-9 item 9 alert at least
     assert steps["privacy"]["audit_chain"]["ok"] is True
     assert "clinical_record" in steps["privacy"]["erasure_retained"]
 

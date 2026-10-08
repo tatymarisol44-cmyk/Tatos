@@ -621,6 +621,11 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/clinical/files/{file_id}"): (f"/v1/clinical/files/{i['file']}", None),
+        ("GET", "/v1/clinical/follow-up"): ("/v1/clinical/follow-up", None),
+        ("GET", "/v1/clinical/patients/{patient_id}/follow-up"): (
+            f"/v1/clinical/patients/{p}/follow-up",
+            None,
+        ),
         ("GET", "/v1/agenda"): ("/v1/agenda?days=14", None),
         ("GET", "/v1/agenda/professionals/{professional_id}/hours"): (
             f"/v1/agenda/professionals/{i['professional']}/hours",
@@ -719,6 +724,7 @@ ADDRESSED = {
         ("GET", "/v1/clinical/patients/{patient_id}/instrument-results"),
         ("GET", "/v1/clinical/instrument-results/{result_id}"),
         ("POST", "/v1/clinical/patients/{patient_id}/files"),
+        ("GET", "/v1/clinical/patients/{patient_id}/follow-up"),
         ("GET", "/v1/agenda/professionals/{professional_id}/hours"),
         ("PUT", "/v1/agenda/professionals/{professional_id}/hours"),
         ("GET", "/v1/agenda/slots"),

@@ -75,7 +75,11 @@
         <div class="catalog-head">
           <p class="hint">Open a patient to apply a test, see results or attach documents. Clinical data: every access is audited.</p>
           <input id="patient-search" type="search" placeholder="Search patients…" aria-label="Search patients">
-          <button type="button" id="open-tests" class="ghost">Manage tests</button>
+          <div class="ws-row">
+            <button type="button" id="open-agenda" class="ghost">Agenda</button>
+            <button type="button" id="open-worklist" class="ghost">Needs attention</button>
+            <button type="button" id="open-tests" class="ghost">Manage tests</button>
+          </div>
           <p id="patients-status" class="muted small" role="status"></p>
         </div>
         <ul id="patients" class="agents"></ul>

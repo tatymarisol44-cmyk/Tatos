@@ -318,6 +318,53 @@ class Demo:
         self.step("patients", created=len(ids), dormant=len(ids) // 2)
         return ids
 
+    def agenda(self, ids: list[str]) -> None:
+        """Working hours for both professionals, a patient booking from the app, and the
+        calendar links for their phones."""
+        weekdays = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        hours = {
+            "dra.vera": [{"day": d, "hours": "09:00-13:00", "slot_minutes": 50} for d in weekdays]
+            + [{"day": d, "hours": "15:00-19:00", "slot_minutes": 50} for d in weekdays[:5]],
+            "dr.ruiz": [
+                {"day": d, "hours": "14:00-18:00", "slot_minutes": 30} for d in weekdays[:5]
+            ],
+        }
+        for name, blocks in hours.items():
+            self.call(
+                "PUT",
+                f"/v1/agenda/professionals/{name}.{self.suffix}/hours",
+                json={"hours": blocks},
+            )
+        vera = f"dra.vera.{self.suffix}"
+        access = self.call("POST", f"/v1/crm/patients/{ids[1]}/access")
+        self.keys["paciente2"] = access["key"]
+        slots = self.call("GET", f"/v1/me/slots?professional_id={vera}", "paciente2")
+        booked = self.call(
+            "POST",
+            "/v1/me/appointments",
+            "paciente2",
+            json={"professional_id": vera, "starts_at": slots[0]["starts_at"]},
+        )
+        # The same time for someone else is refused: no double booking.
+        clash = self.c.post(
+            "/v1/crm/appointments",
+            headers=self.service,
+            json={
+                "patient_id": ids[2],
+                "starts_at": booked["starts_at"],
+                "professional_id": vera,
+            },
+        )
+        link = self.call("POST", f"/v1/agenda/professionals/{vera}/calendar-link", "recepcion")
+        self.step(
+            "agenda",
+            professionals_with_hours=len(hours),
+            free_slots_next_14_days=len(slots),
+            patient_booked=slots[0]["local"],
+            double_booking=f"refused ({clash.status_code})",
+            calendar_feed=link["url"].split("/calendar/")[0] + "/calendar/…",
+        )
+
     def clinical(self, patient: str) -> None:
         self.call(
             "POST",
@@ -602,6 +649,18 @@ class Demo:
         alerts = self.call("GET", "/v1/social/alerts", "dra.vera")
         self.step("crisis alert", webhook=response.status_code, open_alerts=len(alerts))
 
+    def follow_up(self, patient: str) -> None:
+        view = self.call("GET", f"/v1/clinical/patients/{patient}/follow-up", "dra.vera")
+        worklist = self.call("GET", "/v1/clinical/follow-up", "dra.vera")
+        self.step(
+            "follow-up",
+            attendance=view["attendance"]["attendance_rate"],
+            no_show_risk=view["no_show_risk"]["level"],
+            tests=[f"{t['instrument']}: {t['direction']}" for t in view["tests"]],
+            flags=view["flags"],
+            needing_attention=len(worklist),
+        )
+
     def rights(self, keep: str, erase: str) -> None:
         exported = self.call("GET", f"/v1/subjects/{keep}/export", "direccion")
         erased = self.call("DELETE", f"/v1/subjects/{erase}", "direccion")
@@ -616,6 +675,7 @@ class Demo:
     def run(self) -> dict[str, Any]:
         self.team()
         ids = self.patients()
+        self.agenda(ids)
         self.clinical(ids[0])
         self.knowledge()
         self.assistant(ids[0])
@@ -623,5 +683,6 @@ class Demo:
         self.campaign()
         self.social()
         self.crisis()
+        self.follow_up(ids[0])
         self.rights(keep=ids[0], erase=ids[19])
         return {"keys": self.keys, "report": self.report}

@@ -346,3 +346,60 @@ def test_a_psychologist_designs_applies_and_files_without_leaving_the_console(
         browser.close()
     assert errors == []
     assert violations == [], "\n".join(violations)
+
+
+def test_agenda_booking_and_follow_up_in_the_console(server: str, subprocess_loop: None) -> None:
+    """Reception books a free time in the professional's agenda; the clinician sees the
+    patient's follow-up and the worklist. WCAG AA on each view."""
+    for path, body in (
+        (
+            "/v1/admin/professionals",
+            {
+                "professional_id": "dra.vera",
+                "display_name": "Dra Vera",
+                "pack_id": "ec-psychologist",
+            },
+        ),
+        ("/v1/crm/patients", {"id": "p-ag-1", "display_name": "Paciente Agenda"}),
+    ):
+        assert httpx.post(f"{server}{path}", json=body, headers=SERVICE).status_code == 201
+    every_day = [
+        {"day": d, "hours": "08:00-20:00", "slot_minutes": 60}
+        for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    ]
+    hours = httpx.put(
+        f"{server}/v1/agenda/professionals/dra.vera/hours",
+        json={"hours": every_day},
+        headers=SERVICE,
+    )
+    assert hours.status_code == 200, hours.text
+    errors: list[str] = []
+    violations: list[str] = []
+    expect = sync_api.expect
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except sync_api.Error as exc:
+            pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
+        page = _open(browser, server, SERVICE["X-API-Key"], errors, bypass_csp=True)
+        page.click("#tab-patients")
+        page.click("#open-agenda")
+        expect(page.get_by_role("heading", name="Agenda", exact=True)).to_be_focused()
+        expect(page.get_by_text("No visits booked.")).to_be_visible()
+        first_slot = page.locator("button[aria-label^='Book ']").first
+        label = first_slot.get_attribute("aria-label")
+        assert label is not None
+        first_slot.click()
+        expect(page.get_by_text(f"{label[5:]} · Paciente Agenda")).to_be_visible()
+        violations += _axe(page, "agenda")
+
+        page.click("#open-worklist")
+        expect(page.get_by_role("heading", name="Needs attention", exact=True)).to_be_visible()
+        violations += _axe(page, "worklist")
+        page.get_by_role("button", name="← Back to the assistant").click()
+        page.get_by_role("button", name="Paciente Agenda p-ag-1").click()
+        expect(page.get_by_text("No-show risk: low")).to_be_visible()
+        violations += _axe(page, "patient follow-up")
+        browser.close()
+    assert errors == []
+    assert violations == [], "\n".join(violations)

@@ -72,14 +72,17 @@ function statusLine() {
 
 // --- a patient's record: apply a test, results, documents ----------------------------
 async function openPatient(patient) {
+  const follow = el("div", {}, loading("follow-up"));
   const results = el("div", { class: "ws-list" }, loading("results"));
   const files = el("ul", { class: "ws-list" }, el("li", {}, loading("documents")));
   const apply = el("div", {}, loading("tests"));
   openWorkspace(`${patient.display_name} · ${patient.id}`,
+    section("Follow-up", follow),
     section("Apply a test", apply),
     section("Results", results),
     section("Documents", uploadForm(patient, files), files));
-  await Promise.all([renderApply(patient, apply, results), renderResults(patient, results), renderFiles(patient, files)]);
+  await Promise.all([renderFollowUp(patient, follow), renderApply(patient, apply, results),
+    renderResults(patient, results), renderFiles(patient, files)]);
 }
 
 async function loadInstruments() {
@@ -387,7 +390,105 @@ function specFrom(data, ids) {
   };
 }
 
+// --- follow-up, worklist and agenda ----------------------------------------------------
+const DIRECTION = { worse: "↑ worse", better: "↓ better", same: "→ no change" };
+
+async function renderFollowUp(patient, box) {
+  try {
+    const f = await api("GET", `/v1/clinical/patients/${encodeURIComponent(patient.id)}/follow-up`);
+    const a = f.attendance;
+    const rate = a.attendance_rate === null ? "—" : `${Math.round(a.attendance_rate * 100)} %`;
+    const risk = f.no_show_risk;
+    const level = risk.level === "high" ? "high" : risk.level === "medium" ? "moderate" : "none";
+    box.replaceChildren(
+      el("p", { text: `Attended ${a.completed} · missed ${a.no_shows} · cancelled ${a.cancelled} · attendance ${rate}` }),
+      el("p", { class: "muted small", text: `Last visit: ${a.last_visit ? new Date(a.last_visit).toLocaleDateString() : "—"} · next: ${a.next_visit ? new Date(a.next_visit).toLocaleString() : "none booked"}` }),
+      el("p", { class: `result severity-${level}`,
+        text: `No-show risk: ${risk.level}${risk.reasons.length ? ` (${risk.reasons.join("; ")})` : ""}` }),
+      ...f.tests.map((t) => el("p", { class: "small", text: `${t.instrument}: ${t.first.total} (${t.first.band || "—"}) → ${t.last.total} (${t.last.band || "—"}) · ${DIRECTION[t.direction]} · ${t.applied} times` })),
+      el("p", { class: "muted small", text: f.engagement.available
+        ? `Campaign messages: ${f.engagement.campaign_messages}, seen ${f.engagement.seen}`
+        : "Campaign engagement: not shown (no analytics consent)" }),
+      ...(f.flags.length ? [el("p", { class: "alert", role: "alert", text: `Needs attention: ${f.flags.join(" · ")}` })] : []));
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "error", role: "alert", text: friendlyError(err) }));
+  }
+}
+
+async function openWorklist() {
+  const list = el("div", { class: "ws-list" }, loading("patients"));
+  openWorkspace("Needs attention", section("Patients with a flag", list));
+  try {
+    const rows = await api("GET", "/v1/clinical/follow-up");
+    list.replaceChildren(...(rows.length ? rows.map((r) => el("button", { type: "button", class: "agent",
+      onclick: () => openPatient({ id: r.patient_id, display_name: r.name }) },
+      el("span", { class: "agent-name", text: r.name }),
+      el("span", { class: "muted small", text: r.flags.join(" · ") })))
+      : [el("p", { class: "muted", text: "Nobody needs attention right now." })]));
+  } catch (err) {
+    list.replaceChildren(el("p", { class: "error", role: "alert", text: friendlyError(err) }));
+  }
+}
+
+async function openAgenda() {
+  const pick = el("select", { id: "agenda-professional" });
+  const body = el("div", { class: "ws-list" }, loading("agenda"));
+  openWorkspace("Agenda",
+    section("Professional", el("label", { class: "field", for: "agenda-professional" }, "Whose agenda"), pick), body);
+  try {
+    const pros = await api("GET", "/v1/admin/professionals");
+    pick.replaceChildren(...pros.map((p) => el("option", { value: p.professional_id, text: p.display_name })));
+    if (!clinic.patients.length) clinic.patients = await api("GET", "/v1/crm/patients");
+    const draw = () => renderAgenda(pick.value, body);
+    pick.addEventListener("change", draw);
+    if (pros.length) await draw();
+    else body.replaceChildren(el("p", { class: "muted", text: "No professionals yet." }));
+  } catch (err) {
+    body.replaceChildren(el("p", { class: "error", role: "alert", text: friendlyError(err) }));
+  }
+}
+
+async function renderAgenda(pro, box) {
+  const msg = statusLine();
+  try {
+    const [visits, slots] = await Promise.all([
+      api("GET", `/v1/agenda?professional_id=${encodeURIComponent(pro)}&days=14`),
+      api("GET", `/v1/agenda/slots?professional_id=${encodeURIComponent(pro)}&days=14`),
+    ]);
+    const who = el("select", { "aria-label": "Patient to book" },
+      ...clinic.patients.map((p) => el("option", { value: p.id, text: p.display_name })));
+    const link = el("button", { type: "button", class: "ghost", onclick: async () => {
+      try {
+        const { url } = await api("POST", `/v1/agenda/professionals/${encodeURIComponent(pro)}/calendar-link`);
+        msg.textContent = `Subscribe to this URL in Google, Apple or Outlook calendar: ${url}`;
+      } catch (err) { msg.textContent = friendlyError(err); }
+    } }, "Calendar link for my phone");
+    const book = (s) => async () => {
+      try {
+        await api("POST", "/v1/crm/appointments",
+          { patient_id: who.value, starts_at: s.starts_at, duration_min: s.minutes, kind: "sesion", professional_id: pro });
+        await renderAgenda(pro, box);
+      } catch (err) { msg.textContent = friendlyError(err); }
+    };
+    box.replaceChildren(
+      section("Next two weeks", ...(visits.length ? visits.map((v) =>
+        el("div", { class: "doc" }, el("div", { class: "doc-body" },
+          el("span", { class: "doc-title", text: `${v.local} · ${v.patient_name}` }),
+          el("span", { class: "muted small", text: `${v.duration_min} min · ${v.status}` }))))
+        : [el("p", { class: "muted", text: "No visits booked." })])),
+      section("Free times", el("label", { class: "field" }, "Book for", who),
+        el("div", { class: "ws-row" }, ...slots.slice(0, 24).map((s) =>
+          el("button", { type: "button", class: "ghost", "aria-label": `Book ${s.local}`, onclick: book(s) }, s.local))),
+        ...(slots.length ? [] : [el("p", { class: "muted", text: "No free times: set the professional's working hours first." })])),
+      el("div", { class: "ws-row" }, link), msg);
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "error", role: "alert", text: friendlyError(err) }));
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  $("#open-agenda").addEventListener("click", openAgenda);
+  $("#open-worklist").addEventListener("click", openWorklist);
   $("#patient-search").addEventListener("input", renderPatients);
   $("#open-tests").addEventListener("click", openTests);
 });

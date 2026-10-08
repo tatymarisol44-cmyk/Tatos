@@ -34,6 +34,7 @@ from orchestrator.factories import (  # re-exported for callers of the old locat
     build_memory_store,
     build_store,
 )
+from orchestrator.followup import FollowUp
 from orchestrator.governance import (
     AuditLog,
     ConsentRegistry,
@@ -169,6 +170,7 @@ class Orchestrator:
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
         self.agenda = Agenda(self.db, self.audit, settings)
+        self.followup = FollowUp(self.db, self.consents)
         self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)

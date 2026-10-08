@@ -130,3 +130,23 @@ async def download_file(file_id: FileId, request: Request, p: Clinician) -> Resp
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# --- follow-up: attendance, no-show risk, test trends -------------------------------------
+
+
+@router.get("/follow-up")
+async def needing_attention(request: Request, p: Clinician) -> list[dict[str, Any]]:
+    """The professional's worklist: patients with a flag (no-show risk, a test that got
+    worse, a test alert, overdue without a booked visit)."""
+    return await request.app.state.orchestrator.followup.needing_attention(p.tenant)  # type: ignore[no-any-return]
+
+
+@router.get("/patients/{patient_id}/follow-up")
+async def patient_follow_up(
+    patient_id: PatientId, request: Request, p: Clinician
+) -> dict[str, Any]:
+    try:
+        return await request.app.state.orchestrator.followup.patient(p.tenant, patient_id)  # type: ignore[no-any-return]
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
