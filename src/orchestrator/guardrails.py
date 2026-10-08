@@ -47,12 +47,47 @@ def _luhn_ok(number: str) -> bool:
     return len(digits) >= 13 and checksum % 10 == 0
 
 
+_CEDULA = re.compile(r"(?<![\d-])\d{10}(?![\d-])")
+
+
+def cedula_ok(number: str) -> bool:
+    """Ecuadorian national id (cédula) of a natural person: province 01-24 or 30, third
+    digit below 6, and the modulo-10 check digit. A mobile number (09 + 6..9) fails the
+    third-digit rule, so phone numbers are not mistaken for ids."""
+    if len(number) != 10 or not number.isdigit():
+        return False
+    province, third = int(number[:2]), int(number[2])
+    if not (1 <= province <= 24 or province == 30) or third >= 6:
+        return False
+    total = 0
+    for i, digit in enumerate(number[:9]):
+        product = int(digit) * (2 if i % 2 == 0 else 1)
+        total += product - 9 if product > 9 else product
+    return (10 - total % 10) % 10 == int(number[9])
+
+
+def person_identifiers(text: str) -> list[str]:
+    """Kinds of national or payment identifiers of a PERSON found in `text` (cédula, US
+    SSN, a Luhn-valid card number). Contact data is not listed: a business's own phone and
+    e-mail belong in its FAQ."""
+    found = set()
+    if any(cedula_ok(m.group(0)) for m in _CEDULA.finditer(text)):
+        found.add("cedula")
+    if _SSN.search(text):
+        found.add("ssn")
+    if any(_luhn_ok(m.group(0)) for m in _CARD.finditer(text)):
+        found.add("credit_card")
+    return sorted(found)
+
+
 def redact_pii(text: str) -> tuple[str, list[str]]:
     found: list[str] = []
 
     def sub(pattern: re.Pattern[str], label: str, value: str, check: bool = True) -> str:
         def repl(m: re.Match[str]) -> str:
             if check and label == "credit_card" and not _luhn_ok(m.group(0)):
+                return m.group(0)
+            if check and label == "cedula" and not cedula_ok(m.group(0)):
                 return m.group(0)
             found.append(label)
             return f"[REDACTED_{label.upper()}]"
@@ -61,6 +96,7 @@ def redact_pii(text: str) -> tuple[str, list[str]]:
 
     text = sub(_EMAIL, "email", text)
     text = sub(_SSN, "ssn", text)
+    text = sub(_CEDULA, "cedula", text)
     text = sub(_CARD, "credit_card", text)
     text = sub(_PHONE, "phone", text)
     return text, sorted(set(found))

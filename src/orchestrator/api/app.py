@@ -45,7 +45,7 @@ from orchestrator.api.views import staff_view, stream_event
 from orchestrator.auth import Principal, Role
 from orchestrator.config import Settings, get_settings
 from orchestrator.governance import ThreadBusyError
-from orchestrator.guardrails import check_input
+from orchestrator.guardrails import check_input, person_identifiers
 from orchestrator.knowledge import KnowledgeRejected
 from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
@@ -299,6 +299,14 @@ def create_app(
             ensure_allowed(pack_for(settings, tenant), body.kind, "rag")
         except SurfaceDenied as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+        # A note uploaded WITHOUT its kind still carries the patient's id: the knowledge
+        # base is company content, so a person's national or card number refuses it.
+        if ids := person_identifiers(f"{body.title}\n{body.text}"):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"the document contains personal identifiers ({', '.join(ids)}); "
+                "the knowledge base is for company content",
+            )
         try:
             info = await orch(request).knowledge.add(tenant, body.title, body.text, body.doc_id)
         except KnowledgeRejected as exc:

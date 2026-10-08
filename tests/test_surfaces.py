@@ -86,11 +86,15 @@ def test_hard_exclusions_apply_even_to_a_pack_with_no_documents() -> None:
                 ensure_allowed(general, kind, surface)
 
 
-def test_ordinary_content_and_other_kinds_are_not_blocked() -> None:
+def test_ordinary_content_passes_and_health_kinds_keep_their_class() -> None:
     general = load_packs()["general"]
-    ensure_allowed(general, None, "rag")  # an FAQ
-    ensure_allowed(general, "consent", "rag")
-    ensure_allowed(general, "referral", "campaigns")
+    ensure_allowed(general, None, "rag")  # an FAQ, or a blank form uploaded without a kind
+    # A document declared with a clinical kind is a patient's: health data (classification).
+    ensure_allowed(general, "consent", "insights")
+    ensure_allowed(general, "referral", "audit_export")
+    for surface in ("rag", "memory", "campaigns", "models"):
+        with pytest.raises(SurfaceDenied):
+            ensure_allowed(general, "referral", surface)
     # A psychotherapy note is not shut out of surfaces it was never listed for.
     assert "audit_export" in excluded_surfaces(general, "psychotherapy_note")
     assert "audit_export" not in excluded_surfaces(general, "patient_entry")
@@ -108,7 +112,7 @@ def test_a_pack_can_shut_a_kind_out_of_more_surfaces() -> None:
     )
     with pytest.raises(SurfaceDenied):
         ensure_allowed(strict, "consent", "rag")
-    ensure_allowed(strict, "consent", "campaigns")
+    ensure_allowed(strict, "consent", "insights")
 
 
 # --- the HTTP route ---------------------------------------------------------------------
@@ -140,5 +144,6 @@ def test_protected_kinds_are_refused_for_every_tenant_and_leave_no_trace(
 
 def test_ordinary_documents_still_upload(client: TestClient) -> None:
     assert upload(client, ACME) == 201  # no kind: ordinary company content
-    assert upload(client, ACME, kind="consent", doc_id="consent-template") == 201
+    assert upload(client, ACME, doc_id="consent-template") == 201  # a blank form: no kind
+    assert upload(client, ACME, kind="consent", doc_id="signed") == 403  # a patient's: health
     assert upload(client, ACME, kind="not-a-kind") == 422  # unknown kinds are rejected too

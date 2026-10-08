@@ -17,6 +17,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from orchestrator.classification import DataClass, Sink, excluded
 from orchestrator.config import Settings
 
 PACKS_DIR = Path(__file__).parent / "pack_data"
@@ -138,20 +139,15 @@ DocumentKind = Literal[
 ]
 Access = Literal["care_team", "author_only", "patient_and_treating"]
 # Places a document must never reach: shared retrieval, preference memory, insights,
-# campaigns, model training or evaluation, and the audit export.
-Surface = Literal["rag", "memory", "insights", "campaigns", "models", "audit_export"]
+# campaigns, model training or evaluation, and the audit export. Same values as
+# `classification.Sink`, the single source of the policy.
+Surface = Sink
 
-# Surfaces that psychotherapy notes and patient-authored entries are shut out of. A pack may
-# add surfaces, never drop these (enforced by `Document`, and across `extends` by `_merge`).
-PSYCHOTHERAPY_NOTE_EXCLUDED: tuple[Surface, ...] = (
-    "rag",
-    "memory",
-    "insights",
-    "campaigns",
-    "models",
-    "audit_export",
-)
-PATIENT_ENTRY_EXCLUDED: tuple[Surface, ...] = ("rag", "memory", "insights", "campaigns", "models")
+# Surfaces that psychotherapy notes and patient-authored entries are shut out of, derived
+# from their data class. A pack may add surfaces, never drop these (enforced by `Document`,
+# and across `extends` by `_merge`).
+PSYCHOTHERAPY_NOTE_EXCLUDED: tuple[Surface, ...] = excluded(DataClass.PSYCHOTHERAPY)
+PATIENT_ENTRY_EXCLUDED: tuple[Surface, ...] = excluded(DataClass.PATIENT_ENTRY)
 
 
 class LegalRef(BaseModel):

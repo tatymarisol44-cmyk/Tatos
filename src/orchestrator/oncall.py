@@ -50,6 +50,7 @@ from orchestrator.social import channel_accounts, resolve_secret
 log = logging.getLogger(__name__)
 
 Channel = Literal["telegram", "whatsapp", "email"]
+CHANNEL_ORDER: tuple[str, ...] = ("telegram", "whatsapp", "email", "none")
 MAX_LEVEL = 5
 SYSTEM_ACTOR = "system:on-call"
 EMAIL = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,}$")
@@ -313,15 +314,19 @@ class OnCall:
                     alert_notifications.c.alert_id == alert_id,
                 )
             )
-            .order_by(alert_notifications.c.created_at, alert_notifications.c.notification_id)
+            .order_by(alert_notifications.c.level, alert_notifications.c.created_at)
         )
         async with self.db.engine.connect() as conn:
             if (await conn.execute(owned)).first() is None:
                 raise KeyError(alert_id)
-            return [
+            rows = [
                 {c.name: getattr(r, c.name) for c in alert_notifications.c if c.name != "tenant"}
                 for r in await conn.execute(query)
             ]
+        # One level's channels are notified concurrently, so their timestamps can tie or
+        # cross: list them by level, then in the fixed channel order, never by a random id.
+        rank = {channel: i for i, channel in enumerate(CHANNEL_ORDER)}
+        return sorted(rows, key=lambda r: (r["level"], rank.get(r["channel"], len(rank))))
 
     async def escalate_due(self, now: datetime | None = None) -> int:
         """Notify the next level of every alert that is due. Returns the steps taken."""

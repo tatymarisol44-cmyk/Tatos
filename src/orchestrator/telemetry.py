@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from opentelemetry import metrics, trace
 
 from orchestrator.config import Settings
+from orchestrator.guardrails import redact_pii
 
 _configured = False
 
@@ -16,24 +18,46 @@ _configured = False
 _BOT_TOKEN = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
 
 
+def _scrub(text: str) -> str:
+    return redact_pii(_BOT_TOKEN.sub("bot<redacted>", text))[0]
+
+
+def redact_record(record: logging.LogRecord) -> logging.LogRecord:
+    """Neither credentials embedded in URLs nor personal data (e-mail, phone, cédula,
+    card, SSN) may stay in a log record, including the traceback of a logged exception.
+    Logs are technical, not the audit trail: they must hold no PHI."""
+    message = record.getMessage()
+    clean = _scrub(message)
+    if clean != message:
+        record.msg, record.args = clean, None
+    if record.exc_info and not record.exc_text:
+        record.exc_text = logging.Formatter().formatException(record.exc_info)
+    if record.exc_text:
+        record.exc_text = _scrub(record.exc_text)
+    return record
+
+
 class SecretRedactingFilter(logging.Filter):
-    """Rewrites log records so credentials embedded in URLs never reach a handler."""
+    """The same redaction as a filter, for handlers configured outside this process's
+    record factory (e.g. a library that builds records itself)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        if _BOT_TOKEN.search(message):
-            record.msg = _BOT_TOKEN.sub("bot<redacted>", message)
-            record.args = None
+        redact_record(record)
         return True
 
 
 def install_log_redaction() -> None:
-    """Attach the filter to the loggers of the HTTP clients we use. Logger-level filters
-    run for every record of that logger, whichever handlers are configured."""
-    for name in ("httpx", "httpcore", "httpx2", "httpcore2"):
-        logger = logging.getLogger(name)
-        if not any(isinstance(f, SecretRedactingFilter) for f in logger.filters):
-            logger.addFilter(SecretRedactingFilter())
+    """Redact every record when it is CREATED, whatever logger or handler it goes to.
+    (A logger-level filter would only see records of that exact logger, not its children.)"""
+    current = logging.getLogRecordFactory()
+    if getattr(current, "_redacting", False):
+        return
+
+    def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+        return redact_record(current(*args, **kwargs))
+
+    factory._redacting = True  # type: ignore[attr-defined]
+    logging.setLogRecordFactory(factory)
 
 
 install_log_redaction()
