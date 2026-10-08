@@ -145,6 +145,16 @@ spec:
       annotations:
         summary: More than 20 % of model calls fail or are refused by the breaker
         runbook: docs/runbooks/model-outage.md
+    - alert: ModelRoutesBusy
+      expr: sum(rate(agency_model_requests_busy_total[10m])) > 0.05
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Pods keep refusing assistant requests for lack of capacity (503 busy)
+        description: Agenda, CRM and records are unaffected. The HPA did not keep up, or it is at maxReplicas,
+          or the per-pod limit is too low for the provider's latency.
+        runbook: docs/runbooks/capacity.md
     - alert: OutboxStuck
       expr: min(agency_outbox_pending) > 0 and min(delta(agency_outbox_pending[30m])) >= 0
       for: 30m

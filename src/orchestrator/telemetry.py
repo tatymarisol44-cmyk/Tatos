@@ -144,6 +144,12 @@ LLM_DURATION = _meter.create_histogram(
 CIRCUIT_OPENED = _meter.create_counter(
     "agency.circuit.opened", description="Times a circuit breaker opened, by dependency"
 )
+MODEL_INFLIGHT = _meter.create_up_down_counter(
+    "agency.model_requests.inflight", description="Requests on model routes being served"
+)
+BUSY_REJECTED = _meter.create_counter(
+    "agency.model_requests.busy", description="Model-route requests refused: pod at capacity"
+)
 SSE_CONNECTIONS = _meter.create_up_down_counter(
     "agency.sse.connections", description="Open streaming (SSE) responses"
 )

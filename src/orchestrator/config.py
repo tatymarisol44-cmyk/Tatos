@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # --- LLM (any LiteLLM model string: anthropic/..., openai/..., gemini/...,
     # mistral/..., ollama/llama3.1). "fake" is a deterministic offline backend.
     llm_backend: Literal["litellm", "fake"] = "litellm"
+    # Load tests only: how long the fake backend waits per call, like a provider.
+    fake_llm_latency_ms: int = Field(default=0, ge=0, le=120_000)
     llm_model: str = "anthropic/claude-sonnet-5-5"
     router_model: str = "anthropic/claude-haiku-4-5-20251001"
     llm_fallback_models: list[str] = Field(default_factory=lambda: ["openai/gpt-4o-mini"])
@@ -41,6 +43,9 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0
     llm_num_retries: int = 2
+    # Backpressure: model-route requests one pod serves at once; the next get 503 +
+    # Retry-After at once (api/backpressure.py). 0 disables the limit.
+    max_inflight_model_requests: int = Field(default=32, ge=0, le=10_000)
     # Circuit breaker over the provider: open after N failed calls in a row, fail fast for
     # the cooldown, then let one trial call through (resilience.py).
     llm_breaker_failures: int = Field(default=5, ge=1, le=100)

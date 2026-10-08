@@ -15,6 +15,7 @@ are in [`docs/slo.md`](../slo.md).
 | [review-backlog.md](review-backlog.md) | ReviewBacklogHigh |
 | [model-outage.md](model-outage.md) | ModelCircuitOpen, ModelErrorRateHigh |
 | [outbox-stuck.md](outbox-stuck.md) | OutboxStuck |
+| [capacity.md](capacity.md) | ModelRoutesBusy |
 | [no-ready-replicas.md](no-ready-replicas.md) | ApiNoReadyReplicas, ApiPodsRestarting |
 | [retention-job.md](retention-job.md) | RetentionJobFailed, RetentionJobNotRunning |
 | [restore.md](restore.md) | restoring the database from a backup (RPO/RTO) |

@@ -1,3 +1,8 @@
+# Scale on CPU (the orchestrator's own work: guardrails, routing, graph, checkpoints,
+# ~80 ms per chat turn, docs/load-test.md) and memory (in-flight conversations waiting on
+# the model). Model routes are bounded per pod (MAX_INFLIGHT_MODEL_REQUESTS): beyond it a
+# pod answers 503 busy instead of queueing, which keeps CPU and memory honest signals.
+# Up fast, down slowly: a spike should not flap pods in and out.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -9,3 +14,14 @@ spec:
   metrics:
     - type: Resource
       resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 80}}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - {type: Percent, value: 100, periodSeconds: 30}
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Pods, value: 1, periodSeconds: 60}

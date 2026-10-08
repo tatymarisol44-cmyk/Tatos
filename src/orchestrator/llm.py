@@ -3,6 +3,7 @@ and Llama (Ollama/vLLM); `FakeLLM` is deterministic for tests and offline dev.""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -121,6 +122,10 @@ class FakeLLM:
     judge_reply: str | None = None
     memory_reply: str | None = None
     agent_replies: list[str] = field(default_factory=list)
+    # Load tests: wait like a provider would (FAKE_LLM_LATENCY_MS), and do not keep every
+    # prompt in memory for a long run.
+    latency_s: float = 0.0
+    record_calls: bool = True
 
     async def complete(
         self,
@@ -130,7 +135,11 @@ class FakeLLM:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> LLMResult:
+        if self.latency_s:
+            await asyncio.sleep(self.latency_s)
         result = await self._complete(messages, model=model)
+        if not self.record_calls:
+            self.calls.clear()
         usage.record(
             "llm",
             result.model,
@@ -255,7 +264,7 @@ class GuardedLLM:
 
 def build_llm(settings: Settings) -> LLMClient:
     if settings.llm_backend == "fake":
-        return FakeLLM()
+        return FakeLLM(latency_s=settings.fake_llm_latency_ms / 1000, record_calls=False)
     breaker = CircuitBreaker(
         "llm", failures=settings.llm_breaker_failures, cooldown_s=settings.llm_breaker_cooldown_s
     )

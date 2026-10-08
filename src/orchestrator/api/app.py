@@ -29,6 +29,7 @@ from orchestrator.api import (
     publications,
     social,
 )
+from orchestrator.api.backpressure import ModelConcurrencyLimit
 from orchestrator.api.body_limit import BodySizeLimit
 from orchestrator.api.edge import SecurityHeaders
 from orchestrator.api.metrics import RequestMetrics
@@ -145,6 +146,7 @@ def create_app(
         overrides={"/v1/knowledge/documents": settings.max_document_body_bytes},
     )
     app.add_middleware(SecurityHeaders, hsts_max_age_seconds=settings.hsts_max_age_seconds)
+    app.add_middleware(ModelConcurrencyLimit, max_inflight=settings.max_inflight_model_requests)
     app.add_middleware(RequestMetrics)  # outermost: times everything, 413s and 401s too
     # Cross-site browser calls only from the exact origins configured; none by default.
     # Keys travel in X-API-Key, never in cookies, so credentials are not allowed.
