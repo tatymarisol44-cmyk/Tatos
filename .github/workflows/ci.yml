@@ -151,6 +151,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Trivy resolves the Java agent's parent POMs; fetching them from Maven Central at scan
+      # time hits its rate limit (429) and aborts the scan. Resolve them first, cached.
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Resolve the Java agent's dependencies for the scanner
+        working-directory: agents/jvm-specialist
+        run: ./mvnw -B -q dependency:go-offline
       - name: Trivy (dependencies, secrets, IaC misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

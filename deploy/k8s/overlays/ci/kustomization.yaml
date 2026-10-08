@@ -3,6 +3,9 @@
 # no provider keys. APP_ENV stays prod: the durable-profile and schema checks run.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# The base's namespace does not reach what this overlay adds (Postgres, the generated
+# Secret): without it they would land in `default`, where the API cannot find them.
+namespace: agency
 resources:
   - ../../base
   - postgres.yaml

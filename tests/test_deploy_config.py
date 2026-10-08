@@ -41,6 +41,18 @@ def test_base_blocks_cloud_metadata_for_every_workload() -> None:
                     assert {"169.254.169.254/32", "169.254.170.2/32"} <= set(block["except"])
 
 
+def test_overlays_that_add_resources_set_the_namespace() -> None:
+    """A base's `namespace:` does not reach resources an overlay adds; without its own, they
+    land in `default` (this broke the CI overlay's Postgres and Secret, and the GKE overlay's
+    ServiceAccount, before it was caught)."""
+    base_ns = _docs(K8S / "kustomization.yaml")[0]["namespace"]
+    for path in (ROOT / "deploy" / "k8s" / "overlays").glob("*/kustomization.yaml"):
+        kustomization = _docs(path)[0]
+        adds = [r for r in kustomization.get("resources", []) if not r.startswith("../")]
+        if adds or kustomization.get("secretGenerator") or kustomization.get("configMapGenerator"):
+            assert kustomization.get("namespace") == base_ns, path.parent.name
+
+
 def test_gke_overlay_opens_only_the_gke_metadata_server_to_the_api() -> None:
     """Keyless credentials (owner's decision A8): exactly the two endpoints Google documents,
     for the API pods only."""

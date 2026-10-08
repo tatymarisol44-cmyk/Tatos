@@ -29,11 +29,23 @@ spec:
             limits: {memory: 1Gi}
           readinessProbe:
             httpGet: {path: /readyz, port: http}
+          # Read-only root, as Qdrant's official Helm chart does: it writes only to its
+          # storage, snapshots and the init marker, so those (and /tmp) are writable mounts.
+          env:
+            - {name: QDRANT_INIT_FILE_PATH, value: /qdrant/init/.qdrant-initialized}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: data, mountPath: /qdrant/storage}
+            - {name: snapshots, mountPath: /qdrant/snapshots}
+            - {name: init, mountPath: /qdrant/init}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: snapshots, emptyDir: {}}
+        - {name: init, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
   volumeClaimTemplates:
     - metadata: {name: data}
       spec:

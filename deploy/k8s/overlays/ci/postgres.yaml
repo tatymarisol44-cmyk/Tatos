@@ -36,15 +36,19 @@ spec:
           readinessProbe:
             exec: {command: ["pg_isready", "-U", "agency", "-d", "agency"]}
             periodSeconds: 3
+          # Read-only root: Postgres writes only its data, its socket directory and /tmp.
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: data, mountPath: /var/lib/postgresql/data}
             - {name: run, mountPath: /var/run/postgresql}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - {name: data, emptyDir: {}}
         - {name: run, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service

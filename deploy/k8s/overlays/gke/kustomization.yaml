@@ -10,6 +10,9 @@
 #   3. Set GCS_BUCKET in the ConfigMap (patch below).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# The base's namespace does not reach resources added here: without this line the
+# ServiceAccount and the policy would land in `default` and the API pods would not start.
+namespace: agency
 resources:
   - ../../base
   - serviceaccount.yaml
