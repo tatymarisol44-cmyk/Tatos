@@ -115,6 +115,8 @@ TABLE_CLASS: dict[str, DataClass] = {
     "crm_patients": DataClass.HEALTH,  # a patient of a clinic: the fact itself is health data
     "crm_treatments": DataClass.HEALTH,
     "inbound_events": DataClass.PERSONAL,  # pseudonymous sender, never the text
+    "instrument_results": DataClass.HEALTH,  # a patient's answers and scores
+    "instruments": DataClass.INTERNAL,  # definitions: items, scoring, no patient data
     "knowledge_documents": DataClass.INTERNAL,
     "knowledge_versions": DataClass.INTERNAL,
     "on_call_contacts": DataClass.PERSONAL,

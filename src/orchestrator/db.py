@@ -109,6 +109,7 @@ class Database:
             establishment,
             governance,
             inbound,
+            instruments,
             knowledge,
             migrate,
             oncall,

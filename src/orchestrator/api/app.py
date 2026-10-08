@@ -24,6 +24,7 @@ from orchestrator.api import (
     channels,
     clinical,
     establishment,
+    instruments,
     oncall,
     patients,
     publications,
@@ -167,6 +168,7 @@ def create_app(
     app.include_router(publications.router)
     app.include_router(establishment.router)
     app.include_router(clinical.router)
+    app.include_router(instruments.router)
     app.include_router(oncall.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 

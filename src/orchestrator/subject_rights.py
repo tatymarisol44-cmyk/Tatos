@@ -14,6 +14,7 @@ from orchestrator.campaigns import CampaignService
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.crm import CrmService
 from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, SubjectThreads
+from orchestrator.instruments import Instruments
 from orchestrator.memory import SemanticMemory
 
 
@@ -37,6 +38,7 @@ class SubjectRights:
         memory: SemanticMemory,
         crm: CrmService,
         clinical: ClinicalRecords,
+        instruments: Instruments,
         campaigns: CampaignService,
         reviews: ReviewQueue,
         audit: AuditLog,
@@ -48,6 +50,7 @@ class SubjectRights:
         self.memory = memory
         self.crm = crm
         self.clinical = clinical
+        self.instruments = instruments
         self.campaigns = campaigns
         self.reviews = reviews
         self.audit = audit
@@ -77,6 +80,7 @@ class SubjectRights:
             "memory": [f.to_dict() for f in await self.memory.export(tenant, subject_id)],
             "crm": await self.crm.export_subject(tenant, subject_id),
             "clinical_record": await self.clinical.export_subject(tenant, subject_id),
+            "instrument_results": await self.instruments.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],

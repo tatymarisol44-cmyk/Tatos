@@ -56,6 +56,7 @@ UNSCOPED = {
     ("GET", "/v1/agents"),
     ("GET", "/v1/social/rules"),
     ("POST", "/v1/route"),
+    ("GET", "/v1/clinical/instrument-templates"),
 }
 
 
@@ -191,6 +192,25 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["clinical_doc"] = note["document_id"]
+    test = _ok(
+        c.post(
+            "/v1/clinical/instruments/from-template",
+            json={"template": "gad7"},
+            headers=clinician,
+        )
+    )
+    ids["instrument"] = test["instrument_id"]
+    result = _ok(
+        c.post(
+            f"/v1/clinical/patients/{ids['patient']}/instrument-results",
+            json={
+                "instrument_id": test["instrument_id"],
+                "answers": {f"i{n}": 1 for n in range(1, 8)},
+            },
+            headers=clinician,
+        )
+    )
+    ids["instrument_result"] = result["result_id"]
     # A held answer creates a review on an acme thread.
     held = _ok(
         c.post(
@@ -275,6 +295,8 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "principals": get("/v1/admin/principals"),
         "professionals": get("/v1/admin/professionals"),
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
+        "instruments": get("/v1/clinical/instruments"),
+        "instrument_results": get(f"/v1/clinical/patients/{ids['patient']}/instrument-results"),
         "reviews": get("/v1/reviews"),
         "thread": get(f"/v1/threads/{ids['thread']}"),
         "accounts": get("/v1/social/accounts"),
@@ -504,6 +526,64 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/clinical/documents/{i['clinical_doc']}",
             None,
         ),
+        ("GET", "/v1/clinical/instrument-templates"): ("/v1/clinical/instrument-templates", None),
+        ("POST", "/v1/clinical/instruments"): (
+            "/v1/clinical/instruments",
+            {
+                "spec": {
+                    "name": "Globex",
+                    "items": [
+                        {
+                            "id": "q",
+                            "text": "x",
+                            "options": [{"label": "no", "value": 0}, {"label": "si", "value": 1}],
+                        }
+                    ],
+                    "licence": {"source": "own", "attestation": True},
+                }
+            },
+        ),
+        ("POST", "/v1/clinical/instruments/from-template"): (
+            "/v1/clinical/instruments/from-template",
+            {"template": "phq9"},
+        ),
+        ("GET", "/v1/clinical/instruments"): ("/v1/clinical/instruments", None),
+        ("GET", "/v1/clinical/instruments/{instrument_id}"): (
+            f"/v1/clinical/instruments/{i['instrument']}",
+            None,
+        ),
+        ("PUT", "/v1/clinical/instruments/{instrument_id}"): (
+            f"/v1/clinical/instruments/{i['instrument']}",
+            {
+                "spec": {
+                    "name": "pwned",
+                    "items": [
+                        {
+                            "id": "q",
+                            "text": "x",
+                            "options": [{"label": "no", "value": 0}, {"label": "si", "value": 1}],
+                        }
+                    ],
+                    "licence": {"source": "own", "attestation": True},
+                }
+            },
+        ),
+        ("DELETE", "/v1/clinical/instruments/{instrument_id}"): (
+            f"/v1/clinical/instruments/{i['instrument']}",
+            None,
+        ),
+        ("POST", "/v1/clinical/patients/{patient_id}/instrument-results"): (
+            f"/v1/clinical/patients/{p}/instrument-results",
+            {"instrument_id": i["instrument"], "answers": {f"i{n}": 0 for n in range(1, 8)}},
+        ),
+        ("GET", "/v1/clinical/patients/{patient_id}/instrument-results"): (
+            f"/v1/clinical/patients/{p}/instrument-results",
+            None,
+        ),
+        ("GET", "/v1/clinical/instrument-results/{result_id}"): (
+            f"/v1/clinical/instrument-results/{i['instrument_result']}",
+            None,
+        ),
         ("GET", "/v1/admin/on-call"): ("/v1/admin/on-call", None),
         ("POST", "/v1/admin/on-call"): (
             "/v1/admin/on-call",
@@ -572,6 +652,12 @@ ADDRESSED = {
         ("POST", "/v1/clinical/patients/{patient_id}/documents"),
         ("GET", "/v1/clinical/documents/{document_id}"),
         ("DELETE", "/v1/admin/on-call/{contact_id}"),
+        ("GET", "/v1/clinical/instruments/{instrument_id}"),
+        ("PUT", "/v1/clinical/instruments/{instrument_id}"),
+        ("DELETE", "/v1/clinical/instruments/{instrument_id}"),
+        ("POST", "/v1/clinical/patients/{patient_id}/instrument-results"),
+        ("GET", "/v1/clinical/patients/{patient_id}/instrument-results"),
+        ("GET", "/v1/clinical/instrument-results/{result_id}"),
     )
 }
 # Ids that live in each tenant's own namespace, so globex may use the same string for its

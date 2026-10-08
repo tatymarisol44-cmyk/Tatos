@@ -43,6 +43,7 @@ from orchestrator.graph import build_graph
 from orchestrator.guardrails import redact_pii
 from orchestrator.inbound import InboundService
 from orchestrator.insights import InsightsService
+from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.media_store import build_media_store
@@ -163,6 +164,7 @@ class Orchestrator:
         self.principals = PrincipalStore(self.db, self.audit)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
+        self.instruments = Instruments(self.db, self.audit)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.oncall = OnCall(self.db, self.audit, settings)
@@ -196,6 +198,7 @@ class Orchestrator:
             self.memory,
             self.crm,
             self.clinical,
+            self.instruments,
             self.campaigns,
             self.reviews,
             self.audit,
