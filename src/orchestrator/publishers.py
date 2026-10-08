@@ -191,6 +191,37 @@ class WhatsAppSender:
         return str(messages[0]["id"])
 
 
+FB_MAX_IMAGE_BYTES = 4 * 1024 * 1024  # [FB-SIZE]
+
+
+class FacebookPublisher:
+    """A photo post on a Facebook Page: the file is uploaded with the request (`source`),
+    so no public URL is needed [FB-PHOTOS]; the token is a Page access token [FB-TOKEN]."""
+
+    def __init__(self, client: httpx.AsyncClient, base: str) -> None:
+        self.client = client
+        self.base = base.rstrip("/")
+
+    async def publish(
+        self, *, page_id: str, token: str, image: bytes, filename: str, caption: str
+    ) -> PublishResult:
+        if len(image) > FB_MAX_IMAGE_BYTES:
+            raise PublishError("facebook: the image is larger than 4 MB [FB-SIZE]")
+        created = _json(
+            await self.client.post(
+                f"{self.base}/{page_id}/photos",
+                data={"caption": caption, "published": "true"},
+                files={"source": (filename, image, "image/jpeg")},
+                headers=_auth(token),
+            ),
+            "facebook photo",
+        )
+        post_id = str(created.get("post_id") or created.get("id") or "")
+        if not post_id:
+            raise PublishError("facebook photo: no id")
+        return PublishResult(post_id, "public", "live", {"photo_id": created.get("id")})
+
+
 class TikTokPublisher:
     def __init__(self, client: httpx.AsyncClient, base: str) -> None:
         self.client = client

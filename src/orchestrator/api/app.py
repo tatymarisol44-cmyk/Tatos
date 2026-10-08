@@ -51,6 +51,7 @@ from orchestrator.governance import ThreadBusyError
 from orchestrator.guardrails import check_input, person_identifiers
 from orchestrator.knowledge import KnowledgeRejected
 from orchestrator.llm import LLMUnavailable
+from orchestrator.media_store import LocalMediaStore
 from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 from orchestrator.surfaces import SurfaceDenied, ensure_allowed
@@ -202,6 +203,24 @@ def create_app(
     @app.get("/", include_in_schema=False)
     async def console() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html", headers=UI_HEADERS)
+
+    @app.get("/media/{name:path}", include_in_schema=False)
+    async def signed_media(
+        request: Request,
+        name: Annotated[str, FastAPIPath(max_length=200, pattern=r"^[\w.-]+/[\w.-]+\.(jpg|mp4)$")],
+        exp: Annotated[int, Query()],
+        sig: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")],
+    ) -> FileResponse:
+        """A creative for a platform to fetch (Instagram, Facebook): only with a valid,
+        unexpired HMAC signature. No key, no listing, nothing but published media."""
+        store = orch(request).publications.store
+        path = store.verify(name, exp, sig) if isinstance(store, LocalMediaStore) else None
+        if path is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        media_type = "video/mp4" if name.endswith(".mp4") else "image/jpeg"
+        return FileResponse(
+            path, media_type=media_type, headers={"Cache-Control": "private, max-age=300"}
+        )
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:

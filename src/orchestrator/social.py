@@ -51,6 +51,8 @@ _WA_TEMPLATES = "https://developers.facebook.com/docs/whatsapp/message-templates
 _WA_POLICY = "https://whatsappbusiness.com/es-la/policy/"
 _IG_PUBLISHING = "https://developers.facebook.com/docs/instagram-platform/content-publishing"
 _TT_POSTING = "https://developers.tiktok.com/doc/content-posting-api-get-started"
+# Read on 2026-10-08 (Graph API v26.0).
+_FB_PHOTOS = "https://developers.facebook.com/docs/graph-api/reference/page/photos/"
 
 # Read on 2026-10-07. Re-read before a channel goes live: platforms change their terms.
 PLATFORM_RULES: tuple[PlatformRule, ...] = (
@@ -139,10 +141,27 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
     ),
     PlatformRule(
         "facebook",
-        "FB-PAGES",
-        "Page publishing rules have not been read yet.",
-        "",
-        "to_verify",
+        "FB-PHOTOS",
+        "A Page photo post is POST /{page-id}/photos with the image as `url` or an uploaded "
+        "file (`source`) and its text in `caption` (`message` is deprecated). Only photo "
+        "posts are verified here; Page videos are refused until their rules are read.",
+        _FB_PHOTOS,
+        "read",
+    ),
+    PlatformRule(
+        "facebook",
+        "FB-TOKEN",
+        "A Page access token from a person who can perform CREATE_CONTENT on the Page, with "
+        "pages_manage_posts, pages_read_engagement and pages_show_list.",
+        _FB_PHOTOS,
+        "read",
+    ),
+    PlatformRule(
+        "facebook",
+        "FB-SIZE",
+        "Images are JPEG, BMP, PNG, GIF or TIFF and cannot exceed 4 MB.",
+        _FB_PHOTOS,
+        "read",
     ),
 )
 IG_DAILY_POST_LIMIT = 100
@@ -196,6 +215,11 @@ def check_publish(
             check.problems.append("instagram media must be on a public URL [IG-PUBLIC-URL]")
         if posts_last_24h >= IG_DAILY_POST_LIMIT:
             check.problems.append("instagram allows 100 API posts per 24 hours [IG-LIMIT]")
+    if network == "facebook":
+        if media_type != "image":
+            check.problems.append("facebook: only photo posts are verified [FB-PHOTOS]")
+        elif fmt not in ("jpg", "jpeg", "png", "bmp", "gif", "tiff"):
+            check.problems.append("facebook images are JPEG, PNG, BMP, GIF or TIFF [FB-SIZE]")
     if network == "tiktok":
         if media_type == "video" and fmt != "mp4":
             check.problems.append("tiktok videos must be MP4 with H.264 [TT-MEDIA]")

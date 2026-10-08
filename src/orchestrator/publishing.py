@@ -15,6 +15,7 @@ with its SHA-256 and there is no edit; to change anything, cancel and create ano
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import uuid
 from pathlib import Path
@@ -41,7 +42,13 @@ from orchestrator.establishment import ProfessionalError
 from orchestrator.governance import AuditLog
 from orchestrator.media_store import MediaStore, object_name
 from orchestrator.packs import Pack, pack_for
-from orchestrator.publishers import InstagramPublisher, PublishError, PublishResult, TikTokPublisher
+from orchestrator.publishers import (
+    FacebookPublisher,
+    InstagramPublisher,
+    PublishError,
+    PublishResult,
+    TikTokPublisher,
+)
 from orchestrator.risk import check_copy
 from orchestrator.social import PUBLISHING, SocialAccounts, check_publish, resolve_secret
 
@@ -353,6 +360,17 @@ class PublicationService:
                     token=token,
                     media_type=pub["media_type"],
                     media_url=url,
+                    caption=pub["caption"],
+                )
+            if pub["network"] == "facebook":
+                image = await self.store.local_file(pub["object_name"])
+                if image is None:
+                    raise PublishError("facebook: the image is not available locally")
+                return await FacebookPublisher(client, self.settings.facebook_graph_base).publish(
+                    page_id=account["external_id"],
+                    token=token,
+                    image=await asyncio.to_thread(image.read_bytes),
+                    filename=image.name,
                     caption=pub["caption"],
                 )
             video = await self.store.local_file(pub["object_name"])

@@ -106,6 +106,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "campaigns": DataClass.INTERNAL,
     "channel_accounts": DataClass.CREDENTIAL,  # secret_ref names a credential
     "channel_alerts": DataClass.HEALTH,  # crisis wording was detected
+    "channel_auto_replies": DataClass.PERSONAL,  # pseudonymous number + time, no text
     "channel_optouts": DataClass.PERSONAL,
     "clinical_documents": DataClass.PSYCHOTHERAPY,  # holds psychotherapy notes among others
     "clinical_files": DataClass.PSYCHOTHERAPY,  # may hold an author-only document

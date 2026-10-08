@@ -151,9 +151,15 @@ class Settings(BaseSettings):
     # signs every notification with the App Secret (X-Hub-Signature-256). Without both,
     # the endpoint does not exist (404).
     whatsapp_verify_token: SecretStr | None = None
+    # Warm automatic replies to incoming WhatsApp messages (auto_reply.py, decision P6).
+    whatsapp_auto_reply: bool = True
+    practice_display_name: str = Field(default="el consultorio", min_length=1, max_length=80)
+    # Emergency lines in the crisis reply; empty = the verified default (auto_reply.py).
+    crisis_help_text: str = Field(default="", max_length=500)
     meta_app_secret: SecretStr | None = None
     # Sending (Cloud API). v25.0 is the version in Meta's guide read on 2026-10-07.
     whatsapp_graph_base: str = "https://graph.facebook.com/v25.0"
+    facebook_graph_base: str = "https://graph.facebook.com/v26.0"  # Page photos [FB-PHOTOS]
 
     # --- On-call alerts (ADR 0017) ------------------------------------------
     # An unacknowledged crisis alert goes to the next on-call level after this long.

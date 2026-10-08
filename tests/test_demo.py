@@ -62,7 +62,7 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
     # Without credentials nothing is sent, and the report says so (never "published").
     publications = steps["social media"]["publications"]
     assert publications["instagram"].startswith("dry run")
-    assert publications["facebook"].startswith("refused")  # rules not verified (A6)
+    assert publications["facebook"].startswith("dry run")  # photo rules verified (FB-PHOTOS)
     assert steps["crisis alert"]["open_alerts"] == 1
     assert steps["privacy"]["audit_chain"]["ok"] is True
     assert "clinical_record" in steps["privacy"]["erasure_retained"]
@@ -81,3 +81,21 @@ def test_live_mode_writes_only_to_the_owners_own_chat(client: TestClient) -> Non
     ]
     assert chats[0] == "123456789"
     assert all(c is None for c in chats[1:])
+
+
+def test_with_a_real_whatsapp_number_the_demo_never_writes_to_an_invented_one(
+    client: TestClient,
+) -> None:
+    """Live WhatsApp: the warm reply would reach whoever owns the invented sender, so the
+    crisis is not rehearsed; the owner writes from their own phone instead."""
+    out = Demo(
+        client,
+        "test-key",
+        meta_app_secret="demo-secret",
+        accounts={"whatsapp": "123456789012345", "facebook": "page-1"},
+    ).run()
+    steps = {s["step"]: s for s in out["report"]}
+    assert "live" in steps["crisis alert"] and "open_alerts" not in steps["crisis alert"]
+    accounts = client.get("/v1/social/accounts", headers={"X-API-Key": "test-key"}).json()
+    ids = {a["network"]: a["external_id"] for a in accounts}
+    assert ids["whatsapp"] == "123456789012345" and ids["facebook"] == "page-1"

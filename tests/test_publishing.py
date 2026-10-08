@@ -147,7 +147,8 @@ def test_forbidden_caption_or_creative_stores_nothing(
 def test_networks_and_kinds_that_cannot_publish(app: tuple[TestClient, Orchestrator]) -> None:
     client, _ = app
     assert create(client, connect(client, "tiktok")).status_code == 409  # photos need a domain
-    assert create(client, connect(client, "facebook")).status_code == 409  # rules not read
+    facebook = connect(client, "facebook")
+    assert create(client, facebook, kind="video").status_code == 409  # Page videos not read
     assert create(client, connect(client, "whatsapp")).status_code == 409  # messages only
     assert create(client, "0123456789ab").status_code == 404  # no such account
 
@@ -438,3 +439,26 @@ def test_object_names_are_confined(tmp_path: Path) -> None:
             object_name(tenant, pub, suffix)
     with pytest.raises(ValueError, match="escapes"):
         LocalMediaStore(tmp_path).path_for("../outside.jpg")
+
+
+def test_a_facebook_page_photo_is_uploaded_with_its_caption(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+
+    def facebook(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/photos"):
+            return httpx.Response(200, json={"id": "photo-7", "post_id": "page_post_7"})
+        return httpx.Response(404)
+
+    seen = live(orch, facebook, monkeypatch, "facebook")
+    pub_id = approved(client, connect(client, "facebook"))
+    done = route(client, pub_id, "publish").json()
+    assert done["status"] == "published" and done["mode"] == "live"
+    assert done["external_id"] == "page_post_7"
+    [call] = seen
+    assert call.url.path == "/v26.0/facebook-178414/photos"
+    assert call.headers["authorization"] == f"Bearer {TOKEN}"
+    body = call.content
+    assert b'name="source"' in body and bytes([0xFF, 0xD8, 0xFF]) in body  # the JPEG
+    assert b'name="caption"' in body and b"Tu bienestar importa." in body

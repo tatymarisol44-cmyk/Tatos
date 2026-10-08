@@ -344,3 +344,76 @@ def test_alerts_are_for_care_staff_and_their_own_tenant(
         client.get("/v1/social/alerts", headers={"X-API-Key": marketing["key"]}).status_code == 403
     )
     assert client.get("/v1/social/alerts", headers=GLOBEX).json() == []
+
+
+# --- warm automatic replies (auto_reply.py, decision P6) ---------------------------------
+
+
+def sent_texts(orch: Orchestrator, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Capture what would reach Meta, with a credential configured."""
+    seen: list[dict[str, Any]] = []
+
+    def meta(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"messages": [{"id": f"wamid.out.{len(seen)}"}]})
+
+    monkeypatch.setenv("SOCIAL_SECRET_WA_DEMO", "EAAG-synthetic")
+    orch.inbound.transport = httpx.MockTransport(meta)
+    return seen
+
+
+def test_a_crisis_gets_warmth_and_the_emergency_lines_at_once(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    connect(client)
+    seen = sent_texts(orch, monkeypatch)
+    assert post(client, payload(CRISIS_TEXT, "wamid.c1")) == 200
+    [reply] = seen
+    body = reply["text"]["body"]
+    assert reply["to"] == SENDER and reply["type"] == "text"
+    assert "No estás sola ni solo" in body and "ECU 911" in body and "171, opción 6" in body
+    # The alert for a person is opened as before: the reply never replaces it.
+    assert len(client.get("/v1/social/alerts", headers=ADMIN).json()) == 1
+    # A second crisis message within 10 minutes opens its alert but is not re-answered.
+    post(client, payload(CRISIS_TEXT, "wamid.c2"))
+    assert len(seen) == 1
+    audit = client.get("/v1/audit", headers=ADMIN).text
+    assert "channel.auto_reply_sent" in audit and SENDER not in audit and "ECU" not in audit
+
+
+def test_welcome_menu_once_person_and_stop_confirmations(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    connect(client)
+    seen = sent_texts(orch, monkeypatch)
+    post(client, payload("Hola, ¿atienden los sábados?", "wamid.o1"))
+    post(client, payload("¿Y cuánto cuesta?", "wamid.o2"))  # same 12 h: no second menu
+    assert len(seen) == 1 and "Gracias por escribir" in seen[0]["text"]["body"]
+    post(client, payload("Quiero hablar con una persona", "wamid.h1"))
+    assert "una persona del equipo" in seen[-1]["text"]["body"]
+    post(client, payload("STOP", "wamid.s1"))
+    assert "ya no te enviaremos" in seen[-1]["text"]["body"]
+    # After STOP: no more welcome menus, even after the 12 hours.
+    later = inbound_module.utcnow() + timedelta(hours=13)
+    monkeypatch.setattr(inbound_module, "utcnow", lambda: later)
+    before = len(seen)
+    post(client, payload("hola de nuevo", "wamid.o3"))
+    assert len(seen) == before
+    # But a crisis is always answered, opted out or not.
+    post(client, payload(CRISIS_TEXT, "wamid.c9"))
+    assert "ECU 911" in seen[-1]["text"]["body"]
+
+
+def test_without_a_credential_or_when_disabled(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    connect(client)
+    post(client, payload(CRISIS_TEXT, "wamid.d1"))  # no SOCIAL_SECRET: recorded, not sent
+    assert "channel.auto_reply_dry_run" in client.get("/v1/audit", headers=ADMIN).text
+    orch.settings.whatsapp_auto_reply = False
+    seen = sent_texts(orch, monkeypatch)
+    post(client, payload("hola", "wamid.d2"))
+    assert seen == []

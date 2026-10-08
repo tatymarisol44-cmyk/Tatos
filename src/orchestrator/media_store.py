@@ -11,9 +11,11 @@ Objects are keyed by tenant first, so one tenant's prefix never lists another's.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import re
 import shutil
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -43,11 +45,28 @@ class MediaStore(Protocol):
         ...
 
 
-class LocalMediaStore:
-    """Development: files under MEDIA_DIR, no URL. Video uploaded as a file still works."""
+def media_signature(key: bytes, name: str, expires: int) -> str:
+    return hmac.new(key, f"{name}|{expires}".encode(), hashlib.sha256).hexdigest()
 
-    def __init__(self, root: Path) -> None:
+
+class LocalMediaStore:
+    """Files under MEDIA_DIR. With PUBLIC_BASE_URL (e.g. a Codespace's public port, or a
+    single-node deployment) the API itself serves each creative at a URL signed with HMAC
+    and valid for MEDIA_URL_TTL_MINUTES (`GET /media/...`), which is what Instagram and
+    Facebook fetch. Without it there is no URL, and URL-based publishing is refused
+    upstream. Several replicas do not share disks: use the bucket there."""
+
+    def __init__(
+        self,
+        root: Path,
+        public_base_url: str | None = None,
+        key: bytes | None = None,
+        ttl: timedelta = timedelta(hours=1),
+    ) -> None:
         self.root = root
+        self.public_base_url = public_base_url.rstrip("/") if public_base_url else None
+        self.key = key
+        self.ttl = ttl
 
     def _path(self, name: str) -> Path:
         path = (self.root / name).resolve()
@@ -68,7 +87,23 @@ class LocalMediaStore:
         return path if path.exists() else None
 
     async def signed_url(self, name: str) -> str | None:
-        return None
+        if not (self.public_base_url and self.key) or not self._path(name).exists():
+            return None
+        expires = int((datetime.now(UTC) + self.ttl).timestamp())
+        sig = media_signature(self.key, name, expires)
+        return f"{self.public_base_url}/media/{name}?exp={expires}&sig={sig}"
+
+    def verify(self, name: str, expires: int, sig: str) -> Path | None:
+        """The file behind a signed URL, or None if the URL is forged, expired or unknown."""
+        if self.key is None or expires < int(datetime.now(UTC).timestamp()):
+            return None
+        if not hmac.compare_digest(media_signature(self.key, name, expires), sig):
+            return None
+        try:
+            path = self._path(name)
+        except ValueError:
+            return None
+        return path if path.is_file() else None
 
 
 class GcsMediaStore:
@@ -113,4 +148,13 @@ def build_media_store(settings: Settings) -> MediaStore:
             timedelta(minutes=settings.media_url_ttl_minutes),
             settings.media_dir,
         )
-    return LocalMediaStore(settings.media_dir)
+    # A key of its own, derived from PSEUDONYM_KEY (domain-separated): no new secret.
+    key = hmac.new(settings.pseudonym_secret(), b"media-url-v1", hashlib.sha256).digest()
+    # Only an https address can be fetched by Meta; a local http one would be useless.
+    public = settings.public_base_url
+    return LocalMediaStore(
+        settings.media_dir,
+        public if public.startswith("https://") else None,
+        key,
+        timedelta(minutes=settings.media_url_ttl_minutes),
+    )

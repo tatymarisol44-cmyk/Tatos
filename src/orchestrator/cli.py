@@ -217,14 +217,26 @@ async def _knowledge_reindex(tenant: str | None) -> int:
     return 1 if result["missing_text"] else 0
 
 
-def _demo_cmd(url: str, key: str, meta_secret: str | None, chat_id: str | None) -> int:
+def _demo_cmd(
+    url: str,
+    key: str,
+    meta_secret: str | None,
+    chat_id: str | None,
+    accounts: dict[str, str],
+) -> int:
     import httpx
 
     from orchestrator.demo import Demo, DemoError
 
     with httpx.Client(base_url=url.rstrip("/"), timeout=120) as client:
         try:
-            out = Demo(client, key, meta_app_secret=meta_secret, telegram_chat_id=chat_id).run()
+            out = Demo(
+                client,
+                key,
+                meta_app_secret=meta_secret,
+                telegram_chat_id=chat_id,
+                accounts=accounts,
+            ).run()
         except DemoError as exc:
             print(f"demo stopped: {exc}", file=sys.stderr)
             return 1
@@ -402,6 +414,13 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument(
         "--telegram-chat-id", help="Your own chat id: the campaign is sent live to you"
     )
+    for network, what in (
+        ("whatsapp", "WhatsApp phone-number id"),
+        ("instagram", "Instagram professional account (user) id"),
+        ("facebook", "Facebook Page id"),
+        ("tiktok", "TikTok account id"),
+    ):
+        p_demo.add_argument(f"--{network}-id", help=f"Real {what} (live with its SOCIAL_SECRET)")
     p_pack = sub.add_parser("pack", help="Profession packs: list, validate, show")
     p_pack.add_argument("action", choices=["list", "validate", "show"])
     p_pack.add_argument("pack_id", nargs="?", help="show: the pack to print")
@@ -462,7 +481,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "knowledge":
         return _run(_knowledge_reindex(args.tenant))
     elif args.cmd == "demo":
-        return _demo_cmd(args.url, args.key, args.meta_app_secret, args.telegram_chat_id)
+        accounts = {
+            n: getattr(args, f"{n}_id") or ""
+            for n in ("whatsapp", "instagram", "facebook", "tiktok")
+        }
+        return _demo_cmd(args.url, args.key, args.meta_app_secret, args.telegram_chat_id, accounts)
     elif args.cmd == "pack":
         return _pack_cmd(args.action, args.pack_id, args.strict, parser)
     elif args.cmd == "creative":

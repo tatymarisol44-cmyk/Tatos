@@ -184,12 +184,16 @@ class Demo:
         *,
         meta_app_secret: str | None = None,
         telegram_chat_id: str | None = None,
+        accounts: dict[str, str] | None = None,
         seed: int = 7,
     ) -> None:
         self.c = client
         self.service = {"X-API-Key": service_key}
         self.meta_app_secret = meta_app_secret
         self.telegram_chat_id = telegram_chat_id
+        # Real ids per network (WhatsApp phone-number id, Instagram user id, Facebook Page
+        # id): with the matching SOCIAL_SECRET_* the publications and replies go live.
+        self.accounts = {k: v for k, v in (accounts or {}).items() if v}
         self.rng = random.Random(seed)  # noqa: S311 - synthetic data, not security
         self.keys: dict[str, str] = {}
         self.report: list[dict[str, Any]] = []
@@ -476,7 +480,9 @@ class Demo:
         }
         ids = {}
         for network, (handle, secret_ref) in accounts.items():
-            external = WA_NUMBER_ID if network == "whatsapp" else f"{network}-{self.suffix}"
+            external = self.accounts.get(network) or (
+                WA_NUMBER_ID if network == "whatsapp" else f"{network}-{self.suffix}"
+            )
             made = self.call(
                 "POST",
                 "/v1/social/accounts",
@@ -534,6 +540,24 @@ class Demo:
         self.step("social media", accounts=sorted(ids), publications=published)
 
     def crisis(self) -> None:
+        if "whatsapp" in self.accounts:
+            # Live WhatsApp: a rehearsal from an invented number would make the warm reply
+            # go to a stranger. The owner writes from their own phone instead.
+            self.call(
+                "POST",
+                "/v1/admin/on-call",
+                json={
+                    "display_name": "Guardia (demo)",
+                    "level": 1,
+                    "email": "guardia@example.test",
+                },
+            )
+            self.step(
+                "crisis alert",
+                live="write to your WhatsApp test number from your phone: a warm reply "
+                "arrives at once and an alert opens for the on-call professional",
+            )
+            return
         if not self.meta_app_secret:
             self.step(
                 "crisis alert", skipped="start the server with META_APP_SECRET to rehearse it"

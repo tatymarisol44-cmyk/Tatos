@@ -38,10 +38,15 @@ def test_every_read_rule_cites_its_official_page() -> None:
     assert {r.network for r in PLATFORM_RULES} >= {"whatsapp", "instagram", "tiktok", "facebook"}
 
 
-def test_facebook_is_not_verified_and_cannot_publish() -> None:
-    assert not network_verified("facebook")
-    check = check_publish("facebook", media_type="image", media_format="jpg", public_url=True)
-    assert not check.allowed and "not verified" in check.problems[0]
+def test_facebook_publishes_photos_only() -> None:
+    """Page photo rules read on 2026-10-08 [FB-PHOTOS]; videos stay refused until read."""
+    assert network_verified("facebook")
+    # The file is uploaded with the request: no public URL needed.
+    assert check_publish("facebook", media_type="image", media_format="jpg").allowed
+    video = check_publish("facebook", media_type="video", media_format="mp4")
+    assert not video.allowed and "FB-PHOTOS" in video.problems[0]
+    webp = check_publish("facebook", media_type="image", media_format="webp")
+    assert not webp.allowed and "FB-SIZE" in webp.problems[0]
 
 
 def test_messaging_networks_do_not_publish() -> None:
@@ -210,5 +215,5 @@ def test_only_admins_connect_accounts(client: TestClient) -> None:
     assert client.post("/v1/social/accounts", json=account(), headers=reception).status_code == 403
     assert client.get("/v1/social/accounts", headers=reception).status_code == 200
     rules = client.get("/v1/social/rules", headers=reception).json()
-    assert rules["networks"]["facebook"]["verified"] is False
+    assert rules["networks"]["facebook"]["verified"] is True
     assert rules["networks"]["instagram"]["verified"] is True
