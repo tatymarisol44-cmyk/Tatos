@@ -162,7 +162,7 @@ async def export_subject(
     request: Request, subject_id: Annotated[str, subject_path()], p: Privacy
 ) -> dict[str, Any]:
     """Right of access / portability: the subject's data, as JSON."""
-    return await orch(request).export_subject(p.tenant, subject_id, p.id)
+    return await orch(request).rights.export(p.tenant, subject_id, p.id)
 
 
 @router.delete("/v1/subjects/{subject_id}", tags=["privacy"])
@@ -171,7 +171,7 @@ async def erase_subject(
 ) -> dict[str, Any]:
     """Right to erasure. The clinical record is retained (restricted) where the law
     requires it; conversations are erased per thread (DELETE /v1/threads/{id})."""
-    return await orch(request).erase_subject(p.tenant, subject_id, p.id)
+    return await orch(request).rights.erase(p.tenant, subject_id, p.id)
 
 
 @router.get("/v1/audit", tags=["privacy"])

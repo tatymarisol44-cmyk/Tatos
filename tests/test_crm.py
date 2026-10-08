@@ -149,7 +149,7 @@ async def test_alerts_turn_yellow_then_red(clinic: Orchestrator) -> None:
 async def test_erasure_restricts_and_keeps_the_clinical_record(clinic: Orchestrator) -> None:
     await _patient(clinic, "p-1", phone="+593991234567", email="a@b.co", telegram_chat_id="42")
     await _visit(clinic, "p-1", utcnow() - timedelta(days=400))
-    result = await clinic.erase_subject("acme", "p-1", actor="dpo")
+    result = await clinic.rights.erase("acme", "p-1", actor="dpo")
     assert result["crm"] == {"patient": "restricted", "clinical_record": "retained"}
     patient = await clinic.crm.get_patient("acme", "p-1", actor=None)
     assert patient["restricted"] is True
@@ -166,7 +166,7 @@ async def test_erasure_restricts_and_keeps_the_clinical_record(clinic: Orchestra
     # Restricted records leave the working lists: no recall alert, not in insights.
     assert await clinic.crm.alerts("acme") == []
     assert (await clinic.insights.summary("acme"))["patients"]["total"] == 0
-    assert (await clinic.erase_subject("acme", "ghost", actor="dpo"))["crm"] == {
+    assert (await clinic.rights.erase("acme", "ghost", actor="dpo"))["crm"] == {
         "patient": "not_found"
     }
 

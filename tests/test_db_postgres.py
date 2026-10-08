@@ -85,7 +85,7 @@ async def test_full_business_flow_on_postgres(settings: Settings, catalog: Catal
         done = await orch.resolve_review(tenant, "t", approved=True, reviewer="dr")
         assert done.status == "completed"
 
-        erased = await orch.erase_subject(tenant, "p1", actor="dpo")
+        erased = await orch.rights.erase(tenant, "p1", actor="dpo")
         assert erased["crm"]["patient"] == "restricted"
         events = await orch.audit.list(tenant, subject_id="p1")
         assert events[0].action == "subject.erased" and events[0].ts.tzinfo is not None

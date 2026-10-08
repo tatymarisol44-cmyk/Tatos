@@ -197,12 +197,12 @@ async def test_rejected_answers_are_not_mined_for_memory(orchestrator: Orchestra
 async def test_export_and_erase_subject(orchestrator: Orchestrator) -> None:
     await _consent(orchestrator)
     await orchestrator.chat("Prefiero la tarde.", tenant="acme", subject_id="p-1")
-    exported = await orchestrator.export_subject("acme", "p-1", actor="dpo")
+    exported = await orchestrator.rights.export("acme", "p-1", actor="dpo")
     assert exported["consents"]["memory"]["granted"] is True
     assert [m["text"] for m in exported["memory"]] == ["Prefers afternoon appointments"]
     assert any(e["action"] == "chat.completed" for e in exported["audit"])
 
-    erased = await orchestrator.erase_subject("acme", "p-1", actor="dpo")
+    erased = await orchestrator.rights.erase("acme", "p-1", actor="dpo")
     assert erased["memory_facts"] == 1 and erased["consents"] == 1
     assert await orchestrator.memory.export("acme", "p-1") == []
     assert await orchestrator.consents.get("acme", "p-1") == {}

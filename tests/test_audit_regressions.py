@@ -205,7 +205,7 @@ async def test_a08_thread_cannot_change_subject(o: Orchestrator) -> None:
 async def test_a05_subject_export_is_not_truncated(o: Orchestrator) -> None:
     for _ in range(105):
         await o.audit.record("acme", "staff", "test.event", "test", subject_id="p1")
-    result = await o.export_subject("acme", "p1", "staff")
+    result = await o.rights.export("acme", "p1", "staff")
     assert len(result["audit"]) >= 105
 
 
@@ -261,24 +261,24 @@ async def test_a07_paused_thread_cannot_be_overwritten_without_review_row(
 async def test_a05_erasure_removes_conversations_and_pending_drafts(o: Orchestrator) -> None:
     r = await o.chat("Dato privado de prueba", tenant="acme", subject_id="p1", force_review=True)
     done = await o.chat("hola", tenant="acme", subject_id="p1")
-    exported = await o.export_subject("acme", "p1", "staff")
+    exported = await o.rights.export("acme", "p1", "staff")
     assert {c["thread_id"] for c in exported["conversations"]} == {r.thread_id, done.thread_id}
     assert [rv["thread_id"] for rv in exported["reviews"]] == [r.thread_id]
     assert exported["inventory"]["conversations"] == 2
 
-    erased = await o.erase_subject("acme", "p1", "staff")
+    erased = await o.rights.erase("acme", "p1", "staff")
     assert erased["conversations"] == 2
     assert {x["store"] for x in erased["retained"]} == {"audit_trail"}  # no CRM record here
     for thread in (r.thread_id, done.thread_id):
         assert not await o.checkpointer.exists(o.thread_key("acme", thread))
     assert await o.reviews.get("acme", r.thread_id) is None
-    after = await o.export_subject("acme", "p1", "staff")
+    after = await o.rights.export("acme", "p1", "staff")
     assert after["conversations"] == [] and after["reviews"] == []
 
 
 async def test_a05_erasure_states_what_is_retained_and_why(o: Orchestrator) -> None:
     await o.crm.create_patient("acme", {"display_name": "Ana Prueba"}, "staff", patient_id="p1")
-    erased = await o.erase_subject("acme", "p1", "staff")
+    erased = await o.rights.erase("acme", "p1", "staff")
     retained = {x["store"]: x["basis"] for x in erased["retained"]}
     assert set(retained) == {"audit_trail", "clinical_record"}
     assert all(retained.values())
@@ -475,7 +475,7 @@ async def test_audit_chain_survives_erasure_and_is_exposed(
     o: Orchestrator, c: httpx.AsyncClient
 ) -> None:
     await o.chat("hola", tenant="acme", subject_id="p1")
-    await o.erase_subject("acme", "p1", "staff")
+    await o.rights.erase("acme", "p1", "staff")
     resp = await c.get("/v1/audit/verify", headers=SERVICE)
     assert resp.status_code == 200 and resp.json()["ok"] is True
     reception = await staff(c, "maria", "reception")
@@ -968,7 +968,7 @@ async def test_a20_restricted_patients_do_not_feed_the_forecast(o: Orchestrator)
     before = (await o.insights.summary("acme"))["forecast"]
     assert before["expected_visit_revenue_next_4_weeks"] == 40.0
     assert before["scheduled_next_14_days"] == 1
-    await o.erase_subject("acme", "p1", "dpo")
+    await o.rights.erase("acme", "p1", "dpo")
     after = await o.insights.summary("acme")
     assert after["patients"]["total"] == 0
     assert after["forecast"]["expected_visit_revenue_next_4_weeks"] == 0
@@ -989,7 +989,7 @@ async def test_erasure_keeps_reviewed_clinical_conversations(o: Orchestrator) ->
     )
     small_talk = await o.chat("¿A qué hora abren?", tenant="acme", subject_id="p1")
 
-    erased = await o.erase_subject("acme", "p1", "dpo")
+    erased = await o.rights.erase("acme", "p1", "dpo")
     assert erased["conversations"] == 2 and erased["clinical_conversations_archived"] == 1
     assert "clinical_record" in {x["store"] for x in erased["retained"]}
     # Both conversations are gone from the chat store...
@@ -1000,7 +1000,7 @@ async def test_erasure_keeps_reviewed_clinical_conversations(o: Orchestrator) ->
     assert note["thread_id"] == "clin" and note["reason"] == "erasure_request"
     assert note["messages"][-1] == {"role": "assistant", "content": "Llámenos, por favor."}
     assert note["review"]["reviewer"] == "dr.lopez"
-    exported = await o.export_subject("acme", "p1", "dpo")
+    exported = await o.rights.export("acme", "p1", "dpo")
     assert [n["thread_id"] for n in exported["crm"]["clinical_notes"]] == ["clin"]
 
 
@@ -1008,7 +1008,7 @@ async def test_pending_clinical_question_is_kept_without_the_draft(o: Orchestrat
     assert isinstance(o.llm, FakeLLM)
     o.llm.agent_replies = ["BORRADOR_IA_SIN_REVISAR"]
     await o.chat(CLINICAL, tenant="acme", subject_id="p1", thread_id="pend")
-    await o.erase_subject("acme", "p1", "dpo")
+    await o.rights.erase("acme", "p1", "dpo")
     [note] = await o.crm.clinical_notes("acme", "p1")
     assert note["messages"] == [{"role": "user", "content": CLINICAL, "unanswered": True}]
     assert note["review"]["status"] == "pending"
