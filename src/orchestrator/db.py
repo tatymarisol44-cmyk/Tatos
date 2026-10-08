@@ -117,6 +117,7 @@ class Database:
             oncall,
             publishing,
             social,
+            whatsapp_assistant,
         )
 
         if self.engine.dialect.name == "sqlite":

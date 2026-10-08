@@ -129,4 +129,5 @@ TABLE_CLASS: dict[str, DataClass] = {
     "reviews": DataClass.HEALTH,  # a held answer may contain clinical advice
     "subject_threads": DataClass.HEALTH,
     "thread_leases": DataClass.INTERNAL,
+    "whatsapp_offers": DataClass.PERSONAL,  # pseudonymous number + offered times, no text
 }

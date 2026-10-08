@@ -386,6 +386,7 @@ def test_welcome_menu_once_person_and_stop_confirmations(
     app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, orch = app
+    orch.settings.whatsapp_ai_replies = False  # the fixed texts; the assistant has its own tests
     connect(client)
     seen = sent_texts(orch, monkeypatch)
     post(client, payload("Hola, ¿atienden los sábados?", "wamid.o1"))

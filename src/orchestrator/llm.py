@@ -121,6 +121,7 @@ class FakeLLM:
     fail_synthesis: bool = False
     judge_reply: str | None = None
     memory_reply: str | None = None
+    whatsapp_reply: str | None = None
     agent_replies: list[str] = field(default_factory=list)
     # Load tests: wait like a provider would (FAKE_LLM_LATENCY_MS), and do not keep every
     # prompt in memory for a long run.
@@ -183,6 +184,16 @@ class FakeLLM:
                 for c in ("relevance", "faithfulness", "completeness")
             }
             return LLMResult(json.dumps(verdict), model, 50, 30)
+        if "WHATSAPP_ASSISTANT" in system:
+            if self.whatsapp_reply is not None:
+                return LLMResult(self.whatsapp_reply, model, 40, 30)
+            slots = re.findall(r"^(\d\) .+)$", question, re.MULTILINE)
+            offer = ""
+            if slots:
+                listed = "\n".join(slots)
+                offer = f"\nTengo estos horarios:\n{listed}\nResponde 1, 2 o 3."
+            text = f"¡Hola! Gracias por escribirnos 😊 Con gusto te ayudo.{offer}"
+            return LLMResult(text, model, 40, 30)
         if "MEMORY EXTRACTOR" in system:
             if self.memory_reply is not None:
                 return LLMResult(self.memory_reply, model, 30, 10)

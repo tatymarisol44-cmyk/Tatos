@@ -153,6 +153,9 @@ class Settings(BaseSettings):
     whatsapp_verify_token: SecretStr | None = None
     # Warm automatic replies to incoming WhatsApp messages (auto_reply.py, decision P6).
     whatsapp_auto_reply: bool = True
+    # Everyday messages answered by the model (whatsapp_assistant.py); crisis, a person
+    # and STOP keep their fixed texts. False: the fixed welcome menu instead.
+    whatsapp_ai_replies: bool = True
     # Local time of the practice: working hours and slots are written in it.
     clinic_timezone: str = "America/Guayaquil"
     practice_display_name: str = Field(default="el consultorio", min_length=1, max_length=80)

@@ -24,7 +24,7 @@ import logging
 import re
 import uuid
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from sqlalchemy import Column, DateTime, Integer, String, Table, and_, insert, select, update
@@ -37,6 +37,9 @@ from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.publishers import PublishError, WhatsAppSender
 from orchestrator.social import channel_accounts, resolve_secret
+
+if TYPE_CHECKING:
+    from orchestrator.whatsapp_assistant import WhatsAppAssistant
 
 SERVICE_WINDOW = timedelta(hours=24)
 
@@ -133,6 +136,7 @@ class InboundService:
         self.settings = settings
         self.transport = transport  # tests replace the network
         self.pseudonym_key = settings.pseudonym_secret()
+        self.assistant: WhatsAppAssistant | None = None  # set by the orchestrator
 
     async def reply(self, tenant: str, alert_id: str, actor: str, body: str) -> dict[str, Any]:
         """A person's reply to an alert. Returns the outcome, never the text."""
@@ -282,7 +286,7 @@ class InboundService:
             # No personal data in logs: the alert id is enough for the on-duty person.
             log.warning("crisis alert opened for tenant %s", tenant)
         if network == "whatsapp" and self.settings.whatsapp_auto_reply:
-            await self._auto_reply(tenant, account_id, sender, intent)
+            await self._auto_reply(tenant, account_id, sender, intent, text)
         return intent
 
     async def _claim_reply(self, tenant: str, key: str, intent: Intent) -> bool:
@@ -324,12 +328,56 @@ class InboundService:
             return False  # another replica claimed it first
         return True
 
-    async def _auto_reply(self, tenant: str, account_id: str, sender: str, intent: Intent) -> None:
+    async def _auto_reply(
+        self, tenant: str, account_id: str, sender: str, intent: Intent, message: str
+    ) -> None:
         if intent == "other" and await self.is_opted_out(tenant, "whatsapp", sender):
-            return  # they asked us to stop: no welcome menus
+            return  # they asked us to stop: only a crisis is still answered
         key = address_key(self.pseudonym_key, tenant, "whatsapp", sender)
-        if not await self._claim_reply(tenant, key, intent):
-            return
+        body: str | None = None
+        kind: str = intent
+        if intent == "other" and self.assistant is not None and self.settings.whatsapp_ai_replies:
+            # The model writes everyday answers (whatsapp_assistant.py); the message text
+            # is used for this one answer and never stored.
+            body, needs_human = await self.assistant.compose(tenant, key, sender, message)
+            if needs_human:
+                await self._open_alert(tenant, account_id, sender, "human")
+            kind = "assistant"
+        if body is None:
+            if not await self._claim_reply(tenant, key, intent):
+                return
+            body = reply_text(
+                intent,
+                self.settings.practice_display_name,
+                self.settings.crisis_help_text or DEFAULT_CRISIS_HELP,
+            )
+            kind = intent
+        await self._send(tenant, account_id, sender, body, kind)
+
+    async def _open_alert(self, tenant: str, account_id: str, sender: str, kind: str) -> None:
+        """An alert for the team (e.g. a new person who chose a time by WhatsApp)."""
+        alert_id = uuid.uuid4().hex[:12]
+        now = utcnow()
+        async with self.db.engine.begin() as conn:
+            await conn.execute(
+                insert(channel_alerts).values(
+                    tenant=tenant,
+                    alert_id=alert_id,
+                    network="whatsapp",
+                    account_id=account_id,
+                    kind=kind,
+                    address=normalize_address(sender)[:32],
+                    status="open",
+                    created_at=now,
+                    escalation_level=0,
+                    next_escalation_at=now,
+                )
+            )
+            await self.audit.record_in(
+                conn, tenant, SYSTEM_ACTOR, f"channel_alert.{kind}", f"channel_alert/{alert_id}"
+            )
+
+    async def _send(self, tenant: str, account_id: str, sender: str, body: str, kind: str) -> None:
         query = select(channel_accounts.c.external_id, channel_accounts.c.secret_ref).where(
             and_(
                 channel_accounts.c.tenant == tenant,
@@ -341,11 +389,6 @@ class InboundService:
             account = (await conn.execute(query)).first()
         if account is None:
             return
-        text = reply_text(
-            intent,
-            self.settings.practice_display_name,
-            self.settings.crisis_help_text or DEFAULT_CRISIS_HELP,
-        )
         token = resolve_secret(account.secret_ref)
         message_id: str | None = None
         if token is None:
@@ -361,7 +404,7 @@ class InboundService:
                         phone_number_id=account.external_id,
                         token=token,
                         to=normalize_address(sender),
-                        body=text,
+                        body=body,
                     )
                 outcome = "sent"
             except PublishError as exc:
@@ -375,7 +418,7 @@ class InboundService:
             SYSTEM_ACTOR,
             f"channel.auto_reply_{outcome}",
             f"channel_account/{account_id}",
-            details={"intent": intent, "message_id": message_id},
+            details={"intent": kind, "message_id": message_id},
         )
 
     async def is_opted_out(self, tenant: str, network: str, address: str) -> bool:

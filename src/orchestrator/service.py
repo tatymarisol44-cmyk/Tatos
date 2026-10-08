@@ -58,6 +58,7 @@ from orchestrator.router import Router, RoutingDecision
 from orchestrator.social import SocialAccounts
 from orchestrator.subject_rights import SubjectRights
 from orchestrator.telemetry import OPS
+from orchestrator.whatsapp_assistant import WhatsAppAssistant
 
 log = logging.getLogger(__name__)
 
@@ -194,6 +195,9 @@ class Orchestrator:
         )
         # Application services with explicit dependencies (audit 2026-10-08, item 7);
         # this object implements the conversation ports they need.
+        self.inbound.assistant = WhatsAppAssistant(
+            self.db, self.llm, self.knowledge, self.agenda, self.crm, settings
+        )
         self.rights = SubjectRights(
             self,
             self.subject_threads,
