@@ -243,6 +243,8 @@ class Settings(BaseSettings):
 
     # --- Observability -----------------------------------------------------
     otel_enabled: bool = False
+    # Serve Prometheus metrics on this pod-internal port (0 = off). Never the API port.
+    metrics_port: int = Field(default=0, ge=0, le=65535)
     otel_service_name: str = "agency-orchestrator"
     otel_exporter_otlp_endpoint: str | None = None
 

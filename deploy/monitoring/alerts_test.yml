@@ -1,0 +1,72 @@
+# Unit tests for alerts.yml: `promtool test rules deploy/monitoring/alerts_test.yml`
+# (CI runs it). Synthetic series only.
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  # 10 % of administrative requests fail: far above 14.4 x 0.1 %, so the fast burn pages.
+  # The model route fails 100 % and must not count.
+  - interval: 1m
+    input_series:
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/crm/patients", status_class="2xx"}'
+        values: '0+90x70'
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/crm/patients", status_class="5xx"}'
+        values: '0+10x70'
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/chat", status_class="5xx"}'
+        values: '0+1000x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ApiErrorBudgetFastBurn
+        exp_alerts:
+          - exp_labels: {severity: page, slo: SLO-1}
+            exp_annotations:
+              summary: The administrative API is failing fast (2 % of the monthly budget in 1 h)
+              runbook: docs/runbooks/api-errors.md
+
+  # Only the model route fails (provider outage): the API SLO stays quiet.
+  - interval: 1m
+    input_series:
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/crm/patients", status_class="2xx"}'
+        values: '0+100x70'
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/chat", status_class="5xx"}'
+        values: '0+1000x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ApiErrorBudgetFastBurn
+        exp_alerts: []
+
+  # A crisis alert left 16 minutes without anyone taking it.
+  - interval: 1m
+    input_series:
+      - series: 'agency_alerts_oldest_open_age_seconds{pod="api-1"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CrisisAlertUnattended
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: CrisisAlertUnattended
+        exp_alerts:
+          - exp_labels: {severity: page, slo: SLO-3}
+            exp_annotations:
+              summary: A crisis alert has waited more than 15 minutes for a person
+              description: >-
+                The on-call escalation has already notified every level. Someone must call
+                the on-call professional now; this is a patient-safety alert, not a technical one.
+              runbook: docs/runbooks/crisis-alert-unattended.md
+
+  # Most requests slower than 300 ms.
+  - interval: 1m
+    input_series:
+      - series: 'agency_http_server_duration_seconds_bucket{route="/v1/crm/patients", status_class="2xx", le="0.3"}'
+        values: '0+10x60'
+      - series: 'agency_http_server_duration_seconds_count{route="/v1/crm/patients", status_class="2xx"}'
+        values: '0+100x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: ApiLatencySloAtRisk
+        exp_alerts:
+          - exp_labels: {severity: ticket, slo: SLO-2}
+            exp_annotations:
+              summary: More than 5 % of administrative requests take over 300 ms
+              runbook: docs/runbooks/api-latency.md

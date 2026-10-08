@@ -19,6 +19,9 @@ data:
   DEFAULT_PACK: general
   # Remote A2A specialists (JSON list of base URLs).
   REMOTE_AGENTS: '["http://jvm-agent:8080"]'
+  # Prometheus pull on a pod-internal port (docs/slo.md); traces/metrics push over OTLP
+  # only where a collector runs (the gke overlay turns OTLP off: Managed Prometheus scrapes).
+  METRICS_PORT: "9464"
   OTEL_ENABLED: "true"
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
   RATE_LIMIT_PER_MINUTE: "60"

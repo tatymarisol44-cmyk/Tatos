@@ -203,7 +203,7 @@ def test_retention_runs_on_a_schedule_and_alerts() -> None:
     api = _k8s("Service", "agency-orchestrator")["spec"]["selector"]
     assert pod["metadata"]["labels"]["app.kubernetes.io/name"] != api["app.kubernetes.io/name"]
     rules = yaml.safe_load((ROOT / "deploy" / "monitoring" / "alerts.yml").read_text("utf-8"))
-    names = {r["alert"] for g in rules["groups"] for r in g["rules"]}
+    names = {r["alert"] for g in rules["groups"] for r in g["rules"] if "alert" in r}
     assert {"RetentionJobFailed", "RetentionJobNotRunning"} <= names
 
 

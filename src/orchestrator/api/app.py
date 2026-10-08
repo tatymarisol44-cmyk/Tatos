@@ -31,6 +31,7 @@ from orchestrator.api import (
 )
 from orchestrator.api.body_limit import BodySizeLimit
 from orchestrator.api.edge import SecurityHeaders
+from orchestrator.api.metrics import RequestMetrics
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -51,7 +52,7 @@ from orchestrator.llm import LLMUnavailable
 from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
 from orchestrator.surfaces import SurfaceDenied, ensure_allowed
-from orchestrator.telemetry import setup_telemetry
+from orchestrator.telemetry import SSE_CONNECTIONS, setup_telemetry
 
 log = logging.getLogger(__name__)
 Staff = Annotated[Principal, Depends(require_staff)]
@@ -87,6 +88,10 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
             await orch.oncall.escalate_due()
         except Exception:
             log.exception("on-call escalation pass failed")
+        try:
+            await orch.refresh_ops_gauges()
+        except Exception:
+            log.exception("ops gauges not refreshed")
         await asyncio.sleep(interval)
 
 
@@ -132,6 +137,7 @@ def create_app(
         overrides={"/v1/knowledge/documents": settings.max_document_body_bytes},
     )
     app.add_middleware(SecurityHeaders, hsts_max_age_seconds=settings.hsts_max_age_seconds)
+    app.add_middleware(RequestMetrics)  # outermost: times everything, 413s and 401s too
     # Cross-site browser calls only from the exact origins configured; none by default.
     # Keys travel in X-API-Key, never in cookies, so credentials are not allowed.
     if settings.cors_allowed_origins:
@@ -288,12 +294,20 @@ def create_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
         async def body_iter() -> AsyncIterator[str]:
+            SSE_CONNECTIONS.add(1)
             try:
                 async for event, data in events:
                     yield _sse(event, stream_event(event, data, principal))
+            except LLMUnavailable as exc:
+                yield _sse(
+                    "error",
+                    {"message": "assistant unavailable", "retry_after": round(exc.retry_after)},
+                )
             except Exception:
                 log.exception("stream failed")
                 yield _sse("error", {"message": "orchestration failed"})
+            finally:
+                SSE_CONNECTIONS.add(-1)
 
         return StreamingResponse(
             body_iter(),

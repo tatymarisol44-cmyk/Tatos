@@ -12,7 +12,7 @@ import pytest
 from orchestrator import cli, mcp_server
 from orchestrator.config import Settings
 from orchestrator.embeddings import HashingEmbedder, LiteLLMEmbedder
-from orchestrator.llm import LiteLLMClient, build_llm
+from orchestrator.llm import GuardedLLM, LiteLLMClient, build_llm
 from orchestrator.service import build_embedder, build_store
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore
 from tests.conftest import FIXTURES
@@ -36,7 +36,9 @@ def test_factories(settings: Settings) -> None:
     settings.embedding_backend = "litellm"
     settings.llm_backend = "litellm"
     assert isinstance(build_embedder(settings), LiteLLMEmbedder)
-    assert isinstance(build_llm(settings), LiteLLMClient)
+    llm = build_llm(settings)  # a real provider always sits behind the circuit breaker
+    assert isinstance(llm, GuardedLLM) and isinstance(llm.inner, LiteLLMClient)
+    assert llm.breaker.failures == settings.llm_breaker_failures
 
 
 async def test_litellm_client_maps_response(

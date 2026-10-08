@@ -1,0 +1,173 @@
+# GENERATED from deploy/monitoring/alerts.yml by deploy/monitoring/render_gmp_rules.py.
+# Do not edit by hand. Google Managed Prometheus evaluates these rules; notification
+# routing (who gets paged, on which channel) is the Alertmanager config of the project
+# (owner decision O1 in docs/private/DECISIONS-PENDING.md).
+apiVersion: monitoring.googleapis.com/v1
+kind: ClusterRules
+metadata:
+  name: agency-orchestrator
+spec:
+  groups:
+  - name: agency-retention
+    rules:
+    - alert: RetentionJobFailed
+      expr: kube_job_status_failed{namespace="agency", job_name=~"agency-retention-.*"} > 0
+      for: 5m
+      labels:
+        severity: page
+      annotations:
+        summary: The nightly retention job failed
+        description: Conversations, expired memory facts or abandoned document versions were not removed.
+          Check `kubectl -n agency logs job/{{ $labels.job_name }}`.
+        runbook: docs/runbooks/retention-job.md
+    - alert: RetentionJobNotRunning
+      expr: time() - kube_cronjob_status_last_successful_time{namespace="agency", cronjob="agency-retention"}
+        > 26 * 3600
+      for: 15m
+      labels:
+        severity: page
+      annotations:
+        summary: No successful retention run in 26 hours
+        description: The CronJob is suspended, cannot be scheduled, or keeps failing.
+        runbook: docs/runbooks/retention-job.md
+    interval: 60s
+  - name: agency-slo-recording
+    rules:
+    - record: agency:api_errors:ratio_rate5m
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[5m]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[5m])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate30m
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[30m]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[30m])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate1h
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[1h]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[1h])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate2h
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[2h]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[2h])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate6h
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[6h]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[6h])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate1d
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[1d]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[1d])),
+        1e-9)
+    - record: agency:api_errors:ratio_rate3d
+      expr: sum(rate(agency_http_server_duration_seconds_count{status_class="5xx", route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[3d]))
+        / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched"}[3d])),
+        1e-9)
+    - record: agency:api_slow:ratio_rate30m
+      expr: "1 - (\n  sum(rate(agency_http_server_duration_seconds_bucket{le=\"0.3\", route!~\"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched\"\
+        }[30m]))\n  / clamp_min(sum(rate(agency_http_server_duration_seconds_count{route!~\"/v1/chat|/v1/chat/stream|/v1/me/chat|/a2a|/v1/insights/ask|/v1/route|/healthz|/readyz|unmatched\"\
+        }[30m])), 1e-9)\n)"
+    interval: 60s
+  - name: agency-slo
+    rules:
+    - alert: ApiErrorBudgetFastBurn
+      expr: agency:api_errors:ratio_rate1h > (14.4 * 0.001) and agency:api_errors:ratio_rate5m > (14.4
+        * 0.001)
+      for: 2m
+      labels:
+        severity: page
+        slo: SLO-1
+      annotations:
+        summary: The administrative API is failing fast (2 % of the monthly budget in 1 h)
+        runbook: docs/runbooks/api-errors.md
+    - alert: ApiErrorBudgetSlowBurn
+      expr: agency:api_errors:ratio_rate6h > (6 * 0.001) and agency:api_errors:ratio_rate30m > (6 * 0.001)
+      for: 15m
+      labels:
+        severity: page
+        slo: SLO-1
+      annotations:
+        summary: The administrative API keeps failing (5 % of the monthly budget in 6 h)
+        runbook: docs/runbooks/api-errors.md
+    - alert: ApiErrorBudgetTicket
+      expr: agency:api_errors:ratio_rate3d > 0.001 and agency:api_errors:ratio_rate6h > 0.001
+      for: 1h
+      labels:
+        severity: ticket
+        slo: SLO-1
+      annotations:
+        summary: The API is spending its error budget faster than it earns it
+        runbook: docs/runbooks/api-errors.md
+    - alert: ApiLatencySloAtRisk
+      expr: agency:api_slow:ratio_rate30m > 0.05
+      for: 15m
+      labels:
+        severity: ticket
+        slo: SLO-2
+      annotations:
+        summary: More than 5 % of administrative requests take over 300 ms
+        runbook: docs/runbooks/api-latency.md
+    - alert: CrisisAlertUnattended
+      expr: max(agency_alerts_oldest_open_age_seconds) > 900
+      for: 1m
+      labels:
+        severity: page
+        slo: SLO-3
+      annotations:
+        summary: A crisis alert has waited more than 15 minutes for a person
+        description: The on-call escalation has already notified every level. Someone must call the on-call
+          professional now; this is a patient-safety alert, not a technical one.
+        runbook: docs/runbooks/crisis-alert-unattended.md
+    - alert: ReviewBacklogHigh
+      expr: max(agency_reviews_pending) > 20
+      for: 1h
+      labels:
+        severity: ticket
+        slo: SLO-4
+      annotations:
+        summary: More than 20 answers have waited over an hour for a reviewer
+        runbook: docs/runbooks/review-backlog.md
+    interval: 60s
+  - name: agency-dependencies
+    rules:
+    - alert: ModelCircuitOpen
+      expr: sum(increase(agency_circuit_opened_total{dependency="llm"}[10m])) > 0
+      labels:
+        severity: ticket
+      annotations:
+        summary: The model provider failed repeatedly; the assistant answers 503
+        description: Agenda, CRM and records are unaffected. Check the provider's status page.
+        runbook: docs/runbooks/model-outage.md
+    - alert: ModelErrorRateHigh
+      expr: sum(rate(agency_llm_calls_total{outcome!="ok"}[10m])) / clamp_min(sum(rate(agency_llm_calls_total[10m])),
+        1e-9) > 0.2
+      for: 10m
+      labels:
+        severity: ticket
+      annotations:
+        summary: More than 20 % of model calls fail or are refused by the breaker
+        runbook: docs/runbooks/model-outage.md
+    - alert: OutboxStuck
+      expr: min(agency_outbox_pending) > 0 and min(delta(agency_outbox_pending[30m])) >= 0
+      for: 30m
+      labels:
+        severity: ticket
+      annotations:
+        summary: Campaign messages have waited 30 minutes without the queue going down
+        runbook: docs/runbooks/outbox-stuck.md
+    - alert: ApiNoReadyReplicas
+      expr: kube_deployment_status_replicas_available{namespace="agency", deployment="agency-orchestrator"}
+        < 1
+      for: 2m
+      labels:
+        severity: page
+      annotations:
+        summary: No API replica is ready (database unreachable, bad rollout or crash loop)
+        runbook: docs/runbooks/no-ready-replicas.md
+    - alert: ApiPodsRestarting
+      expr: sum(increase(kube_pod_container_status_restarts_total{namespace="agency", container="api"}[30m]))
+        > 3
+      labels:
+        severity: ticket
+      annotations:
+        summary: API containers restarted more than 3 times in 30 minutes
+        runbook: docs/runbooks/no-ready-replicas.md
+    interval: 60s

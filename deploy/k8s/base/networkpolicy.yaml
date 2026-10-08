@@ -26,7 +26,9 @@ spec:
             matchLabels: {k8s-app: kube-dns}
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
 ---
-# The API is the only entry point (ingress controller, Prometheus scrape of /metrics).
+# The API is the only entry point (the Gateway / ingress controller on 8000). Its metrics
+# port carries tenant-labelled counters, so only the Prometheus collectors may reach it:
+# Google Managed Prometheus (gmp-system) or a self-run Prometheus (observability).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,6 +39,12 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - ports: [{port: 8000}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: gmp-system}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: observability}
+      ports: [{port: 9464}]
 ---
 # What the API may call: its in-cluster dependencies, the OTel collector, managed
 # Postgres, and HTTPS for the LLM providers, Telegram, Meta, TikTok and Google Cloud

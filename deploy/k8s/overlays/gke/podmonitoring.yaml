@@ -1,0 +1,14 @@
+# Google Managed Prometheus scrapes the API pods' metrics port (docs/slo.md). Managed
+# collection is on by default in current GKE versions; the collectors run in gmp-system,
+# the only namespace (besides observability) the api-ingress NetworkPolicy lets in on 9464.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: agency-orchestrator
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: agency-orchestrator}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

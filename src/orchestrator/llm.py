@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from orchestrator import usage
 from orchestrator.config import Settings
 from orchestrator.resilience import CircuitBreaker, CircuitOpen
-from orchestrator.telemetry import tracer
+from orchestrator.telemetry import LLM_CALLS, LLM_DURATION, tracer
 
 Message = dict[str, str]
 
@@ -231,19 +232,25 @@ class GuardedLLM:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> LLMResult:
+        start = time.perf_counter()
         try:
-            return await self.breaker.call(
+            result = await self.breaker.call(
                 lambda: self.inner.complete(
                     messages, model=model, temperature=temperature, max_tokens=max_tokens
                 )
             )
         except CircuitOpen as exc:
+            LLM_CALLS.add(1, {"outcome": "circuit_open"})
             raise LLMUnavailable(str(exc), exc.retry_after) from exc
         except Exception as exc:
+            LLM_CALLS.add(1, {"outcome": "error"})
             # The provider's message may quote the prompt: keep only the type.
             raise LLMUnavailable(
                 f"model call failed ({type(exc).__name__})", self.breaker.cooldown_s
             ) from exc
+        LLM_CALLS.add(1, {"outcome": "ok"})
+        LLM_DURATION.record(time.perf_counter() - start, {"model": result.model})
+        return result
 
 
 def build_llm(settings: Settings) -> LLMClient:

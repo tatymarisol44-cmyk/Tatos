@@ -20,6 +20,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Literal, TypeVar
 
+from orchestrator.telemetry import CIRCUIT_OPENED
+
 log = logging.getLogger(__name__)
 T = TypeVar("T")
 State = Literal["closed", "open", "half_open"]
@@ -77,6 +79,7 @@ class CircuitBreaker:
         if self._trial or self._count >= self.failures:
             if self._opened_at is None or self._trial:
                 log.error("%s failing; circuit open for %.0fs", self.name, self.cooldown_s)
+                CIRCUIT_OPENED.add(1, {"dependency": self.name})
             self._opened_at, self._trial = self.clock(), False
 
     async def call(self, fn: Callable[[], Awaitable[T]]) -> T:

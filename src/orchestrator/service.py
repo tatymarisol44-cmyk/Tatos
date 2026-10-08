@@ -23,7 +23,7 @@ from orchestrator.checkpoint import Checkpointer
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
-from orchestrator.db import Database, utcnow
+from orchestrator.db import Database, aware, utcnow
 from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
 from orchestrator.establishment import Professionals
 from orchestrator.governance import (
@@ -52,6 +52,7 @@ from orchestrator.publishing import PublicationService
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.social import SocialAccounts
+from orchestrator.telemetry import OPS
 from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
 
 log = logging.getLogger(__name__)
@@ -263,6 +264,39 @@ class Orchestrator:
             log.warning("readiness: database did not answer")
             return False
         return True
+
+    async def refresh_ops_gauges(self) -> dict[str, float]:
+        """Backlogs the SLO alerts watch (docs/slo.md), across all tenants: answers held
+        for review, the oldest crisis alert nobody has taken, messages not yet sent."""
+        from sqlalchemy import func, select
+
+        from orchestrator.campaigns import recipients
+        from orchestrator.governance import reviews
+        from orchestrator.inbound import channel_alerts
+
+        async with self.db.engine.connect() as conn:
+            pending = await conn.scalar(
+                select(func.count()).select_from(reviews).where(reviews.c.status == "pending")
+            )
+            oldest = await conn.scalar(
+                select(func.min(channel_alerts.c.created_at)).where(
+                    channel_alerts.c.status == "open",
+                    channel_alerts.c.acknowledged_at.is_(None),
+                )
+            )
+            outbox = await conn.scalar(
+                select(func.count())
+                .select_from(recipients)
+                .where(recipients.c.status.in_(("pending", "queued")))
+            )
+        since = aware(oldest)
+        age = (utcnow() - since).total_seconds() if since is not None else 0.0
+        OPS.update(
+            reviews_pending=float(pending or 0),
+            alert_oldest_open_age_seconds=max(age, 0.0),
+            outbox_pending=float(outbox or 0),
+        )
+        return dict(OPS)
 
     async def close(self) -> None:
         self.ready = False

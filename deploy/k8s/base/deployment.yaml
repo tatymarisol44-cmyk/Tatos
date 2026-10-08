@@ -56,7 +56,9 @@ spec:
       containers:
         - name: api
           image: agency-orchestrator
-          ports: [{name: http, containerPort: 8000}]
+          # 9464 serves /metrics to Prometheus only (NetworkPolicy); the Service and the
+          # Gateway expose 8000 alone.
+          ports: [{name: http, containerPort: 8000}, {name: metrics, containerPort: 9464}]
           envFrom:
             - configMapRef: {name: agency-orchestrator-config}
             - secretRef: {name: agency-orchestrator-secrets}
