@@ -539,3 +539,9 @@ async def campaign_results(
         return await orch(request).campaigns.results(p.tenant, campaign_id)
     except (KeyError, CampaignError) as exc:
         raise _campaign_error(exc) from exc
+
+
+@router.get("/v1/usage", tags=["insights"])
+async def usage(request: Request, p: Owner) -> dict[str, Any]:
+    """This month's model spend of the practice, and its cap."""
+    return await orch(request).spend.month(p.tenant)

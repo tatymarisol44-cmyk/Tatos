@@ -117,6 +117,7 @@ class Database:
             oncall,
             publishing,
             social,
+            spend,
             whatsapp_assistant,
         )
 

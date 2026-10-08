@@ -121,6 +121,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "instruments": DataClass.INTERNAL,  # definitions: items, scoring, no patient data
     "knowledge_documents": DataClass.INTERNAL,
     "knowledge_versions": DataClass.INTERNAL,
+    "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
     "principals": DataClass.CREDENTIAL,
     "professionals": DataClass.PERSONAL,

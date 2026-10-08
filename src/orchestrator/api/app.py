@@ -55,6 +55,7 @@ from orchestrator.llm import LLMUnavailable
 from orchestrator.media_store import LocalMediaStore
 from orchestrator.packs import pack_for
 from orchestrator.service import Orchestrator, PendingReviewError, ThreadSubjectError
+from orchestrator.spend import BudgetExceeded
 from orchestrator.surfaces import SurfaceDenied, ensure_allowed
 from orchestrator.telemetry import SSE_CONNECTIONS, setup_telemetry
 
@@ -187,6 +188,18 @@ def create_app(
 
     def orch(request: Request) -> Orchestrator:
         return request.app.state.orchestrator  # type: ignore[no-any-return]
+
+    @app.exception_handler(BudgetExceeded)
+    async def budget_exceeded(request: Request, exc: BudgetExceeded) -> JSONResponse:
+        # Only the assistant stops: agenda, records and alerts keep working.
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "detail": "The assistant reached this month's usage limit for the practice. "
+                "Everything else keeps working; ask the practice owner to raise the limit.",
+                "code": "budget",
+            },
+        )
 
     @app.exception_handler(LLMUnavailable)
     async def llm_unavailable(request: Request, exc: LLMUnavailable) -> JSONResponse:

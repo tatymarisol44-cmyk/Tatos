@@ -621,6 +621,7 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/clinical/files/{file_id}"): (f"/v1/clinical/files/{i['file']}", None),
+        ("GET", "/v1/usage"): ("/v1/usage", None),
         ("GET", "/v1/clinical/follow-up"): ("/v1/clinical/follow-up", None),
         ("GET", "/v1/clinical/patients/{patient_id}/follow-up"): (
             f"/v1/clinical/patients/{p}/follow-up",

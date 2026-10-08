@@ -57,6 +57,7 @@ from orchestrator.publishing import PublicationService
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.social import SocialAccounts
+from orchestrator.spend import Spend
 from orchestrator.subject_rights import SubjectRights
 from orchestrator.telemetry import OPS
 from orchestrator.whatsapp_assistant import WhatsAppAssistant
@@ -171,6 +172,7 @@ class Orchestrator:
         self.instruments = Instruments(self.db, self.audit)
         self.agenda = Agenda(self.db, self.audit, settings)
         self.followup = FollowUp(self.db, self.consents)
+        self.spend = Spend(self.db, settings)
         self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
@@ -198,7 +200,7 @@ class Orchestrator:
         # Application services with explicit dependencies (audit 2026-10-08, item 7);
         # this object implements the conversation ports they need.
         self.inbound.assistant = WhatsAppAssistant(
-            self.db, self.llm, self.knowledge, self.agenda, self.crm, settings
+            self.db, self.llm, self.knowledge, self.agenda, self.crm, settings, self.spend
         )
         self.rights = SubjectRights(
             self,
@@ -519,6 +521,7 @@ class Orchestrator:
         subject_context: str = "",
     ) -> ChatResult:
         thread_id = thread_id or str(uuid.uuid4())
+        await self.spend.check(tenant)  # over the monthly cap: no model call at all
         async with self._lease(tenant, thread_id):
             thread_id, inputs, config = await self._prepare(
                 question,
@@ -533,9 +536,10 @@ class Orchestrator:
             )
             if subject_id:
                 await self.subject_threads.link(tenant, thread_id, subject_id)
-            with ledger.metered():
+            with ledger.metered() as entries:
                 state = await self.graph.ainvoke(inputs, config)
                 result = self._result(thread_id, mode, state)
+            await self.spend.charge(tenant, ledger.summarize(entries))
             await self._after_run(tenant, thread_id, subject_id, actor, result)
             return result
 
@@ -613,7 +617,7 @@ class Orchestrator:
         if not await self.reviews.claim(tenant, thread_id, decision):
             raise ReviewNotFoundError(thread_id)
         config = self._config(tenant, thread_id)
-        with ledger.metered():
+        with ledger.metered() as entries:
             try:
                 state = await self.graph.ainvoke(Command(resume=decision), config)
             except Exception:
@@ -623,6 +627,7 @@ class Orchestrator:
             snapshot = await self.graph.aget_state(config)
             mode: Mode = "team" if snapshot.values.get("mode") == "team" else "single"
             result = self._result(thread_id, mode, state)
+        await self.spend.charge(tenant, ledger.summarize(entries))
         status = "approved" if approved else "rejected"
         async with self.db.engine.begin() as conn:  # final status and its audit event
             await self.reviews.finish(tenant, thread_id, status, conn)
@@ -659,6 +664,7 @@ class Orchestrator:
         per specialist, `review` if the answer was paused for a human, then `done` with
         the full result.
         Validation errors raise before the first event, so callers can still return 4xx."""
+        await self.spend.check(tenant)
         thread_id = thread_id or str(uuid.uuid4())
         holder = uuid.uuid4().hex
         await self.leases.acquire(tenant, thread_id, holder)
@@ -680,9 +686,12 @@ class Orchestrator:
                 await self.leases.release(tenant, thread_id, holder)
 
         async def run() -> AsyncIterator[tuple[str, dict[str, Any]]]:
-            with ledger.metered():
-                async for item in stream():
-                    yield item
+            with ledger.metered() as entries:
+                try:
+                    async for item in stream():
+                        yield item
+                finally:
+                    await self.spend.charge(tenant, ledger.summarize(entries))
 
         async def stream() -> AsyncIterator[tuple[str, dict[str, Any]]]:
             yield "start", {"thread_id": thread_id, "mode": mode}

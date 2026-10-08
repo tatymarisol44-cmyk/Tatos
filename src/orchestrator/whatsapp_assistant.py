@@ -30,6 +30,7 @@ from typing import Any
 
 from sqlalchemy import JSON, Column, DateTime, String, Table, and_, delete, insert, select
 
+from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.config import Settings
 from orchestrator.crm import CrmError, CrmService, appointments, patients
@@ -37,6 +38,7 @@ from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient
 from orchestrator.risk import fold, is_clinical
+from orchestrator.spend import BudgetExceeded, Spend
 
 log = logging.getLogger(__name__)
 SYSTEM_ACTOR = "channel:whatsapp"
@@ -115,6 +117,7 @@ class WhatsAppAssistant:
         agenda: Agenda,
         crm: CrmService,
         settings: Settings,
+        spend: Spend | None = None,
     ) -> None:
         self.db = db
         self.llm = llm
@@ -122,6 +125,7 @@ class WhatsAppAssistant:
         self.agenda = agenda
         self.crm = crm
         self.settings = settings
+        self.spend = spend
 
     # --- who is writing -----------------------------------------------------------------
 
@@ -250,22 +254,30 @@ class WhatsAppAssistant:
                 return await self._book(tenant, key, patient, offer[int(choice.group(1)) - 1])
         slots = await self._slots(tenant, patient["id"] if patient else None)
         context = await self._context(tenant, text, patient, slots)
+        if self.spend is not None:
+            try:
+                await self.spend.check(tenant)
+            except BudgetExceeded:
+                return None, False  # the fixed welcome text answers instead
         try:
-            result = await self.llm.complete(
-                [
-                    {
-                        "role": "system",
-                        "content": SYSTEM.format(practice=self.settings.practice_display_name),
-                    },
-                    {"role": "user", "content": context},
-                ],
-                model=self.settings.llm_model,
-                max_tokens=400,
-                temperature=0.4,
-            )
+            with ledger.metered() as entries:
+                result = await self.llm.complete(
+                    [
+                        {
+                            "role": "system",
+                            "content": SYSTEM.format(practice=self.settings.practice_display_name),
+                        },
+                        {"role": "user", "content": context},
+                    ],
+                    model=self.settings.llm_model,
+                    max_tokens=400,
+                    temperature=0.4,
+                )
         except Exception as exc:  # LLMUnavailable included: the fixed text answers instead
             log.warning("whatsapp assistant unavailable: %s", type(exc).__name__)
             return None, False
+        if self.spend is not None:
+            await self.spend.charge(tenant, ledger.summarize(entries))
         reply = result.text.strip()
         if reason := unsafe_reason(reply):
             log.warning("whatsapp assistant answer withheld: %s", reason)

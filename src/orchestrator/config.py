@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0
     llm_num_retries: int = 2
+    # Monthly model spend cap per tenant in USD (spend.py); 0 = no cap.
+    tenant_monthly_budget_usd: float = Field(default=0.0, ge=0, le=1_000_000)
     # Backpressure: model-route requests one pod serves at once; the next get 503 +
     # Retry-After at once (api/backpressure.py). 0 disables the limit.
     max_inflight_model_requests: int = Field(default=32, ge=0, le=10_000)

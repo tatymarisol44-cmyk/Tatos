@@ -39,7 +39,7 @@ Scope: the API, console and background jobs of `agency-orchestrator`, as deploye
 | T11 | Elevation | Reception approves its own clinical answer | Role checks (reviewer); admin roles from the identity provider are audited | `tests/test_business_api.py` |
 | T12 | DoS | Chat spike exhausts the pod | Per-pod limit on model routes (503 busy); body size limit; per-tenant rate limit | `tests/test_backpressure.py`, `docs/load-test.md` |
 | T13 | DoS | Model provider outage | Circuit breaker; non-model routes keep working | `tests/test_resilience.py` |
-| T14 | DoS / spend | Denial of wallet through the model | Per-tenant rate limit; per-pod backpressure; per-request usage ledger | **partly open**: no per-tenant monthly cap on model spend, and no cost alert |
+| T14 | DoS / spend | Denial of wallet through the model | Per-tenant rate limit; per-pod backpressure; monthly model spend per tenant with a cap (`TENANT_MONTHLY_BUDGET_USD`): over it the assistant stops, everything else works | `tests/test_spend.py` |
 | T15 | Repudiation | "I did not approve that answer" | Every decision audited with the person's identity (SSO principal, not a shared key) | `tests/test_governance.py` |
 | T16 | Supply chain | Tampered dependency or image | Locked dependencies; Dependabot; Trivy; SHA-pinned actions; signed images verified before deploying; gitleaks over the whole history | `.github/workflows/ci.yml`, `deploy-gke.yml` |
 | T17 | Info disclosure | Clinical answers cached by a browser or proxy | `Cache-Control: no-store`, HSTS, strict CSP, closed CORS | `tests/test_edge.py` |
@@ -47,6 +47,5 @@ Scope: the API, console and background jobs of `agency-orchestrator`, as deploye
 ## Open items
 
 - **T3:** WORM bucket for audit anchors and dumps. The Terraform in `deploy/terraform` creates it with a retention lock; the owner still has to apply it.
-- **T14:** per-tenant monthly model budget.
 - **Not covered by tests:** side channels (timing), and the security of the identity provider itself.
 - **External assessment:** see [pentest-scope.md](pentest-scope.md).
