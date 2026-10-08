@@ -74,6 +74,12 @@ def record_path() -> Any:
     return FastAPIPath(max_length=128, pattern=r"^[\w.:-]+$")
 
 
+def principal_path() -> Any:
+    """A key name, a patient access id (`patient:<subject>:<n>`) or a single-sign-on
+    identity, which is an e-mail address."""
+    return FastAPIPath(max_length=128, pattern=r"^[\w.:@+-]+$")
+
+
 def orch(request: Request) -> Orchestrator:
     return request.app.state.orchestrator  # type: ignore[no-any-return]
 
@@ -206,10 +212,21 @@ async def list_principals(request: Request, p: Admin) -> list[dict[str, Any]]:
 
 @router.delete("/v1/admin/principals/{principal_id}", status_code=204, tags=["admin"])
 async def revoke_principal(
-    request: Request, principal_id: Annotated[str, record_path()], p: Admin
+    request: Request, principal_id: Annotated[str, principal_path()], p: Admin
 ) -> None:
     if not await orch(request).principals.revoke(p.tenant, principal_id, p.id):
         raise _not_found("active key")
+
+
+@router.post("/v1/admin/principals/{principal_id}/sign-out", status_code=204, tags=["admin"])
+async def sign_out_principal(
+    request: Request, principal_id: Annotated[str, principal_path()], p: Admin
+) -> None:
+    """End every single-sign-on session of a staff member (a lost or stolen device).
+    Tokens issued before now are refused; signing in again works. Use DELETE to remove
+    the person's access for good."""
+    if not await orch(request).principals.sign_out(p.tenant, principal_id, p.id):
+        raise _not_found("active staff member")
 
 
 @router.post(

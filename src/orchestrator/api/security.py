@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Protocol
 
+import anyio
 from fastapi import Depends, Header, HTTPException, Request, status
 
 from orchestrator.auth import PATIENT, Principal, PrincipalStore, Role, service_principal
@@ -151,12 +152,51 @@ def resolve_tenant(settings: Settings, api_key: str | None) -> str | None:
     return None
 
 
-async def authenticate(request: Request, x_api_key: str | None = Header(default=None)) -> Principal:
-    """Any authenticated caller (service, staff or patient), rate-limited per tenant."""
+def known_tenants(settings: Settings) -> set[str]:
+    """Tenants this deployment serves: those with a service key or a pack."""
+    return set(settings.tenant_keys().values()) | set(settings.tenant_packs)
+
+
+async def _sso_principal(request: Request, token: str) -> Principal:
     settings: Settings = request.app.state.settings
-    tenant = resolve_tenant(settings, x_api_key)
+    if not settings.oidc_issuer:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "single sign-on is not enabled")
+    verifier = getattr(request.app.state, "oidc", None)
+    if verifier is None:
+        from orchestrator.oidc import OIDCVerifier
+
+        verifier = request.app.state.oidc = OIDCVerifier(settings)
+    from orchestrator.oidc import IdentityError
+
+    try:  # the first call may fetch the provider's keys: keep it off the event loop
+        identity = await anyio.to_thread.run_sync(verifier.verify, token, known_tenants(settings))
+        store: PrincipalStore = request.app.state.orchestrator.principals
+        principal = await store.from_identity(identity)
+    except (IdentityError, ValueError) as exc:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, str(exc), headers={"WWW-Authenticate": "Bearer"}
+        ) from exc
+    if principal is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "access revoked or signed out: sign in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return principal
+
+
+async def authenticate(
+    request: Request,
+    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> Principal:
+    """Any authenticated caller (service, staff or patient), rate-limited per tenant:
+    a single-sign-on token (`Authorization: Bearer`) or a key (`X-API-Key`)."""
+    settings: Settings = request.app.state.settings
     principal: Principal | None
-    if tenant is not None:
+    if authorization and authorization[:7].lower() == "bearer ":
+        principal = await _sso_principal(request, authorization[7:].strip())
+    elif (tenant := resolve_tenant(settings, x_api_key)) is not None:
         principal = service_principal(tenant)
     elif x_api_key:
         store: PrincipalStore = request.app.state.orchestrator.principals

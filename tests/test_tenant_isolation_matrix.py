@@ -347,6 +347,10 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/admin/principals/{i['principal']}",
             None,
         ),
+        ("POST", "/v1/admin/principals/{principal_id}/sign-out"): (
+            f"/v1/admin/principals/{i['principal']}/sign-out",
+            None,
+        ),
         ("POST", "/v1/crm/patients/{patient_id}/access"): (
             f"/v1/crm/patients/{p}/access",
             None,
@@ -537,6 +541,7 @@ ADDRESSED = {
         ("GET", "/v1/reviews/{thread_id}"),
         ("POST", "/v1/reviews/{thread_id}"),
         ("DELETE", "/v1/admin/principals/{principal_id}"),
+        ("POST", "/v1/admin/principals/{principal_id}/sign-out"),
         ("POST", "/v1/crm/patients/{patient_id}/access"),
         ("GET", "/v1/crm/patients/{patient_id}"),
         ("PATCH", "/v1/crm/patients/{patient_id}"),

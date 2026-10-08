@@ -29,6 +29,7 @@ dependencies = [
     "pillow>=11",
     "google-cloud-storage>=2.18",
     "opentelemetry-exporter-prometheus>=0.48b0",
+    "pyjwt[crypto]>=2.10",
 ]
 
 [project.scripts]

@@ -242,6 +242,20 @@ class Settings(BaseSettings):
         return value
 
     # --- Observability -----------------------------------------------------
+    # --- Single sign-on for staff (OpenID Connect, ADR 0018). Off unless OIDC_ISSUER is
+    # set; per-person keys keep working for integrations and break-glass access.
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None  # default: discovered from the issuer
+    oidc_tenant_claim: str = "tenant"
+    oidc_roles_claim: str = "roles"
+    oidc_id_claim: str = "email"
+    oidc_require_mfa: bool = True
+    oidc_mfa_amr: list[str] = Field(
+        default_factory=lambda: ["mfa", "otp", "hwk", "swk", "fpt", "face", "sms"]
+    )
+    oidc_mfa_acr: list[str] = Field(default_factory=list)
+    oidc_max_session_hours: float = Field(default=12, gt=0, le=24 * 30)
     otel_enabled: bool = False
     # Serve Prometheus metrics on this pod-internal port (0 = off). Never the API port.
     metrics_port: int = Field(default=0, ge=0, le=65535)

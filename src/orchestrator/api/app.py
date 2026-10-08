@@ -103,6 +103,9 @@ def create_app(
     # (resolve_tenant also refuses per request, as defence in depth).
     if settings.app_env == "prod" and not settings.tenant_keys():
         raise RuntimeError("APP_ENV=prod requires API_KEYS; refusing to start without auth")
+    if settings.app_env == "prod" and settings.oidc_issuer and not settings.oidc_require_mfa:
+        # Health data: a password alone is not enough for staff (ADR 0018).
+        raise RuntimeError("APP_ENV=prod with single sign-on requires OIDC_REQUIRE_MFA=true")
     setup_telemetry(settings)
 
     @asynccontextmanager
@@ -145,7 +148,7 @@ def create_app(
             CORSMiddleware,
             allow_origins=settings.cors_allowed_origins,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["X-API-Key", "Content-Type"],
+            allow_headers=["X-API-Key", "Authorization", "Content-Type"],
             allow_credentials=False,
             max_age=600,
         )

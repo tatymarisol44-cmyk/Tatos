@@ -8,6 +8,7 @@ are in [`docs/slo.md`](../slo.md).
 |---|---|
 | [incident.md](incident.md) | how to run any incident; severities; who decides |
 | [data-breach.md](data-breach.md) | suspected exposure of personal or health data |
+| [break-glass.md](break-glass.md) | emergency access when single sign-on is unavailable |
 | [api-errors.md](api-errors.md) | ApiErrorBudgetFastBurn, ApiErrorBudgetSlowBurn, ApiErrorBudgetTicket |
 | [api-latency.md](api-latency.md) | ApiLatencySloAtRisk |
 | [crisis-alert-unattended.md](crisis-alert-unattended.md) | CrisisAlertUnattended |

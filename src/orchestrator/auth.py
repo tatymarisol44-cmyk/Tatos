@@ -58,6 +58,8 @@ principals = Table(
     Column("created_by", String(128), nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=True),
     Column("revoked_at", DateTime(timezone=True), nullable=True),
+    # "Sign out everywhere" for single sign-on: tokens issued before this are refused.
+    Column("not_before", DateTime(timezone=True), nullable=True),
 )
 
 
@@ -175,6 +177,81 @@ class PrincipalStore:
         return Principal(
             row["tenant"], row["id"], row["kind"], frozenset(row["roles"]), row["subject_id"]
         )
+
+    async def from_identity(self, identity: Any) -> Principal | None:
+        """The staff principal of a verified single-sign-on identity (oidc.Identity),
+        provisioned on first sign-in. Roles follow the identity provider on every
+        sign-in. None when the principal was revoked, or signed out after the token was
+        issued. Raises ValueError when the id belongs to a non-staff principal."""
+        key = and_(principals.c.tenant == identity.tenant, principals.c.id == identity.id)
+        roles = sorted(identity.roles)
+        async with self.db.engine.begin() as conn:
+            row = (await conn.execute(select(principals).where(key))).mappings().first()
+            if row is None:
+                await conn.execute(
+                    insert(principals).values(
+                        tenant=identity.tenant,
+                        id=identity.id,
+                        kind=STAFF,
+                        roles=roles,
+                        subject_id=None,
+                        # No usable key: the hash of a random value nobody ever sees.
+                        key_hash=_hash(f"oidc:{secrets.token_urlsafe(32)}"),
+                        created_at=utcnow(),
+                        created_by="oidc",
+                        expires_at=None,
+                    )
+                )
+                await self.audit.record_in(
+                    conn,
+                    identity.tenant,
+                    identity.id,
+                    "principal.staff.provisioned",
+                    f"principal/{identity.id}",
+                    details={"roles": roles, "via": "oidc", "mfa": identity.mfa},
+                )
+            else:
+                if row["kind"] != STAFF:
+                    raise ValueError("this identity is not a staff member")
+                if row["revoked_at"] is not None:
+                    return None
+                not_before = aware(row["not_before"])
+                if not_before is not None and identity.issued_at < not_before.timestamp():
+                    return None
+                if sorted(row["roles"]) != roles:
+                    await conn.execute(update(principals).where(key).values(roles=roles))
+                    await self.audit.record_in(
+                        conn,
+                        identity.tenant,
+                        "oidc",
+                        "principal.roles_synced",
+                        f"principal/{identity.id}",
+                        details={"from": sorted(row["roles"]), "to": roles},
+                    )
+        return Principal(identity.tenant, identity.id, STAFF, frozenset(roles))
+
+    async def sign_out(self, tenant: str, pid: str, actor: str) -> bool:
+        """End every single-sign-on session of a staff member (lost laptop, stolen
+        phone): tokens issued before now stop working; a new sign-in works again."""
+        query = (
+            update(principals)
+            .where(
+                and_(
+                    principals.c.tenant == tenant,
+                    principals.c.id == pid,
+                    principals.c.kind == STAFF,
+                    principals.c.revoked_at.is_(None),
+                )
+            )
+            .values(not_before=utcnow())
+        )
+        async with self.db.engine.begin() as conn:
+            done = (await conn.execute(query)).rowcount == 1
+            if done:
+                await self.audit.record_in(
+                    conn, tenant, actor, "principal.signed_out", f"principal/{pid}"
+                )
+        return done
 
     async def list(self, tenant: str) -> list[dict[str, Any]]:
         query = select(
