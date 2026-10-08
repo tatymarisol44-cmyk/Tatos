@@ -251,3 +251,6 @@ input, select, textarea {
 .result.severity-high { border-left-color: var(--err); }
 .result .alert { margin: 4px 0 0; color: var(--err); font-weight: 600; }
 .approve { background: var(--ok); color: var(--on-ok); border: 0; border-radius: 8px; padding: 6px 14px; justify-self: start; }
+.risk { margin: 0; padding: 6px 12px; border-left: 4px solid var(--border); background: var(--surface-2); border-radius: 6px; }
+.risk.severity-moderate { border-left-color: var(--warn); }
+.risk.severity-high { border-left-color: var(--err); }

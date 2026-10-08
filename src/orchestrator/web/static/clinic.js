@@ -403,7 +403,7 @@ async function renderFollowUp(patient, box) {
     box.replaceChildren(
       el("p", { text: `Attended ${a.completed} · missed ${a.no_shows} · cancelled ${a.cancelled} · attendance ${rate}` }),
       el("p", { class: "muted small", text: `Last visit: ${a.last_visit ? new Date(a.last_visit).toLocaleDateString() : "—"} · next: ${a.next_visit ? new Date(a.next_visit).toLocaleString() : "none booked"}` }),
-      el("p", { class: `result severity-${level}`,
+      el("p", { class: `risk severity-${level}`,
         text: `No-show risk: ${risk.level}${risk.reasons.length ? ` (${risk.reasons.join("; ")})` : ""}` }),
       ...f.tests.map((t) => el("p", { class: "small", text: `${t.instrument}: ${t.first.total} (${t.first.band || "—"}) → ${t.last.total} (${t.last.band || "—"}) · ${DIRECTION[t.direction]} · ${t.applied} times` })),
       el("p", { class: "muted small", text: f.engagement.available
