@@ -117,6 +117,32 @@ campaigns:
     - 100%
     - milagro
   forbid_clinical_terms: true
+# Consent questions for people in mental-health care (LOPDP Art. 8: free, specific,
+# informed, unambiguous). Without them the generic pitch ("offers made for you", "we use
+# your visit history") would reach therapy patients: no offers, no profiling from visits.
+consent_prompts:
+  marketing:
+    title: Novedades del consultorio
+    benefit: >-
+      Te avisamos de talleres, charlas y nuevos horarios del consultorio.
+    detail: >-
+      Como máximo 2 mensajes al mes, primero en la app; por Telegram solo si no la abres.
+      Nunca mencionan tu tratamiento ni tu salud. Escribe STOP cuando quieras para dejar
+      de recibirlos.
+  analytics:
+    title: Ayúdanos a mejorar lo que publicamos
+    benefit: >-
+      Contamos qué contenidos de la app abres, para publicar más de lo que te resulta útil.
+    detail: >-
+      Solo lo ve este consultorio y solo en totales de grupo. No usa tus sesiones, tus tests
+      ni tu historia clínica, y no se vende ni se comparte. Si lo retiras, esos datos se
+      anonimizan para siempre.
+  memory:
+    title: Que no tengas que repetirlo
+    benefit: >-
+      El asistente recuerda cómo prefieres que te atendamos (horario, canal, idioma) para
+      agendar más rápido.
+    detail: Solo preferencias de una lista cerrada; nunca lo que cuentas en consulta.
 safety:
   crisis:
     escalate_to: [treating_professional, on_duty_contact]

@@ -310,3 +310,17 @@ def test_cli_strict_exits_nonzero_for_unverified_production(
     monkeypatch.setattr(packs, "load_packs", lambda: {"live": live})
     assert main(["pack", "validate", "--strict"]) == 1
     assert "relies on unverified references" in capsys.readouterr().out
+
+
+def test_mental_health_patients_get_their_own_consent_questions() -> None:
+    # The generic pitch offers deals and profiles visit history: never for therapy
+    # patients. Each question names its channel or scope and how to withdraw (LOPDP Art. 8).
+    from orchestrator import packs
+
+    for pack_id in ("ec-psychologist", "ec-psychiatrist"):
+        prompts = packs.load_packs()[pack_id].consent_prompts
+        text = " ".join(p.benefit + " " + p.detail for p in prompts.values()).lower()
+        assert "oferta" not in text and "historial" not in text, pack_id
+        assert "stop" in prompts["marketing"].detail.lower()
+        assert "2 mensajes al mes" in prompts["marketing"].detail
+        assert "historia clínica" in prompts["analytics"].detail
