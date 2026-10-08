@@ -385,13 +385,15 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | SEC-05 | The console shall use a strict CSP (no inline script, no third-party origins). | I | test_team (`test_console_served_with_csp`) |
 | SEC-06 | Secrets shall live in environment/secret stores only. The Telegram token shall not appear in logs or audit events. | I | test_campaigns |
 | SEC-07 | Header, path and body fields shall be validated by pattern and length (for example staff names, subject ids and thread ids), with 422 on violation. | I | test_business_api |
+| SEC-08 | The public entry shall be HTTPS only, through a GKE Gateway with a Google-managed certificate; plain HTTP shall get a permanent redirect and never reach the API. HSTS shall be sent in production (ADR 0016). | I | test_deploy_config, test_edge |
+| SEC-09 | CORS shall be closed by default and, when configured, allow exact https origins only, without credentials. Every response shall carry nosniff, no-referrer and frame-deny headers, and API responses `Cache-Control: no-store`. | I | test_edge |
 | PRV-01 | Subject ids shall be pseudonymous. The insights LLM shall receive aggregates keyed by ids. The audit trail shall hold metadata only. Memory shall hold no contact or clinical data (unless the pack allows clinical data). | I | test_memory, test_crm, test_governance |
 | REL-01 | Optional stages (retrieval, memory, remote agents, synthesis, team steps) shall degrade instead of failing the request. | I | test_knowledge, test_memory, test_remote_chaos, test_team |
 | REL-02 | Concurrent-safe state changes: review resolution, campaign approval and campaign sending shall claim their state with a conditional update. | I | test_governance, test_campaigns |
 | PERF-01 | Campaign delivery, results and alerts shall use a bounded number of queries per operation (no per-recipient round trips). | I | code review; test_campaigns |
 | PERF-02 | A load test shall report p50/p95/p99 latency, throughput and error rate with a fake LLM (orchestrator overhead) and with real providers. Done with the fake LLM on Postgres, one vs two processes; not yet with real providers. | P | docs/load-test.md, loadtest/locustfile.py |
 | OBS-01 | OpenTelemetry spans per graph node, team step, memory and knowledge operation and LLM call (GenAI attributes). Metrics: routed count, guardrail blocks, latency, tokens. | I | Manual: `docker compose up` + Jaeger/Prometheus. The OTLP exporter setup has no automated test (see Appendix C). |
-| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0015). | I | CI |
+| MNT-01 | Test coverage gate ≥ 80% (currently about 96%), mypy `--strict`, ruff lint and format, and an ADR for each architectural decision (0001–0016). | I | CI |
 | POR-01 | Provider-agnostic LLM (LiteLLM), SQLite or Postgres, in-memory store or Qdrant. Runnable locally, with Docker Compose, in Codespaces and on Kubernetes. | I | CI, dev container |
 
 ### 3.12 Data Structure

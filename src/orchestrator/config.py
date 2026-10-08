@@ -7,10 +7,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _TENANT = re.compile(r"[\w.-]{1,64}")
+# An exact browser origin: https://host[:port], or plain http for a local dev server only.
+_ORIGIN = re.compile(
+    r"https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?"
+    r"|http://(localhost|127\.0\.0\.1)(:\d{1,5})?"
+)
 
 
 class Settings(BaseSettings):
@@ -190,6 +195,24 @@ class Settings(BaseSettings):
     # everything through, "closed" refuses requests (429) until Redis is back.
     rate_limit_on_outage: Literal["local", "open", "closed"] = "local"
     public_base_url: str = "http://localhost:8000"
+    # --- Edge (ADR 0016): what the API adds behind the HTTPS gateway --------
+    # Browser origins allowed to call the API from another site (e.g. a patient app), as
+    # JSON. Empty: no CORS headers at all, so browsers allow same-origin calls only.
+    cors_allowed_origins: list[str] = Field(default_factory=list)
+    # Strict-Transport-Security max-age; 0 sends none (development over plain HTTP).
+    hsts_max_age_seconds: int = Field(default=0, ge=0, le=63_072_000)
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def _exact_origins(cls, value: list[str]) -> list[str]:
+        """Exact origins only: no wildcard, no path, https except a local dev server."""
+        for origin in value:
+            if not _ORIGIN.fullmatch(origin):
+                raise ValueError(
+                    f"invalid CORS origin {origin!r}: use https://host[:port] "
+                    "(http only for localhost), no '*', no path"
+                )
+        return value
 
     # --- Observability -----------------------------------------------------
     otel_enabled: bool = False
@@ -224,6 +247,9 @@ class Settings(BaseSettings):
                 "RATE_LIMIT_BACKEND=memory: every replica gives each tenant its own budget "
                 "(use redis)"
             )
+        plain = [o for o in self.cors_allowed_origins if o.startswith("http://")]
+        if plain:
+            problems.append(f"CORS_ALLOWED_ORIGINS has plain-HTTP origins in prod: {plain}")
         return problems
 
     def tenant_keys(self) -> dict[str, str]:

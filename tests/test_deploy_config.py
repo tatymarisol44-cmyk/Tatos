@@ -65,6 +65,36 @@ def test_gke_overlay_opens_only_the_gke_metadata_server_to_the_api() -> None:
     assert all(len(r["to"]) == 1 and len(r["ports"]) == 1 for r in spec["egress"])
 
 
+def test_gke_gateway_serves_https_and_redirects_http() -> None:
+    """ADR 0016: the only public entry is HTTPS; plain HTTP gets a permanent redirect."""
+    docs = {(d["kind"], d["metadata"]["name"]): d for d in _docs(GKE / "gateway.yaml")}
+    gateway = docs[("Gateway", "agency-orchestrator")]
+    assert gateway["spec"]["gatewayClassName"] == "gke-l7-global-external-managed"
+    assert gateway["metadata"]["annotations"]["networking.gke.io/certmap"]
+    listeners = {
+        (lst["name"], lst["protocol"], lst["port"]) for lst in gateway["spec"]["listeners"]
+    }
+    assert listeners == {("http", "HTTP", 80), ("https", "HTTPS", 443)}
+
+    redirect = docs[("HTTPRoute", "agency-orchestrator-redirect")]["spec"]
+    assert redirect["parentRefs"] == [{"name": "agency-orchestrator", "sectionName": "http"}]
+    (rule,) = redirect["rules"]
+    assert "backendRefs" not in rule  # plain HTTP never reaches the API
+    assert rule["filters"] == [
+        {"type": "RequestRedirect", "requestRedirect": {"scheme": "https", "statusCode": 301}}
+    ]
+    api = docs[("HTTPRoute", "agency-orchestrator")]["spec"]
+    assert api["parentRefs"] == [{"name": "agency-orchestrator", "sectionName": "https"}]
+    assert api["rules"][0]["backendRefs"] == [{"name": "agency-orchestrator", "port": 80}]
+
+
+def test_gke_overlay_turns_on_hsts() -> None:
+    kustomization = _docs(GKE / "kustomization.yaml")[0]
+    assert "gateway.yaml" in kustomization["resources"]
+    patches = " ".join(p["patch"] for p in kustomization["patches"])
+    assert "HSTS_MAX_AGE_SECONDS" in patches and "31536000" in patches
+
+
 def test_gke_overlay_runs_the_api_as_its_own_service_account() -> None:
     (account,) = _docs(GKE / "serviceaccount.yaml")
     assert account["metadata"]["name"] == "agency-orchestrator"

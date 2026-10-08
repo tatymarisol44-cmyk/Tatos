@@ -1,0 +1,59 @@
+# The public HTTPS entry point (ADR 0016): a GKE Gateway, which provisions a global
+# external Application Load Balancer. Read on 2026-10-07 in GKE's Gateway guides:
+# GatewayClass `gke-l7-global-external-managed`; a Certificate Manager certificate map
+# attached with the `networking.gke.io/certmap` annotation (then the HTTPS listener needs no
+# certificateRefs); HTTP redirected to HTTPS by an HTTPRoute bound to the HTTP listener
+# (sectionName) with a RequestRedirect filter, 301.
+#
+# One-time setup outside the cluster (needs the domain, owner's decision A9):
+#   gcloud certificate-manager dns-authorizations create ...   (proves the domain is yours)
+#   gcloud certificate-manager certificates create agency-orchestrator-cert --domains=DOMAIN \
+#     --dns-authorizations=...                                   (Google-managed, auto-renewed)
+#   gcloud certificate-manager maps create agency-orchestrator-certmap
+#   gcloud certificate-manager maps entries create ... --map=agency-orchestrator-certmap \
+#     --certificates=agency-orchestrator-cert --hostname=DOMAIN
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agency-orchestrator
+  annotations:
+    networking.gke.io/certmap: agency-orchestrator-certmap
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+    - name: https
+      protocol: HTTPS
+      port: 443
+---
+# Plain HTTP only ever answers with a permanent redirect to HTTPS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agency-orchestrator-redirect
+spec:
+  parentRefs:
+    - name: agency-orchestrator
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+# HTTPS traffic goes to the API Service (TLS ends at the load balancer).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agency-orchestrator
+spec:
+  parentRefs:
+    - name: agency-orchestrator
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: agency-orchestrator
+          port: 80

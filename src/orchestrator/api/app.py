@@ -13,6 +13,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,6 +29,7 @@ from orchestrator.api import (
     social,
 )
 from orchestrator.api.body_limit import BodySizeLimit
+from orchestrator.api.edge import SecurityHeaders
 from orchestrator.api.schemas import (
     AgentSummary,
     ChatRequest,
@@ -122,6 +124,18 @@ def create_app(
         max_bytes=settings.max_body_bytes,
         overrides={"/v1/knowledge/documents": settings.max_document_body_bytes},
     )
+    app.add_middleware(SecurityHeaders, hsts_max_age_seconds=settings.hsts_max_age_seconds)
+    # Cross-site browser calls only from the exact origins configured; none by default.
+    # Keys travel in X-API-Key, never in cookies, so credentials are not allowed.
+    if settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_allowed_origins,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+            allow_headers=["X-API-Key", "Content-Type"],
+            allow_credentials=False,
+            max_age=600,
+        )
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(patients.router)
