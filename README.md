@@ -292,3 +292,7 @@ docs/adr/         architecture decision records
 ## License
 
 MIT. Agent content © The Agency contributors (MIT), included as a submodule.
+
+## Road to production
+
+What is done, what is left and who does it: [docs/LAUNCH.md](docs/LAUNCH.md). Security: [threat model](docs/security/threat-model.md), [pentest scope](docs/security/pentest-scope.md). Operations: [SLOs](docs/slo.md), [runbooks](docs/runbooks/README.md), [infrastructure](deploy/terraform/README.md).

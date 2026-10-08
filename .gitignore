@@ -16,3 +16,8 @@ media/
 docs/packs/*.docx
 # Owner-only notes: legal research and the decision log (never published).
 docs/private/
+
+# Terraform working directory (providers); the lock file is committed
+.terraform/
+*.tfstate
+*.tfstate.*
