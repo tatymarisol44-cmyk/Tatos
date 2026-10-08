@@ -2,7 +2,7 @@ id: ec-mental-health-base
 name: Mental health, Ecuador (base)
 description: >-
   Shared base for the psychologist and psychiatrist packs in Ecuador. It cannot serve a
-  tenant by itself. Legal references carry the status they really have (docs/packs/RESEARCH.md):
+  tenant by itself. Legal references carry the status they really have:
   `read` means the primary text was read, `secondary` a summary only, `to_verify` unconfirmed.
 abstract: true
 jurisdiction:

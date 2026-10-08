@@ -4,7 +4,7 @@ This is a router, not an assessment: it decides who must look at a message, neve
 means clinically. It is tuned for recall (a false alarm costs a professional one look; a
 miss can cost much more), matches accent-folded Spanish and English phrases, and its output
 only ever goes to a person: the AI never answers a message flagged here (ADR 0014). The
-list is a starting point to review with the practice's professionals (DECISIONS-PENDING P4)."""
+list is a starting point to review with the practice's professionals (owner's decision P4)."""
 
 from __future__ import annotations
 

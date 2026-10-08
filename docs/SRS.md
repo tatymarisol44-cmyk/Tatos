@@ -422,7 +422,7 @@ This table lists the main business tables, not every table (keys, audit chain he
 
 ### 3.13 Profession Packs (PCK)
 
-Ecuador only for now. Every legal reference in a pack carries the status it really has: `read` (primary text read), `secondary` (summary only) or `to_verify` (ADR 0014, docs/packs/RESEARCH.md).
+Ecuador only for now. Every legal reference in a pack carries the status it really has: `read` (primary text read), `secondary` (summary only) or `to_verify` (ADR 0014; the research notes behind them are kept private).
 
 | ID | Requirement | Status | Verification |
 |---|---|---|---|
@@ -991,6 +991,6 @@ For further information about this document and the project, contact the project
 9. **Local environment.** The development machine cannot run Docker (firmware virtualization disabled). The Postgres integration test, the Java suite and the Docker builds run only in CI or Codespaces.
 10. **Telemetry export untested.** `setup_telemetry` (OTLP exporters) has no automated test; the spans and metrics themselves are exercised by the suite through the no-op provider. A test with an in-memory span exporter would close this.
 11. **Not yet run end to end.** The CI-only checks for the new code (Postgres flow, `test_db_postgres.py`) and the Docker/Kubernetes deployment have not been executed yet, because the repository has not been pushed.
-12. **Legal references not confirmed.** Several references in the Ecuadorian packs are `secondary` or `to_verify` (docs/packs/RESEARCH.md); no pack is marked production until a lawyer confirms them (PCK-08). Open owner decisions are listed in docs/DECISIONS-PENDING.md.
+12. **Legal references not confirmed.** Several references in the Ecuadorian packs are `secondary` or `to_verify`; no pack is marked production until a lawyer confirms them (PCK-08).
 13. **Heuristic crisis routing.** Crisis wording in incoming messages is matched by phrases tuned for recall; it can miss paraphrases and voice notes. It only decides who must look, and the list must be reviewed with the practice's professionals.
 14. **Platform integrations untested live.** The Instagram, TikTok and WhatsApp adapters follow the official documentation read on 2026-10-07 and are tested against a simulated network; no call has reached a real platform yet (no accounts, no app review). Facebook page rules are unread, so Facebook cannot publish.

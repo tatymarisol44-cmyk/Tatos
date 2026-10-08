@@ -1,5 +1,5 @@
 # Production on Google Kubernetes Engine with keyless Google credentials (Workload Identity
-# Federation for GKE). Decided by the owner on 2026-10-07 (DECISIONS-PENDING A8).
+# Federation for GKE). Decided by the owner on 2026-10-07 (owner's decision A8).
 #
 # One-time setup outside the cluster (no key file is ever created):
 #   1. Enable Workload Identity Federation on the cluster and its node pools.

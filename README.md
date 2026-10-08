@@ -4,7 +4,7 @@ A multi-agent orchestration service over **260+ specialist agents** from [The Ag
 
 It is built to be embedded in a SaaS: multi-tenant API keys, per-tenant rate limits and conversation threads, and interoperability through **MCP** (tools for Claude/Cursor) and **A2A** (agent-to-agent delegation, in both directions: other agents can call the orchestrator, and specialists written in other languages, such as the included **Java/Spring Boot agent**, join its catalog).
 
-On top of the orchestrator sits an **AI-native CRM with governance (ERM)** for small businesses, with dental clinics as the first vertical: patients, appointments and treatment plans with traffic-light follow-ups, SQL-computed insights explained in natural language, loyalty campaigns measured against a holdout group, **human review of high-risk answers** (LangGraph `interrupt` + checkpoint), consent management, an audit trail, data-subject export/erasure, and consent-gated **semantic memory** per customer. What differs between business types lives in **industry packs** (YAML), not code. For health professions in Ecuador the packs become **profession profiles** (psychologist, psychiatrist) with cited legal references, and a **marketing module** generates ads and videos by code, publishes them on Instagram and TikTok after human approval, and answers WhatsApp with crisis messages routed to a person. The full requirements are in the [SRS](docs/SRS.md); open owner decisions in [DECISIONS-PENDING](docs/DECISIONS-PENDING.md).
+On top of the orchestrator sits an **AI-native CRM with governance (ERM)** for small businesses, with dental clinics as the first vertical: patients, appointments and treatment plans with traffic-light follow-ups, SQL-computed insights explained in natural language, loyalty campaigns measured against a holdout group, **human review of high-risk answers** (LangGraph `interrupt` + checkpoint), consent management, an audit trail, data-subject export/erasure, and consent-gated **semantic memory** per customer. What differs between business types lives in **industry packs** (YAML), not code. For health professions in Ecuador the packs become **profession profiles** (psychologist, psychiatrist) with cited legal references, and a **marketing module** generates ads and videos by code, publishes them on Instagram and TikTok after human approval, and answers WhatsApp with crisis messages routed to a person. The full requirements are in the [SRS](docs/SRS.md).
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,7 @@ curl -s localhost:8000/v1/insights/summary -H "X-API-Key: key1"
 
 ## Health professions (Ecuador) and the marketing module
 
-Research with the legal sources and the status each one really has (read, secondary, to verify) is in [docs/packs/RESEARCH.md](docs/packs/RESEARCH.md); the designs are [ADR 0014](docs/adr/0014-profession-packs.md) and [ADR 0015](docs/adr/0015-social-channels.md).
+Every legal reference in a pack carries the status it really has (read, secondary, to verify); the research notes behind them are kept private. The designs are [ADR 0014](docs/adr/0014-profession-packs.md) and [ADR 0015](docs/adr/0015-social-channels.md).
 
 | Module | What it does |
 |---|---|
@@ -279,7 +279,7 @@ docs/adr/         architecture decision records
 - **Production deploy needs a cluster.** `deploy.yml` rehearses every green `main` on a kind cluster (healthy rollout, then a broken image rolled back automatically); the production job is manual behind the `production` environment and needs its `KUBECONFIG` secret. Load and backup/restore evidence: [docs/load-test.md](docs/load-test.md), `deploy/backup/`.
 - **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
 - **Channels:** Telegram campaigns; Instagram and TikTok publishing; incoming WhatsApp with staff replies. None has reached a real platform yet (no accounts or app review); the adapters follow the official docs and are tested against a simulated network. WhatsApp templates and campaigns, Facebook, comment replies and paid ads are next.
-- **Legal confirmation pending.** Several Ecuadorian references are `secondary` or `to_verify`, so no health pack is marked production; see [DECISIONS-PENDING](docs/DECISIONS-PENDING.md).
+- **Legal confirmation pending.** Several Ecuadorian references are `secondary` or `to_verify`, so no health pack is marked production until a lawyer confirms them.
 - **Identity:** per-person API keys (`sk_` staff keys with roles, `pk_` patient keys bound to one subject); `X-Actor` is ignored. SSO/OIDC is future work.
 - **Streaming is per step, not per token.** `/v1/chat/stream` emits an event as each node or specialist finishes. Next: token streaming of the final answer and A2A `message/stream`.
 - **Documents are plain text.** The console reads text files in the browser; PDF/DOCX need a server-side extractor.

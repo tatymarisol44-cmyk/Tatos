@@ -181,7 +181,7 @@ class ClinicalRecords:
     async def export_subject(self, tenant: str, patient_id: str) -> dict[str, Any]:
         """For a data-subject access request: the clinical record, without psychotherapy
         notes, whose disclosure to the patient is the lawyer's question D2
-        (DECISIONS-PENDING P8). Their number is reported so the privacy officer can act."""
+        (owner's decision P8). Their number is reported so the privacy officer can act."""
         query = (
             select(clinical_documents)
             .where(

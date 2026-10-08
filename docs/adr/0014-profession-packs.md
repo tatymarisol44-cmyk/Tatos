@@ -4,7 +4,7 @@
 
 ## Context
 
-Today a pack (`packs.py`, `pack_data/*.yaml`) is only a *policy*: review rules, memory keys, CRM pipeline, campaign limits and consent pitches. The business now needs one exact application per kind of health professional: psychologist, psychiatrist, dentist, physician. What differs between them is not code but content: which documents they sign, which forms they fill, what the AI may touch, what marketing may say, how long records are kept. The research in [docs/packs/RESEARCH.md](../packs/RESEARCH.md) shows the differences are legal and structural, not cosmetic. The clearest example: the ACESS special prescription is a numbered government form that no software may issue, and a psychologist cannot prescribe at all.
+Today a pack (`packs.py`, `pack_data/*.yaml`) is only a *policy*: review rules, memory keys, CRM pipeline, campaign limits and consent pitches. The business now needs one exact application per kind of health professional: psychologist, psychiatrist, dentist, physician. What differs between them is not code but content: which documents they sign, which forms they fill, what the AI may touch, what marketing may say, how long records are kept. The research (kept private; each pack reference carries its status) shows the differences are legal and structural, not cosmetic. The clearest example: the ACESS special prescription is a numbered government form that no software may issue, and a psychologist cannot prescribe at all.
 
 One codebase per specialty would multiply every audit finding by N. So the rule stays "configuration, not code", and the pack grows from a policy into a **profession profile**.
 

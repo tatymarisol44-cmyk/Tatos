@@ -10,7 +10,7 @@ professional, who interprets it. PHQ-9 item 9 asks about thoughts of being bette
 or of self-harm; any answer above zero is flagged so a person looks at it, whatever the total.
 
 The patient-facing item texts are not shipped: the official Spanish translation has to be
-taken from the publisher's site and checked first (DECISIONS-PENDING P7)."""
+taken from the publisher's site and checked first (owner's decision P7)."""
 
 from __future__ import annotations
 
