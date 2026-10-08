@@ -15,6 +15,10 @@ permissions:
 
 jobs:
   eval:
+    # Real models cost money and need the two secrets above, so the schedule is opt-in:
+    # set the repository variable NIGHTLY_EVAL=enabled once the keys exist. A manual run
+    # (workflow_dispatch) always works.
+    if: github.event_name == 'workflow_dispatch' || vars.NIGHTLY_EVAL == 'enabled'
     runs-on: ubuntu-latest
     env:
       UV_FROZEN: "1"

@@ -204,10 +204,12 @@ jobs:
         with:
           submodules: recursive
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      # Image names match deploy/k8s/base/kustomization.yaml, whatever the repository is
+      # called (registry names must be lower-case; the owner name already is).
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository_owner }}/agency-orchestrator
           tags: |
             type=sha
             type=ref,event=branch
@@ -215,7 +217,7 @@ jobs:
       - id: meta-jvm
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ghcr.io/${{ github.repository }}-jvm-agent
+          images: ghcr.io/${{ github.repository_owner }}/agency-orchestrator-jvm-agent
           tags: |
             type=sha
             type=ref,event=branch
