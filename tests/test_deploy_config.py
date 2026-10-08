@@ -170,7 +170,7 @@ def test_workflow_actions_are_pinned_to_commit_shas() -> None:
     for path in WORKFLOWS.glob("*.yml"):
         for line in path.read_text(encoding="utf-8").splitlines():
             match = re.search(r"uses:\s*(\S+)", line)
-            if match:
+            if match and not match.group(1).startswith("./"):  # local: same commit
                 assert re.search(r"@[0-9a-f]{40}$", match.group(1)), f"{path.name}: {line}"
 
 
@@ -222,7 +222,22 @@ def test_deploys_are_health_gated_and_roll_back() -> None:
     steps = " ".join(str(s.get("run", "")) for s in flow["jobs"]["rehearsal"]["steps"])
     assert "rollout.sh agency agency-orchestrator:ci" in steps
     assert "does-not-exist" in steps  # a broken release is rehearsed too
-    assert flow["jobs"]["production"]["environment"] == "production"
+    # main -> rehearsal -> staging -> approval -> production, the same digest throughout.
+    jobs = flow["jobs"]
+    assert jobs["staging"]["needs"] == ["resolve", "rehearsal"]
+    assert jobs["production"]["needs"] == ["resolve", "staging"]
+    for env in ("staging", "production"):
+        assert jobs[env]["with"]["environment"] == env
+        assert jobs[env]["with"]["image"] == "${{ needs.resolve.outputs.api }}"
+    gke = yaml.safe_load((WORKFLOWS / "deploy-gke.yml").read_text(encoding="utf-8"))
+    deploy = gke["jobs"]["deploy"]
+    assert deploy["environment"] == "${{ inputs.environment }}"  # reviewers gate production
+    runs = " ".join(str(s.get("run", "")) for s in deploy["steps"])
+    uses = [str(s.get("uses", "")) for s in deploy["steps"]]
+    assert "cosign verify" in runs  # only images CI signed reach a cluster
+    assert any(u.startswith("google-github-actions/auth@") for u in uses)  # keyless
+    assert "KUBECONFIG" not in (WORKFLOWS / "deploy-gke.yml").read_text(encoding="utf-8")
+    assert "rollout.sh agency" in runs
     script = (ROOT / "deploy" / "scripts" / "rollout.sh").read_text(encoding="utf-8")
     assert "rollout undo" in script and "rollout status" in script
     strategy = _k8s("Deployment", "agency-orchestrator")["spec"]["strategy"]

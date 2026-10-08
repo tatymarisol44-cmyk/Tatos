@@ -1,11 +1,20 @@
 name: Deploy
 
-# Continuous delivery with a health gate and automatic rollback (second audit).
-# - rehearsal: on every green CI run on main, deploy the real manifests to a throwaway
-#   kind cluster with deploy/scripts/rollout.sh, then deploy a broken image on purpose
-#   and check that the script rolls it back while the old pods keep serving.
-# - production: manual, behind the `production` environment (required reviewers), with
-#   the same script and the image CI pushed for that commit.
+# Continuous delivery (audit 2026-10-08): main -> CI (test, scan, SBOM, sign) -> kind
+# rehearsal -> staging -> human approval -> production, always the SAME image digest.
+# - rehearsal: the real manifests on a throwaway kind cluster with deploy/scripts/rollout.sh,
+#   then a broken image on purpose, which must be rolled back while old pods keep serving.
+# - staging, production: GKE, keyless (Workload Identity Federation: no key or kubeconfig
+#   stored in GitHub), in deploy-gke.yml. Each runs only if its environment's variables
+#   are set, so the pipeline is green before the cloud exists. The image signature is
+#   verified before deploying. `production` waits for the environment's required reviewers.
+# - workflow_dispatch: redeploy (or roll back to) a given digest, through staging first.
+#
+# Per-environment variables (Settings -> Environments -> staging / production):
+#   GCP_WIF_PROVIDER  projects/<number>/locations/global/workloadIdentityPools/github/providers/github
+#   GCP_DEPLOYER_SA   deployer@<project>.iam.gserviceaccount.com (roles/container.developer)
+#   GKE_CLUSTER, GKE_LOCATION, GCP_PROJECT
+# Secret: SMOKE_API_KEY (a service key of a smoke-test tenant with no real data).
 on:
   workflow_run:
     workflows: [CI]
@@ -13,20 +22,55 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      image:
-        description: "Image to deploy to production (ghcr.io/...:sha-xxxxxxx)"
+      digest:
+        description: "API image digest to deploy (sha256:...), e.g. to roll back"
         required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      api: ${{ steps.digest.outputs.api }}
+      sha: ${{ steps.digest.outputs.sha }}
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: digest
+        env:
+          REPO: ghcr.io/${{ github.repository_owner }}/agency-orchestrator
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          INPUT_DIGEST: ${{ inputs.digest }}
+        run: |
+          if [ -n "$INPUT_DIGEST" ]; then
+            digest="$INPUT_DIGEST"
+          else
+            digest=$(docker buildx imagetools inspect "$REPO:sha-${HEAD_SHA:0:7}" \
+              --format '{{json .Manifest}}' | jq -r .digest)
+          fi
+          case "$digest" in sha256:*) ;; *) echo "::error::no digest ($digest)"; exit 1 ;; esac
+          echo "api=$REPO@$digest" >> "$GITHUB_OUTPUT"
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "deploying $REPO@$digest"
+
   rehearsal:
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    needs: resolve
+    if: github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -68,20 +112,30 @@ jobs:
           kubectl -n agency describe deploy/agency-orchestrator
           kubectl -n agency logs deploy/agency-orchestrator --all-containers --tail=200 || true
 
+  staging:
+    needs: [resolve, rehearsal]
+    # A manual redeploy skips the rehearsal (that image already passed it), never staging.
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (needs.rehearsal.result == 'success' || needs.rehearsal.result == 'skipped')
+    uses: ./.github/workflows/deploy-gke.yml
+    with:
+      environment: staging
+      image: ${{ needs.resolve.outputs.api }}
+      ref: ${{ needs.resolve.outputs.sha }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+
   production:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: production # configure required reviewers in the repository settings
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Cluster credentials
-        env:
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
-        run: |
-          test -n "$KUBECONFIG_DATA" || { echo "set the KUBECONFIG secret of the production environment"; exit 1; }
-          mkdir -p ~/.kube && printf '%s' "$KUBECONFIG_DATA" > ~/.kube/config && chmod 600 ~/.kube/config
-      - name: Health-gated rollout with automatic rollback
-        env:
-          SMOKE_API_KEY: ${{ secrets.SMOKE_API_KEY }}
-        run: bash deploy/scripts/rollout.sh agency "${{ inputs.image }}" 600s
+    needs: [resolve, staging]
+    uses: ./.github/workflows/deploy-gke.yml
+    with:
+      environment: production
+      image: ${{ needs.resolve.outputs.api }}
+      ref: ${{ needs.resolve.outputs.sha }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

@@ -1,0 +1,66 @@
+name: Deploy to GKE
+
+# One environment (staging or production), called by deploy.yml. Skipped, green, while
+# the environment has no GKE variables (the cloud is not set up yet).
+on:
+  workflow_call:
+    inputs:
+      environment: {type: string, required: true}
+      image: {type: string, required: true, description: "ghcr.io/...@sha256:..."}
+      ref: {type: string, required: true, description: "Commit whose manifests to apply"}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }} # production: required reviewers approve here
+    timeout-minutes: 30
+    env:
+      CONFIGURED: ${{ vars.GKE_CLUSTER != '' && vars.GCP_WIF_PROVIDER != '' }}
+    steps:
+      - name: Environment not configured yet
+        if: env.CONFIGURED != 'true'
+        run: echo "::notice::${{ inputs.environment }} has no GKE variables; nothing deployed"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.CONFIGURED == 'true'
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: env.CONFIGURED == 'true'
+      # Only an image this repository's CI built and signed may reach a cluster.
+      - name: Verify the image signature
+        if: env.CONFIGURED == 'true'
+        env:
+          IMAGE: ${{ inputs.image }}
+          IDENTITY: ^https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/heads/main$
+        run: |
+          cosign verify "$IMAGE" --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        if: env.CONFIGURED == 'true'
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        if: env.CONFIGURED == 'true'
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT }}
+      - name: Apply the manifests of this commit, then the health-gated rollout
+        if: env.CONFIGURED == 'true'
+        env:
+          IMAGE: ${{ inputs.image }}
+          SMOKE_API_KEY: ${{ secrets.SMOKE_API_KEY }}
+        run: |
+          # Manifest changes (config, policies, rules) ship with the code that needs them.
+          # The image stays the running one here; rollout.sh moves it, gated and reversible.
+          current=$(kubectl -n agency get deploy/agency-orchestrator \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+          (cd deploy/k8s/overlays/gke && kustomize edit set image "agency-orchestrator=${current:-$IMAGE}")
+          kubectl apply -k deploy/k8s/overlays/gke
+          bash deploy/scripts/rollout.sh agency "$IMAGE" 600s

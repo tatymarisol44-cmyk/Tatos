@@ -276,7 +276,7 @@ docs/adr/         architecture decision records
 
 ## Known limitations & roadmap
 
-- **Production deploy needs a cluster.** `deploy.yml` rehearses every green `main` on a kind cluster (healthy rollout, then a broken image rolled back automatically); the production job is manual behind the `production` environment and needs its `KUBECONFIG` secret. Load and backup/restore evidence: [docs/load-test.md](docs/load-test.md), `deploy/backup/`.
+- **Production deploy needs a cluster.** `deploy.yml` rehearses every green `main` on a kind cluster (healthy rollout, then a broken image rolled back automatically); then the same signed digest goes to `staging` and, after the required reviewers approve, to `production` on GKE with keyless credentials (Workload Identity Federation); both are skipped until their environment variables exist. Load and backup/restore evidence: [docs/load-test.md](docs/load-test.md), `deploy/backup/`.
 - **No ERP ledger yet.** Revenue comes from visit prices and accepted treatment plans; invoicing, payments and inventory with batches and expiry dates are the next module.
 - **Channels:** Telegram campaigns; Instagram and TikTok publishing; incoming WhatsApp with staff replies. None has reached a real platform yet (no accounts or app review); the adapters follow the official docs and are tested against a simulated network. WhatsApp templates and campaigns, Facebook, comment replies and paid ads are next.
 - **Legal confirmation pending.** Several Ecuadorian references are `secondary` or `to_verify`, so no health pack is marked production until a lawyer confirms them.
