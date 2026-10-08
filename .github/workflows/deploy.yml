@@ -108,7 +108,7 @@ jobs:
       - name: Diagnostics
         if: failure()
         run: |
-          kubectl -n agency get pods -o wide
+          bash deploy/scripts/diagnose.sh agency
           kubectl -n agency describe deploy/agency-orchestrator
           kubectl -n agency logs deploy/agency-orchestrator --all-containers --tail=200 || true
 

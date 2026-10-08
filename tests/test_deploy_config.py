@@ -252,3 +252,67 @@ def test_the_rehearsal_has_every_secret_prod_requires() -> None:
         assert f"- {name}=" in ci, name
     doc = (ROOT / "deploy" / "k8s" / "base" / "deployment.yaml").read_text("utf-8")
     assert "PSEUDONYM_KEY" in doc  # the operator's instructions name it too
+
+
+def test_the_rehearsal_api_may_reach_every_in_cluster_dependency() -> None:
+    # The namespace denies all traffic; the rehearsal's in-cluster Postgres once had no
+    # rule, so the migrate init container never connected and the first deploy hung.
+    docs = [d for p in K8S.glob("*.yaml") for d in _docs(p)]
+    docs += _docs(ROOT / "deploy" / "k8s" / "overlays" / "ci" / "postgres.yaml")
+    policies = [d for d in docs if d.get("kind") == "NetworkPolicy"]
+    api = {"app.kubernetes.io/name": "agency-orchestrator"}
+
+    def selects(policy: dict[str, Any], labels: dict[str, str]) -> bool:
+        wanted = policy["spec"]["podSelector"].get("matchLabels", {})
+        return all(labels.get(k) == v for k, v in wanted.items())
+
+    def allows(
+        direction: str, peers: str, own: dict[str, str], other: dict[str, str], port: int
+    ) -> bool:
+        return any(
+            selects(p, own)
+            and any(
+                any(
+                    peer.get("podSelector", {}).get("matchLabels") == other
+                    for peer in r.get(peers, [])
+                )
+                and any(pt["port"] == port for pt in r.get("ports", []))
+                for r in p["spec"].get(direction, [])
+            )
+            for p in policies
+        )
+
+    for name, port in (("postgres", 5432), ("qdrant", 6333), ("redis", 6379)):
+        target = {"app.kubernetes.io/name": name}
+        ingress = allows("ingress", "from", target, api, port)
+        egress = allows("egress", "to", api, target, port)
+        assert ingress and egress, f"API cannot reach {name}:{port} in the rehearsal"
+
+
+def test_failures_are_readable_without_signing_in() -> None:
+    ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    assert "scripts/ci/junit_annotations.py junit.xml" in ci
+    deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+    assert "deploy/scripts/diagnose.sh agency" in deploy
+
+
+def test_junit_failures_become_annotations(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    report = tmp_path / "junit.xml"
+    report.write_text(
+        '<testsuites><testsuite><testcase classname="tests.test_x" name="test_ok"/>'
+        '<testcase classname="tests.test_x" name="test_bad">'
+        '<failure message="assert 1 == 2">line one\n100% wrong</failure></testcase>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "ci" / "junit_annotations.py"), str(report)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "::error title=tests.test_x::test_bad::assert 1 == 2%0Aline one%0A100%25 wrong" in out
+    assert "1 failed test(s)" in out

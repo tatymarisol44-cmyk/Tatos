@@ -71,6 +71,11 @@ jobs:
       # Chromium for the console's browser test (tests/test_console_e2e.py).
       - run: uv run playwright install --with-deps chromium
       - run: uv run pytest --junitxml=junit.xml --cov-report=xml
+      # The job log needs a signed-in user; annotations do not. Each failed test becomes
+      # an annotation on the run page, so the failure can be read without the log.
+      - name: Report failed tests as annotations
+        if: failure() && hashFiles('junit.xml') != ''
+        run: python scripts/ci/junit_annotations.py junit.xml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
