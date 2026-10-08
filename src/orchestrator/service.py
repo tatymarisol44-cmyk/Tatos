@@ -54,6 +54,7 @@ from orchestrator.memory import SemanticMemory
 from orchestrator.oncall import OnCall
 from orchestrator.portal import PatientPortal
 from orchestrator.publishing import PublicationService
+from orchestrator.reminders import Reminders
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.social import SocialAccounts
@@ -199,6 +200,9 @@ class Orchestrator:
         )
         # Application services with explicit dependencies (audit 2026-10-08, item 7);
         # this object implements the conversation ports they need.
+        self.reminders = Reminders(
+            self.db, self.audit, settings, self.campaigns.telegram, self.inbound.is_opted_out
+        )
         self.inbound.assistant = WhatsAppAssistant(
             self.db, self.llm, self.knowledge, self.agenda, self.crm, settings, self.spend
         )

@@ -175,6 +175,10 @@ class Settings(BaseSettings):
     # parameter, the alert reference. Without a template, WhatsApp notices are skipped.
     whatsapp_alert_template: str | None = None
     whatsapp_alert_template_language: str = "es"
+    # Appointment reminders (reminders.py): hours before the visit, and the approved
+    # WhatsApp utility template (parameters: first name, practice, day and time).
+    reminder_hours_before: int = Field(default=24, ge=1, le=96)
+    whatsapp_reminder_template: str | None = None
     # E-mail notices (STARTTLS). Without SMTP_HOST they run dry.
     smtp_host: str | None = None
     smtp_port: int = 587

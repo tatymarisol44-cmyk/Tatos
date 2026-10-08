@@ -99,6 +99,10 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
         except Exception:
             log.exception("on-call escalation pass failed")
         try:
+            await orch.reminders.due()
+        except Exception:
+            log.exception("appointment reminders pass failed")
+        try:
             await orch.refresh_ops_gauges()
         except Exception:
             log.exception("ops gauges not refreshed")

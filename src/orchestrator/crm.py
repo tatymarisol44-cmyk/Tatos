@@ -78,6 +78,8 @@ appointments = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     # Who sees the patient: the professional's agenda never holds two overlapping visits.
     Column("professional_id", String(64), nullable=True, index=True),
+    # When the day-before reminder was claimed (reminders.py): one per visit.
+    Column("reminded_at", DateTime(timezone=True), nullable=True),
 )
 ACTIVE_STATUSES = ("scheduled", "confirmed")
 
