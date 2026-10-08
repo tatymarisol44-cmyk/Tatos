@@ -77,6 +77,12 @@ class ChatResponse(BaseModel):
     )
     decision_record: dict[str, Any] | None = None
     memory: dict[str, int] = Field(default_factory=dict)
+    provenance: Literal[
+        "ai_unreviewed", "ai_pending_review", "professional_approved", "professional_edited", "none"
+    ] = Field(
+        default="ai_unreviewed",
+        description="Who stands behind the answer; show it next to the answer, always.",
+    )
 
 
 class ReviewDecision(BaseModel):

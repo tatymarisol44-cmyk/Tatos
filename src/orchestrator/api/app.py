@@ -70,6 +70,11 @@ UI_HEADERS = {
 }
 
 
+LLM_UNAVAILABLE_MESSAGE = (
+    "The assistant is temporarily unavailable. Nothing was lost; try again shortly."
+)
+
+
 def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
@@ -178,8 +183,7 @@ def create_app(
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
-                "detail": "The assistant is temporarily unavailable. Nothing was lost; "
-                "try again shortly.",
+                "detail": LLM_UNAVAILABLE_MESSAGE,
                 "code": "llm_unavailable",
                 "retry_after": retry,
             },
@@ -304,11 +308,22 @@ def create_app(
             except LLMUnavailable as exc:
                 yield _sse(
                     "error",
-                    {"message": "assistant unavailable", "retry_after": round(exc.retry_after)},
+                    {
+                        "message": LLM_UNAVAILABLE_MESSAGE,
+                        "code": "llm_unavailable",
+                        "retry_after": max(1, round(exc.retry_after)),
+                    },
                 )
             except Exception:
                 log.exception("stream failed")
-                yield _sse("error", {"message": "orchestration failed"})
+                yield _sse(
+                    "error",
+                    {
+                        "message": "Something went wrong on our side. Nothing you typed was "
+                        "lost; try again.",
+                        "code": "internal",
+                    },
+                )
             finally:
                 SSE_CONNECTIONS.add(-1)
 

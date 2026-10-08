@@ -99,6 +99,7 @@ class ChatResult:
     route_log: list[dict[str, Any]] = field(default_factory=list)
     decision_record: dict[str, Any] | None = None
     memory: dict[str, int] = field(default_factory=dict)
+    provenance: Provenance = "ai_unreviewed"
 
 
 def build_embedder(settings: Settings) -> Embedder:
@@ -126,6 +127,29 @@ def build_memory_store(settings: Settings) -> MemoryStore:
         key = settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
         return QdrantMemoryStore(settings.qdrant_url, key)
     return InMemoryMemoryStore()
+
+
+Provenance = Literal[
+    "ai_unreviewed", "ai_pending_review", "professional_approved", "professional_edited", "none"
+]
+
+
+def provenance(status: str, review_decision: dict[str, Any] | None) -> Provenance:
+    """Who stands behind what is shown, so no interface can present an AI answer as a
+    professional's assessment (audit 2026-10-08, UI): an unreviewed AI answer, a draft a
+    professional has not decided yet, an answer a professional approved as is or edited.
+    `none` when nothing is shown (blocked, rejected)."""
+    if status == "pending_review":
+        return "ai_pending_review"
+    if status != "completed":
+        return "none"
+    if review_decision and review_decision.get("approved"):
+        return (
+            "professional_edited"
+            if review_decision.get("edited_answer")
+            else ("professional_approved")
+        )
+    return "ai_unreviewed"
 
 
 def _sources(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -588,6 +612,7 @@ class Orchestrator:
                 "recalled": len(state.get("memories", [])),
                 "stored": len(state.get("remembered", [])),
             },
+            provenance=provenance(status, state.get("review")),
         )
 
     async def _after_run(
@@ -932,7 +957,9 @@ class Orchestrator:
             actor=f"patient:{subject_id}",
             subject_context=self._patient_context(profile),
         )
-        return self.patient_view(thread_id, result.status, result.answer, result.sources)
+        return self.patient_view(
+            thread_id, result.status, result.answer, result.sources, result.provenance
+        )
 
     async def patient_thread(self, tenant: str, subject_id: str, thread_id: str) -> dict[str, Any]:
         """Poll a conversation: e.g. whether the clinic has reviewed a held answer."""
@@ -941,13 +968,14 @@ class Orchestrator:
         if not snapshot.values:
             raise KeyError(thread_id)
         if snapshot.next:
-            return self.patient_view(thread_id, "pending_review", None, [])
+            return self.patient_view(thread_id, "pending_review", None, [], "ai_pending_review")
         status = snapshot.values.get("status") or "completed"
         return self.patient_view(
             thread_id,
             status,
             snapshot.values.get("answer"),
             _sources(snapshot.values.get("knowledge", [])),
+            provenance(status, snapshot.values.get("review")),
         )
 
     async def thread_status(self, tenant: str, thread_id: str) -> dict[str, Any]:
@@ -962,6 +990,7 @@ class Orchestrator:
                 "status": "pending_review",
                 "answer": None,
                 "sources": [],
+                "provenance": "ai_pending_review",
             }
         values = snapshot.values
         status = "blocked" if values.get("blocked") else (values.get("status") or "completed")
@@ -971,14 +1000,20 @@ class Orchestrator:
             "status": status,
             "answer": values.get("answer") if done else None,
             "sources": _sources(values.get("knowledge", [])) if done else [],
+            "provenance": provenance(status, values.get("review")),
         }
 
     @staticmethod
     def patient_view(
-        thread_id: str, status: str, answer: str | None, sources: list[dict[str, Any]]
+        thread_id: str,
+        status: str,
+        answer: str | None,
+        sources: list[dict[str, Any]],
+        origin: Provenance = "ai_unreviewed",
     ) -> dict[str, Any]:
         """The only shape a patient ever receives: no drafts, routing, team outputs,
-        risk reasons, route log or usage."""
+        risk reasons, route log or usage. Always with its provenance: a patient must know
+        whether a professional stands behind an answer."""
         if status == "pending_review":
             message = PATIENT_PENDING
             answer = None
@@ -992,6 +1027,9 @@ class Orchestrator:
             "answer": answer,
             "message": message,
             "sources": [{"n": s["n"], "title": s["title"]} for s in sources],
+            "provenance": origin
+            if answer is not None
+            else ("ai_pending_review" if status == "pending_review" else "none"),
         }
 
     async def consent_prompt(self, tenant: str, subject_id: str) -> dict[str, Any]:

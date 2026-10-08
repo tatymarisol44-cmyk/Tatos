@@ -86,13 +86,41 @@ function headers() {
 }
 async function apiError(resp) {
   let detail = `${resp.status} ${resp.statusText}`;
+  let code = null;
   try {
     const body = await resp.json();
     detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    code = body.code || null;
   } catch { /* not JSON */ }
-  if (resp.status === 401) detail = "Invalid or missing API key.";
-  if (resp.status === 429) detail = "Rate limit reached. Try again in a minute.";
-  return new Error(detail);
+  if (resp.status === 401) detail = "Invalid or missing API key, or your session ended: sign in again.";
+  if (resp.status === 429) detail = "Too many requests. Wait a minute and try again.";
+  if (resp.status >= 500 && !code) detail = "Something went wrong on our side. Nothing you typed was lost; try again.";
+  const err = new Error(detail);
+  err.code = code;
+  err.status = resp.status;
+  err.retryAfter = Number(resp.headers.get("Retry-After")) || null;
+  return err;
+}
+
+// What a person reads when something fails: what happened, that nothing was lost, and
+// what to do. Never a bare "500 Internal Server Error".
+function friendlyError(err) {
+  if (err instanceof TypeError) return "Connection problem. Your text is kept; check the connection and try again.";
+  return err.message;
+}
+
+// Who stands behind an answer (audit 2026-10-08): an AI answer must never look like a
+// professional's assessment. Shown next to every answer, in words, not only colour.
+const PROVENANCE = {
+  ai_unreviewed: ["ai", "AI-generated · not reviewed by a professional"],
+  ai_pending_review: ["pending", "AI draft · pending professional review"],
+  professional_approved: ["approved", "Reviewed and approved by a professional"],
+  professional_edited: ["approved", "Edited and approved by a professional"],
+};
+function provenanceNode(kind) {
+  const entry = PROVENANCE[kind];
+  if (!entry) return null;
+  return el("p", { class: `provenance provenance-${entry[0]}`, text: entry[1] });
 }
 
 async function loadAgents() {
@@ -174,6 +202,7 @@ function setMode(mode) {
   state.mode = mode;
   for (const b of document.querySelectorAll(".mode button")) {
     b.setAttribute("aria-checked", String(b.dataset.mode === mode));
+    b.tabIndex = b.dataset.mode === mode ? 0 : -1; // one tab stop; arrows move inside
   }
   if (mode === "single" && state.pinned.length > 1) state.pinned = state.pinned.slice(0, 1);
   renderAgents();
@@ -245,6 +274,7 @@ function lockComposer(reason) {
 function heldNode(risk) {
   const reasons = risk?.reasons?.length ? ` (${risk.reasons.join(", ")})` : "";
   return el("div", { class: "held" },
+    provenanceNode("ai_pending_review"),
     el("b", { text: "Waiting for a human review" }),
     el("div", { class: "muted small", text: `A reviewer must approve this answer before it is shown${reasons}. This page checks every few seconds.` }));
 }
@@ -254,6 +284,8 @@ function showFinal(bubble, status) {
     bubble.replaceChildren(markdownNode(status.answer || ""));
     const sources = sourcesView(status.sources);
     if (sources) bubble.append(sources);
+    const origin = provenanceNode(status.provenance || "ai_unreviewed");
+    if (origin) bubble.append(origin);
   } else if (status.status === "rejected") {
     bubble.replaceChildren(el("div", { class: "held rejected" },
       el("b", { text: "Not approved" }),
@@ -356,7 +388,10 @@ async function send(question) {
         if (usage) meta.append(usage);
         if (data.guardrails.flags.length) meta.append(el("span", { class: "badge", text: `guardrails: ${data.guardrails.flags.join(", ")}` }));
       } else if (event === "error") {
-        throw new Error(data.message);
+        const err = new Error(data.message);
+        err.code = data.code || null;
+        err.retryAfter = data.retry_after || null;
+        throw err;
       }
       scrollDown();
     }
@@ -366,7 +401,14 @@ async function send(question) {
       // The run may still finish on the server: pick its outcome up from there.
       hold(state.threadId, bubble, risk);
     } else {
-      bubble.replaceChildren(el("div", { class: "error", text: err.message }));
+      const retry = el("button", { type: "button", class: "ghost small" }, "Try again");
+      retry.addEventListener("click", () => { reply.previousElementSibling?.remove(); reply.remove(); send(question); });
+      const wait = err.retryAfter ? ` (in about ${err.retryAfter} s)` : "";
+      bubble.replaceChildren(el("div", { class: "error", role: "alert" },
+        el("p", { text: friendlyError(err) + (err.code === "llm_unavailable" ? wait : "") }), retry));
+      // Nothing typed is lost: the question goes back to the box if it is empty.
+      const box = $("#question");
+      if (!box.value.trim()) box.value = question;
     }
   } finally {
     state.busy = false;
@@ -495,9 +537,26 @@ function reviewCard(item) {
     msg);
 }
 
+// Arrow keys, Home and End move between the items of a tablist or radiogroup, which
+// is one tab stop (WAI-ARIA Authoring Practices); activation follows focus.
+function arrowNavigation(container, items, activate) {
+  container.addEventListener("keydown", (e) => {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    if (i < 0) return;
+    const next = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: list.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    const target = list[(next + list.length) % list.length];
+    activate(target);
+    target.focus();
+  });
+}
+
 function selectTab(name) {
   for (const tab of ["agents", "knowledge", "reviews"]) {
     $(`#tab-${tab}`).setAttribute("aria-selected", String(tab === name));
+    $(`#tab-${tab}`).tabIndex = tab === name ? 0 : -1;
     $(`#panel-${tab}`).hidden = tab !== name;
   }
   if (name === "knowledge") loadDocs();
@@ -515,6 +574,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadReviews();
   });
 
+  arrowNavigation($(".tabs"), () => [...document.querySelectorAll('[role="tab"]')],
+    (tab) => selectTab(tab.id.replace("tab-", "")));
+  arrowNavigation($(".mode"), () => [...document.querySelectorAll(".mode button")],
+    (b) => setMode(b.dataset.mode));
+  selectTab("agents");
+  setMode(state.mode);
   $("#tab-agents").addEventListener("click", () => selectTab("agents"));
   $("#tab-knowledge").addEventListener("click", () => selectTab("knowledge"));
   $("#tab-reviews").addEventListener("click", () => selectTab("reviews"));

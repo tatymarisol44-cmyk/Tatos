@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -77,8 +78,8 @@ def _key(base: str, name: str, *roles: str) -> str:
     return str(resp.json()["key"])
 
 
-def _open(browser: Any, base: str, key: str, errors: list[str]) -> Any:
-    page = browser.new_page()
+def _open(browser: Any, base: str, key: str, errors: list[str], **options: Any) -> Any:
+    page = browser.new_page(**options)
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.goto(base)
     page.fill("#api-key", key)
@@ -134,5 +135,131 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
         reviewer.locator(".review-card").first.get_by_role("button", name="Reject").click()
         expect(asker.get_by_text("Not approved")).to_be_visible(timeout=POLL_WAIT_MS)
         assert DRAFT not in asker.content()
+        browser.close()
+    assert errors == []
+
+
+# --- accessibility (audit 2026-10-08): axe-core WCAG 2.1 AA in every main state --------
+
+AXE = Path(__file__).parent / "fixtures" / "a11y" / "axe.min.js"
+AXE_SHA256 = "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"  # 4.14.0
+
+
+def _axe(page: Any, state: str) -> list[str]:
+    """WCAG 2.0/2.1 A and AA violations on the page as it is now."""
+    page.add_script_tag(content=AXE.read_text(encoding="utf-8"))
+    result = page.evaluate(
+        "async () => await axe.run(document, {runOnly: "
+        "{type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']}})"
+    )
+    return [
+        f"[{state}] {v['id']} ({v['impact']}): {v['help']} -> "
+        + "; ".join(n["target"][0] for n in v["nodes"][:3])
+        for v in result["violations"]
+    ]
+
+
+def test_the_console_meets_wcag_aa_and_works_by_keyboard(
+    server: str, subprocess_loop: None
+) -> None:
+    import hashlib
+
+    assert hashlib.sha256(AXE.read_bytes()).hexdigest() == AXE_SHA256  # the vendored engine
+    reception = _key(server, "ana", "reception")
+    dentist = _key(server, "dr.ruiz", "reviewer")
+    errors: list[str] = []
+    expect = sync_api.expect
+    violations: list[str] = []
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except sync_api.Error as exc:
+            pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
+        for scheme in ("light", "dark"):
+            # The console's CSP forbids inline scripts (as it should): only this test
+            # page lifts it, to inject the axe engine.
+            page = browser.new_page(color_scheme=scheme, bypass_csp=True)
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            page.goto(server)
+            violations += _axe(page, f"{scheme}: empty")
+            page.fill("#api-key", reception)
+            page.dispatch_event("#api-key", "change")
+            expect(page.locator("#agents li").first).to_be_visible()
+            violations += _axe(page, f"{scheme}: agents")
+            _ask(page, "hola")
+            expect(page.locator(".provenance").first).to_have_text(
+                "AI-generated · not reviewed by a professional"
+            )
+            violations += _axe(page, f"{scheme}: answer")
+            page.click("#new-thread")
+            _ask(page, CLINICAL)
+            expect(page.get_by_text("AI draft · pending professional review")).to_be_visible()
+            violations += _axe(page, f"{scheme}: held")
+            page.close()
+
+        dark = _open(browser, server, dentist, errors, bypass_csp=True, color_scheme="dark")
+        dark.click("#tab-reviews")
+        expect(dark.locator(".review-card").first).to_be_visible()
+        violations += _axe(dark, "dark: reviews")
+        dark.close()
+        reviewer = _open(browser, server, dentist, errors, bypass_csp=True)
+        # Keyboard only: focus the selected tab, then arrows move between tabs.
+        reviewer.focus("#tab-agents")
+        reviewer.keyboard.press("ArrowRight")
+        expect(reviewer.locator("#tab-knowledge")).to_be_focused()
+        expect(reviewer.locator("#panel-knowledge")).to_be_visible()
+        reviewer.keyboard.press("End")
+        expect(reviewer.locator("#tab-reviews")).to_be_focused()
+        expect(reviewer.locator(".review-card").first).to_be_visible()
+        assert reviewer.get_attribute("#tab-agents", "tabindex") == "-1"  # one tab stop
+        violations += _axe(reviewer, "reviews")
+        browser.close()
+    assert errors == []
+    assert violations == [], "\n".join(violations)
+
+
+@pytest.fixture
+def down_server(settings: Settings, catalog: Catalog) -> Iterator[str]:
+    """The same console with the model provider down behind its circuit breaker."""
+    import uvicorn
+
+    from orchestrator.llm import GuardedLLM
+    from orchestrator.resilience import CircuitBreaker
+    from tests.test_resilience import DownLLM
+
+    llm = GuardedLLM(DownLLM(), CircuitBreaker("llm", failures=1, cooldown_s=30))
+    app = create_app(settings, Orchestrator(settings, catalog=catalog, llm=llm))  # type: ignore[arg-type]
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=srv.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 15
+    while not srv.started and time.time() < deadline:
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    srv.should_exit = True
+    thread.join(timeout=10)
+
+
+def test_a_model_outage_reads_as_a_clear_message_and_keeps_the_text(
+    down_server: str, subprocess_loop: None
+) -> None:
+    errors: list[str] = []
+    expect = sync_api.expect
+    with sync_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch()
+        except sync_api.Error as exc:
+            pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
+        page = _open(browser, down_server, "test-key", errors)
+        _ask(page, "Resume nuestra política de reembolsos")
+        alert = page.get_by_role("alert")
+        expect(alert).to_contain_text("temporarily unavailable")
+        expect(alert).to_contain_text("Nothing was lost")
+        expect(alert.get_by_role("button", name="Try again")).to_be_visible()
+        expect(page.locator("#question")).to_have_value("Resume nuestra política de reembolsos")
+        assert "Internal Server Error" not in page.content()
         browser.close()
     assert errors == []

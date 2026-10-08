@@ -1174,9 +1174,11 @@ async def test_a32_requester_polls_the_outcome_without_seeing_the_draft(
         "status": "pending_review",
         "answer": None,
         "sources": [],
+        "provenance": "ai_pending_review",
     }
     await o.resolve_review("acme", "t32", approved=False, reviewer="dr")
     rejected = (await c.get("/v1/threads/t32", headers=reception)).json()
     assert rejected["status"] == "rejected" and rejected["answer"] is None
+    assert rejected["provenance"] == "none"
     assert "BORRADOR" not in str(pending) + str(rejected)
     assert (await c.get("/v1/threads/nope", headers=reception)).status_code == 404

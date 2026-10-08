@@ -172,7 +172,8 @@ def test_patient_chat_never_sees_drafts(client: TestClient) -> None:
         "/v1/me/chat", json={"question": CLINICAL, "thread_id": "c1"}, headers=ana
     ).json()
     assert held["status"] == "pending_review" and held["answer"] is None
-    assert set(held) == {"thread_id", "status", "answer", "message", "sources"}
+    assert set(held) == {"thread_id", "status", "answer", "message", "sources", "provenance"}
+    assert held["provenance"] == "ai_pending_review"
     again = client.post("/v1/me/chat", json={"question": "hola", "thread_id": "c1"}, headers=ana)
     assert again.status_code == 409
     assert client.get("/v1/me/chat/c1", headers=ana).json()["answer"] is None
@@ -456,3 +457,32 @@ def test_consent_prompt_asks_each_purpose_once(client: TestClient) -> None:
     assert [q["purpose"] for q in later["ask"]] == ["memory"]
     assert later["consents"]["marketing"]["granted"] is False
     assert client.get("/v1/me/consents", headers=ACME).status_code == 403  # patients only
+
+
+def test_every_answer_says_who_stands_behind_it(client: TestClient) -> None:
+    """Audit 2026-10-08 (UI): an AI answer is never presented as a professional's."""
+    plain = client.post("/v1/chat", json={"question": "hola", "thread_id": "p1"}, headers=ACME)
+    assert plain.json()["provenance"] == "ai_unreviewed"
+    doctor = _staff(client, "dr.prov", "reviewer")
+    held = client.post(
+        "/v1/chat",
+        json={"question": CLINICAL, "thread_id": "p2", "subject_id": "p-1"},
+        headers=ACME,
+    ).json()
+    assert held["provenance"] == "ai_pending_review"
+    client.post("/v1/reviews/p2", json={"approved": True}, headers=doctor)
+    approved = client.get("/v1/threads/p2", headers=ACME).json()
+    assert approved["provenance"] == "professional_approved"
+    client.post(
+        "/v1/chat",
+        json={"question": CLINICAL, "thread_id": "p3", "subject_id": "p-1"},
+        headers=ACME,
+    )
+    client.post(
+        "/v1/reviews/p3",
+        json={"approved": True, "edited_answer": "Consulte en la clínica."},
+        headers=doctor,
+    )
+    assert client.get("/v1/threads/p3", headers=ACME).json()["provenance"] == (
+        "professional_edited"
+    )
