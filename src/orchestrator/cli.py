@@ -203,6 +203,20 @@ async def _audit_verify(anchors: list[dict[str, Any]], tenant: str | None) -> in
     return 0 if all(r["ok"] for r in results.values()) else 1
 
 
+async def _knowledge_reindex(tenant: str | None) -> int:
+    from orchestrator.service import Orchestrator
+
+    orch = Orchestrator(get_settings())
+    try:
+        await orch.start_maintenance()
+        await orch.knowledge.start()  # embeds a probe and creates the collection if lost
+        result = await orch.knowledge.reindex(tenant)
+    finally:
+        await orch.close()
+    _print(result)
+    return 1 if result["missing_text"] else 0
+
+
 async def _db(action: str, revision: str | None, message: str | None) -> int:
     from alembic import command
 
@@ -350,6 +364,11 @@ def main(argv: list[str] | None = None) -> int:
     p_db.add_argument("action", choices=["upgrade", "current", "check", "stamp", "revision"])
     p_db.add_argument("revision", nargs="?", help="Target revision (default: head)")
     p_db.add_argument("-m", "--message", help="revision: what changed")
+    p_knowledge = sub.add_parser(
+        "knowledge", help="Knowledge base: rebuild the vector index from the database"
+    )
+    p_knowledge.add_argument("action", choices=["reindex"])
+    p_knowledge.add_argument("--tenant", help="Only this tenant (default: all)")
     p_pack = sub.add_parser("pack", help="Profession packs: list, validate, show")
     p_pack.add_argument("action", choices=["list", "validate", "show"])
     p_pack.add_argument("pack_id", nargs="?", help="show: the pack to print")
@@ -407,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
             else []
         )
         return _run(_audit_verify(anchors, args.tenant))
+    elif args.cmd == "knowledge":
+        return _run(_knowledge_reindex(args.tenant))
     elif args.cmd == "pack":
         return _pack_cmd(args.action, args.pack_id, args.strict, parser)
     elif args.cmd == "creative":

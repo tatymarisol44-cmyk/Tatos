@@ -328,3 +328,39 @@ async def test_a22_readers_never_see_a_partial_upload(
     await upload
     visible = await _visible(kb)
     assert visible and all(NEW in text for text in visible)
+
+
+# --- disaster recovery: the database holds the text, the vector store is an index -------
+
+
+async def test_a_lost_vector_store_is_rebuilt_from_the_database(
+    kb: KnowledgeBase, settings: Settings
+) -> None:
+    await kb.start()
+    await kb.add("acme", "Refund policy", REFUNDS, doc_id="refunds")
+    await kb.add("globex", "Pricing", PRICING, doc_id="pricing")
+    # The volume is gone: a brand-new, empty store, the same database.
+    rebuilt = KnowledgeBase(HashingEmbedder(), InMemoryChunkStore(), settings, kb.db)
+    await rebuilt.start()
+    assert await rebuilt.search("acme", "refund days") == []
+    assert await rebuilt.reindex() == {"reindexed": 2, "missing_text": []}
+    [hit, *_] = await rebuilt.search("acme", "how many days do customers have to request a refund?")
+    assert hit.doc_id == "refunds"
+    assert all(h.doc_id == "pricing" for h in await rebuilt.search("globex", "refund days"))
+    # Reindexing again replaces versions copy-on-write; nothing is duplicated.
+    assert (await rebuilt.reindex("acme"))["reindexed"] == 1
+    assert [d.chunks for d in await rebuilt.documents("acme")] == [
+        d.chunks for d in await kb.documents("acme")
+    ]
+
+
+async def test_documents_without_stored_text_are_reported(kb: KnowledgeBase) -> None:
+    from sqlalchemy import update
+
+    from orchestrator.knowledge import knowledge_documents
+
+    await kb.start()
+    await kb.add("acme", "Old", REFUNDS, doc_id="legacy")
+    async with kb.db.engine.begin() as conn:  # as if uploaded before migration 0009
+        await conn.execute(update(knowledge_documents).values(text=None))
+    assert await kb.reindex() == {"reindexed": 0, "missing_text": ["acme/legacy"]}

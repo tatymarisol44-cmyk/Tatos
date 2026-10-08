@@ -24,6 +24,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
     and_,
     delete,
     insert,
@@ -250,7 +251,10 @@ class QdrantChunkStore:
 
 
 # The live version of each document. Readers see only this version, so a replacement
-# becomes visible at once and whole, by a single-row update.
+# becomes visible at once and whole, by a single-row update. `text` is the canonical copy:
+# the vector store is an index rebuilt from it (`reindex`), so losing Qdrant loses no
+# document, and the database backups (PITR) cover the knowledge base too. Null only for
+# documents uploaded before migration 0009: they must be uploaded again to be reindexable.
 knowledge_documents = Table(
     "knowledge_documents",
     metadata,
@@ -260,6 +264,7 @@ knowledge_documents = Table(
     Column("title", String(200), nullable=False),
     Column("chunks", Integer, nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("text", Text, nullable=True),
 )
 
 # Every version written to the vector store and where it is in its life:
@@ -317,13 +322,19 @@ class KnowledgeBase:
         await self.reconcile()
 
     async def _activate(
-        self, tenant: str, doc_id: str, version: str, title: str, chunks: int
+        self, tenant: str, doc_id: str, version: str, title: str, chunks: int, text: str
     ) -> str | None:
         """Point the document at `version`; return the version it replaced. A
         compare-and-swap on the pointer, so two concurrent uploads of the same document
         each retire exactly the version they replaced."""
         key = and_(knowledge_documents.c.tenant == tenant, knowledge_documents.c.doc_id == doc_id)
-        values = {"version": version, "title": title, "chunks": chunks, "updated_at": utcnow()}
+        values = {
+            "version": version,
+            "title": title,
+            "chunks": chunks,
+            "updated_at": utcnow(),
+            "text": text,
+        }
         for _ in range(5):
             async with self.db.engine.begin() as conn:
                 old = (
@@ -407,7 +418,7 @@ class KnowledgeBase:
                 )
             chunks = [Chunk(doc_id, title, i, p, version=version) for i, p in enumerate(pieces)]
             await self.store.upsert(tenant, chunks, vectors)  # invisible until activated
-            old = await self._activate(tenant, doc_id, version, title, len(chunks))
+            old = await self._activate(tenant, doc_id, version, title, len(chunks), text)
             if old is not None:
                 try:
                     await self._drop(tenant, doc_id, old)
@@ -468,6 +479,32 @@ class KnowledgeBase:
             )
         await self._drop(tenant, doc_id, row["version"])
         return int(row["chunks"])
+
+    async def reindex(self, tenant: str | None = None) -> dict[str, Any]:
+        """Rebuild the vector index from the canonical text in the database: after losing
+        or restoring Qdrant, or after switching the embedding model (a new collection).
+        Each document is written as a new version, copy-on-write, so readers keep the old
+        one until the new one is complete; the old version's chunks are then removed."""
+        query = select(
+            knowledge_documents.c.tenant,
+            knowledge_documents.c.doc_id,
+            knowledge_documents.c.title,
+            knowledge_documents.c.text,
+        )
+        if tenant is not None:
+            query = query.where(knowledge_documents.c.tenant == tenant)
+        async with self.db.engine.connect() as conn:
+            rows = (await conn.execute(query)).all()
+        done, missing = 0, []
+        for row in rows:
+            if row.text is None:  # uploaded before 0009: nothing to rebuild it from
+                missing.append(f"{row.tenant}/{row.doc_id}")
+                continue
+            await self.add(row.tenant, row.title, row.text, row.doc_id)
+            done += 1
+        if missing:
+            log.warning("knowledge: %d documents have no stored text; re-upload them", len(missing))
+        return {"reindexed": done, "missing_text": missing}
 
     async def reconcile(
         self, stale_after: timedelta = timedelta(hours=1), dry_run: bool = False
