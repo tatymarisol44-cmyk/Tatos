@@ -211,7 +211,7 @@ Appendix B maps each obligation to a control and its status. **This document is 
 - Python 3.12–3.13, LangGraph 1.x, FastAPI, SQLAlchemy 2 (async), Qdrant, LiteLLM.
 - The local development machine has no Docker, because firmware virtualization is disabled. The full stack is exercised in GitHub Codespaces and in CI.
 
-**Identity.** Every person has their own key: `sk_` staff keys carry roles (reception, reviewer, owner, marketing, privacy, admin), `pk_` patient keys are bound to one subject and expire. The actor in the audit trail is the key's owner; a client-supplied `X-Actor` header is ignored (audit finding A01). A legacy service key (`API_KEYS`) identifies an application, not a person. SSO/OIDC is future work.
+**Identity.** Every person has their own key: `sk_` staff keys carry roles (reception, reviewer, owner, marketing, privacy, admin), `pk_` patient keys are bound to one subject and expire. The actor in the audit trail is the key's owner; a client-supplied `X-Actor` header is ignored (audit finding A01). A legacy service key (`API_KEYS`) identifies an application, not a person. Staff can also sign in with OpenID Connect single sign-on with mandatory MFA (ADR 0018; provider: Google Identity Platform).
 
 ### 2.5 Assumptions and Dependencies
 
@@ -239,7 +239,7 @@ Implemented in this version: everything with status **I** in section 3. Deferred
 - ERP: invoicing, payments and inventory with batches and expiry dates.
 - Channels: inbound Telegram bot booking, WhatsApp Business, e-mail, Facebook/Instagram publishing, and paid ads with pre-spend approval.
 - Graphical interfaces: web console views for the review queue, CRM, insights and campaigns; an ECC-style editor plugin wrapping the MCP tools.
-- Identity: per-user SSO/OIDC and role-based access control (for example clinical data visible only to clinicians).
+- Identity: SCIM provisioning and step-up authentication for the most sensitive actions (SSO with MFA exists, ADR 0018).
 - Governance: a retention policy and purge job for audit events; schema migrations (Alembic); encryption at rest (delegated to the managed database and volumes); DPIA, records of processing, DPA and BAA documents.
 - Analytics: a guarded text-to-SQL recipe for exploratory questions, per-subject send-time optimization, and content-performance analytics from social channels.
 - Operations: load tests reporting p50/p95/p99, throughput and error rate; Redis in the Kubernetes base for shared rate limits; batched Qdrant ingestion with deferred HNSW indexing.
@@ -326,7 +326,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | GOV-05 | Conversations shall be erasable per thread and per tenant, and conversations inactive for longer than `THREAD_RETENTION_DAYS` shall be purged by `agency purge-threads`. Erasing a thread shall drop its review record. | I | test_limits_and_retention, test_governance |
 | GOV-06 | Audit events shall have a configurable retention period (for example six years for HIPAA-covered tenants) and a purge job. | F | — |
 | GOV-07 | Data at rest shall be encrypted (managed Postgres/Qdrant encryption, encrypted volumes). | F (infrastructure) | — |
-| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Today: per-person keys with roles; SSO/OIDC is future work. | P | test_audit_regressions (A01), test_business_api |
+| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Per-person keys with roles, and OIDC single sign-on with mandatory MFA (ADR 0018). Admin keys can still read shared clinical entries (P9). | P | test_audit_regressions (A01), test_business_api, test_oidc |
 | GOV-09 | Organisational documents shall exist before production with real data: DPIA (GDPR Art. 35), records of processing (Art. 30), DPA/BAA with LLM and hosting providers, transfer safeguards, and a breach-notification runbook (GDPR 72 h; LOPDP term). | F | — |
 
 ### 3.7 CRM (CRM)
@@ -983,7 +983,7 @@ For further information about this document and the project, contact the project
 
 ## Appendix C — Known Gaps and Risks
 
-1. **Identity.** Per-person keys with roles replaced the declared `X-Actor` (audit A01). SSO/OIDC is still future work (GOV-08).
+1. **Identity.** Per-person keys with roles replaced the declared `X-Actor` (audit A01). SSO/OIDC with MFA followed (ADR 0018, GOV-08).
 2. **Edited answers and phone numbers.** The output guard redacts phone numbers in reviewer-edited text too, including the clinic's own number. An allow-list of the tenant's public contact data would fix this.
 3. **Deployment pipeline not yet run.** A health-gated deploy with automatic rollback exists and is rehearsed on kind in CI (`deploy.yml`, `deploy/scripts/rollout.sh`), but CI has never run because the repository has not been pushed (item 11).
 4. **Schema migrations.** Alembic versions every change (0001–0005); SQLite in development still uses `create_all`, and a test checks that the migrations build the same schema as the models.

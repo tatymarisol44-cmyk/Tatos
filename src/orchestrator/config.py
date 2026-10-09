@@ -284,6 +284,9 @@ class Settings(BaseSettings):
         default_factory=lambda: ["mfa", "otp", "hwk", "swk", "fpt", "face", "sms"]
     )
     oidc_mfa_acr: list[str] = Field(default_factory=list)
+    # A claim whose non-empty value means a second factor was used, for providers that do
+    # not fill `amr` (Google Identity Platform: firebase.sign_in_second_factor, O7).
+    oidc_mfa_claim: str | None = None
     oidc_max_session_hours: float = Field(default=12, gt=0, le=24 * 30)
     # Key of the HMAC pseudonyms (opted-out phone numbers). Required in prod; keep it out
     # of the database and of its backups, or the pseudonyms can be reversed.

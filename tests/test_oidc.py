@@ -17,7 +17,7 @@ from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.llm import FakeLLM
-from orchestrator.oidc import OIDCVerifier
+from orchestrator.oidc import IdentityError, OIDCVerifier
 from orchestrator.service import Orchestrator
 
 ISSUER = "https://idp.example.test"
@@ -173,3 +173,29 @@ def test_prod_refuses_single_sign_on_without_mfa(settings: Settings) -> None:
     settings.oidc_require_mfa = False
     with pytest.raises(RuntimeError, match="OIDC_REQUIRE_MFA"):
         create_app(settings)
+
+
+def test_google_identity_platform_tokens(settings: Settings, catalog: Catalog) -> None:
+    # Decision O7: Identity Platform reports the second factor in a nested claim, not in
+    # `amr`, and carries tenant and roles as custom claims set by the platform admin.
+    settings.oidc_issuer = ISSUER
+    settings.oidc_audience = AUDIENCE
+    settings.oidc_jwks_url = f"{ISSUER}/jwks"
+    settings.oidc_mfa_claim = "firebase.sign_in_second_factor"
+    settings.oidc_tenant_claim = "clinic.tenant"
+    verifier = OIDCVerifier(settings, jwks=StaticJWKS())
+
+    def gip(**firebase: Any) -> str:
+        return token(
+            amr=None,
+            tenant=None,
+            clinic={"tenant": "acme"},
+            firebase={"sign_in_provider": "password", **firebase},
+        )
+
+    who = verifier.verify(gip(sign_in_second_factor="totp"), {"acme"})
+    assert (who.tenant, who.mfa) == ("acme", True)
+    with pytest.raises(IdentityError, match="multi-factor"):
+        verifier.verify(gip(), {"acme"})
+    with pytest.raises(IdentityError, match="multi-factor"):
+        verifier.verify(gip(sign_in_second_factor=""), {"acme"})

@@ -7,10 +7,12 @@ sends the ID or access token as `Authorization: Bearer <JWT>`; this module verif
 - signature with the provider's published keys (JWKS, cached), asymmetric algorithms
   only: a token signed with "none" or an HMAC secret is refused;
 - issuer, audience, expiry, not-before, with 60 s of clock leeway;
-- MFA: `amr` must name a second factor (or `acr` be an accepted level) when required;
+- MFA: `amr` must name a second factor (or `acr` be an accepted level, or the configured
+  `oidc_mfa_claim` be non-empty) when required;
 - session age: the sign-in (`auth_time`, else `iat`) is at most `oidc_max_session_hours`
   old, whatever the token's own lifetime;
-- tenant and roles from configured claims; the tenant must be one this deployment serves.
+- tenant and roles from configured claims (dotted paths reach nested claims, e.g. the
+  custom claims of Google Identity Platform); the tenant must be one this deployment serves.
 
 The person is then provisioned just in time as a staff principal (`PrincipalStore.
 from_identity`), so revocation, "sign out everywhere" and the audit trail work exactly
@@ -29,6 +31,16 @@ from orchestrator.auth import Role
 from orchestrator.config import Settings
 
 ASYMMETRIC = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384", "EdDSA"]
+
+
+def _claim(claims: dict[str, Any], path: str) -> Any:
+    """`a.b` reads claims["a"]["b"]; a missing step gives None."""
+    value: Any = claims
+    for step in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(step)
+    return value
 
 
 class IdentityError(Exception):
@@ -92,18 +104,20 @@ class OIDCVerifier:
         mfa = bool(amr & {m.lower() for m in s.oidc_mfa_amr}) or (
             str(claims.get("acr", "")) in s.oidc_mfa_acr
         )
+        if s.oidc_mfa_claim and _claim(claims, s.oidc_mfa_claim):
+            mfa = True
         if s.oidc_require_mfa and not mfa:
             raise IdentityError("multi-factor authentication required")
 
-        ident = claims.get(s.oidc_id_claim)
+        ident = _claim(claims, s.oidc_id_claim)
         if not isinstance(ident, str) or not ident:
             raise IdentityError(f"token has no {s.oidc_id_claim!r} claim")
         if s.oidc_id_claim == "email" and claims.get("email_verified") is not True:
             raise IdentityError("e-mail not verified by the identity provider")
-        tenant = claims.get(s.oidc_tenant_claim)
+        tenant = _claim(claims, s.oidc_tenant_claim)
         if not isinstance(tenant, str) or tenant not in known_tenants:
             raise IdentityError("not a member of a tenant served here")
-        raw_roles = claims.get(s.oidc_roles_claim) or []
+        raw_roles = _claim(claims, s.oidc_roles_claim) or []
         if isinstance(raw_roles, str):
             raw_roles = raw_roles.split()
         roles = frozenset(str(r) for r in raw_roles) & {r.value for r in Role}
