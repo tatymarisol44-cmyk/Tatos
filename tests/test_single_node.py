@@ -50,6 +50,11 @@ def test_the_api_runs_the_production_profile_hardened() -> None:
     for url in ("DATABASE_URL", "POSTGRES_URL"):
         assert env[url].endswith("?sslmode=require"), url
     assert "ssl=on" in services["postgres"]["command"]
+    # A container that drops every capability cannot switch users itself: it must start
+    # as its unprivileged user (CI found redis failing with "setresuid failed").
+    for name, svc in services.items():
+        if svc.get("cap_drop") == ["ALL"] and not svc["image"].startswith("${API_IMAGE"):
+            assert svc.get("user"), f"{name} drops all capabilities but starts as root"
     assert services["migrate"]["profiles"] == ["migrate"]  # never started by `up`
     assert services["migrate"]["command"] == ["agency", "db", "upgrade"]
     for tunnel in ("tunnel", "tunnel-quick"):

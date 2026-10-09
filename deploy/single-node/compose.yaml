@@ -101,6 +101,9 @@ services:
     image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     # Rate-limit counters only: nothing to persist.
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    # Start as the image's redis user (as in Kubernetes): with every capability dropped,
+    # the entrypoint could not switch from root itself (setpriv: setresuid failed).
+    user: "999"
     read_only: true
     cap_drop: [ALL]
     healthcheck:
