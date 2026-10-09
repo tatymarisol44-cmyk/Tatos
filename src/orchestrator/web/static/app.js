@@ -486,7 +486,10 @@ function sourcesView(sources) {
 // is kept as it is (with what the reviewer typed); only new reviews are added and
 // resolved ones removed.
 let reviewsRequest = 0;
-const reviewKey = (item) => `${item.thread_id}|${item.created_at}`;
+// A review is its thread's question and draft, not its timestamp: CI saw the same review
+// come back as a "new" card (and the edit lost) when only `created_at` differed. A later
+// turn of the same thread brings another question, so it is still a different card.
+const reviewKey = (item) => `${item.thread_id}|${item.payload?.question || ""}|${item.payload?.draft_answer || ""}`;
 // What the reviewer typed, per review: even if a card is ever rebuilt (CI found a
 // second, rarer path on py3.13), it comes back with the edit, never with the AI draft.
 const reviewEdits = new Map();
@@ -509,6 +512,10 @@ async function loadReviews() {
     if (mine !== reviewsRequest) return;
     const onScreen = new Map([...$("#reviews").children].map((card) => [card.dataset.review, card]));
     $("#reviews").replaceChildren(...items.map((item) => onScreen.get(reviewKey(item)) || reviewCard(item)));
+    // An edit of a review that is no longer waiting (resolved elsewhere) must not come
+    // back if that thread is held again later.
+    const waiting = new Set(items.map(reviewKey));
+    for (const key of [...reviewEdits.keys()]) if (!waiting.has(key)) reviewEdits.delete(key);
     status.textContent = items.length ? `${items.length} waiting` : "Nothing waiting for review.";
     count.textContent = String(items.length);
     count.hidden = !items.length;
