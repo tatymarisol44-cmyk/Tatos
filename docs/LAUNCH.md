@@ -24,23 +24,28 @@ All of these run in CI on every commit:
 | Agenda without double booking, calendar feeds, reminders, WhatsApp assistant without medical advice (ADR 0020) | `tests/test_agenda.py`, `tests/test_reminders.py`, `tests/test_whatsapp_assistant.py` |
 | Monthly model spend cap per practice | `tests/test_spend.py` |
 | One-command MVP demo in Codespaces | `scripts/demo-codespaces.sh`, `tests/test_demo.py`, `docs/DEMO.md` |
+| Clinical data is need to know: admin and service keys cannot read it | `tests/test_need_to_know.py` |
+| Register of rights requests and breaches with legal deadlines, paging before they lapse | `tests/test_privacy_cases.py`, `docs/runbooks/privacy-deadline.md` |
+| Deploy rehearsal on kind with a forced rollback, green on every push (first green 2026-10-09) | `.github/workflows/deploy.yml` |
+| Only attested images run on GKE: CI signature verified, digest copied to Artifact Registry, Binary Authorization enforced (O4, O6) | `.github/workflows/deploy-gke.yml`, `deploy/terraform/supply_chain.tf` |
+| Platform paging rendered from env, checked with `amtool` (O1) | `deploy/monitoring/render_alertmanager.py` |
 
-## 2. Repository and CI live (owner, about 30 minutes)
+## 2. Repository and CI live (done 2026-10-08; one owner step left)
 
-1. Push to the remote. Before any public push, run the history rewrite given earlier for `docs/private/` (decision A1/A2). Then: `git remote add origin … && git push -u origin main`.
-2. Watch the first CI run go green. If it fails, it is the first time it runs on GitHub: send me the log.
-3. GitHub settings (O5):
+1. ~~Push to the remote~~ and ~~a green CI~~: done; CI and the Deploy rehearsal are green.
+2. GitHub settings (O5), owner only:
    - branch protection on `main`: PR required, plus the checks `quality`, `test`, `security`, `manifests` and `image`;
    - environments `staging` and `production`, with required reviewers on `production`.
 
 ## 3. Cloud (owner, about 2 hours, needs billing)
 
-1. Choose the region (O9: data residency for Ecuadorian health data; the default is `us-east1`, with backups in `us-central1`).
-2. Create two GCP projects, staging and production (O3), with billing and a budget alert.
-3. Apply `deploy/terraform` in each project (`deploy/terraform/README.md`), then copy the outputs into the GitHub environments.
+1. Region decided (O9): `us-east1`, with backups in `us-central1`.
+2. Create two GCP projects, staging and production (O3, decided: separate projects), with billing and a budget alert.
+3. Apply `deploy/terraform` in each project (`deploy/terraform/README.md`), then copy the outputs into the GitHub environments, including `AR_REPOSITORY`, `BINAUTHZ_ATTESTOR` and `BINAUTHZ_KEY_VERSION`.
 4. Create the Kubernetes Secret per environment: API keys, database URLs through the private IP with `sslmode=require`, `PSEUDONYM_KEY` from Secret Manager, and the provider keys.
 5. Domain, DNS and the certificate map for the Gateway (A9).
-6. Alert routing: who gets paged and on which channel (O1).
+6. Alert routing (O1, decided): create a Telegram bot and group for the platform on-call, then run `deploy/monitoring/render_alertmanager.py | kubectl apply -f -` with its token. Add the SMTP variables once a provider is chosen (P11).
+7. Staff single sign-on (O7, decided: Google Identity Platform): enable it in each project, turn on TOTP MFA, and set the `OIDC_*` values from ADR 0018.
 
 ## 4. First deploy to staging (repo + owner)
 
