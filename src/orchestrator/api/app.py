@@ -27,6 +27,7 @@ from orchestrator.api import (
     instruments,
     oncall,
     patients,
+    privacy,
     publications,
     social,
 )
@@ -183,6 +184,7 @@ def create_app(
     app.include_router(instruments.router)
     app.include_router(agenda_api.router)
     app.include_router(oncall.router)
+    app.include_router(privacy.router)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
     if settings.otel_enabled:

@@ -124,6 +124,9 @@ TABLE_CLASS: dict[str, DataClass] = {
     "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
     "principals": DataClass.CREDENTIAL,
+    # A rights request or a breach names a clinic's patient: the fact is health data.
+    "privacy_case_steps": DataClass.HEALTH,
+    "privacy_cases": DataClass.HEALTH,
     "professionals": DataClass.PERSONAL,
     "professional_hours": DataClass.INTERNAL,  # working hours, no patient
     "publications": DataClass.PUBLIC,

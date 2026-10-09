@@ -53,6 +53,7 @@ from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.oncall import OnCall
 from orchestrator.portal import PatientPortal
+from orchestrator.privacy_cases import PrivacyCases
 from orchestrator.publishing import PublicationService
 from orchestrator.reminders import Reminders
 from orchestrator.remote import A2AClient, discover_all
@@ -178,6 +179,7 @@ class Orchestrator:
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.oncall = OnCall(self.db, self.audit, settings)
+        self.privacy_cases = PrivacyCases(self.db, self.audit)
         self.publications = PublicationService(
             self.db, self.audit, self.social, build_media_store(settings), settings
         )
@@ -284,6 +286,7 @@ class Orchestrator:
             reviews_pending=float(pending or 0),
             alert_oldest_open_age_seconds=max(age, 0.0),
             outbox_pending=float(outbox or 0),
+            privacy_steps_due_soon=float(await self.privacy_cases.due_soon()),
         )
         return dict(OPS)
 

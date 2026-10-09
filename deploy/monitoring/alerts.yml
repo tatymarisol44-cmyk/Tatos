@@ -116,6 +116,16 @@ groups:
         annotations:
           summary: More than 20 answers have waited over an hour for a reviewer
           runbook: docs/runbooks/review-backlog.md
+      - alert: PrivacyDeadlineAtRisk
+        expr: max(agency_privacy_steps_due_soon) > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: A legal privacy deadline is less than 24 hours away, or already missed
+          description: >-
+            A rights request or a breach notification in the privacy-case register is due
+            within a day. Tell the privacy officer of that clinic now.
+          runbook: docs/runbooks/privacy-deadline.md
   - name: agency-dependencies
     rules:
       - alert: ModelCircuitOpen

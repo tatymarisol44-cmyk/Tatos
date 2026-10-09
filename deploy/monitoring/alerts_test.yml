@@ -55,6 +55,26 @@ tests:
                 the on-call professional now; this is a patient-safety alert, not a technical one.
               runbook: docs/runbooks/crisis-alert-unattended.md
 
+  # A privacy-case step due within 24 hours pages after 5 minutes; none due, no page.
+  - interval: 1m
+    input_series:
+      - series: 'agency_privacy_steps_due_soon{pod="api-1"}'
+        values: '0x10 1x10'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PrivacyDeadlineAtRisk
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: PrivacyDeadlineAtRisk
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations:
+              summary: A legal privacy deadline is less than 24 hours away, or already missed
+              description: >-
+                A rights request or a breach notification in the privacy-case register is due
+                within a day. Tell the privacy officer of that clinic now.
+              runbook: docs/runbooks/privacy-deadline.md
+
   # Most requests slower than 300 ms.
   - interval: 1m
     input_series:

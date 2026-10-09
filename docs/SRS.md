@@ -328,6 +328,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | GOV-07 | Data at rest shall be encrypted (managed Postgres/Qdrant encryption, encrypted volumes). | F (infrastructure) | — |
 | GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Per-person keys with roles, and OIDC single sign-on with mandatory MFA (ADR 0018). Patients' clinical data needs the clinician role held explicitly; admin and service keys are refused (need to know, LOPDP Art. 10.e). | I | test_audit_regressions (A01), test_business_api, test_oidc, test_need_to_know |
 | GOV-09 | Organisational documents shall exist before production with real data: DPIA (GDPR Art. 35), records of processing (Art. 30), DPA/BAA with LLM and hosting providers, transfer safeguards, and a breach-notification runbook (GDPR 72 h; LOPDP term). | F | — |
+| GOV-10 | The privacy officer shall keep a register of rights requests and personal-data breaches. Opening a case shall set each step's legal deadline in calendar days: answer a request in 15 days (LOPDP Arts. 13-16); for a breach, notify the clinic in 2 days, the SPDP and ARCOTEL in 5 and the affected patients in 3 (Arts. 43, 46). A case shall close only when every step has an outcome, late steps shall stay visible, every change shall be audited, and steps due within 24 hours shall page (`PrivacyDeadlineAtRisk`). | I | test_privacy_cases, test_tenant_isolation_matrix |
 
 ### 3.7 CRM (CRM)
 

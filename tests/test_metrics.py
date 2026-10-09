@@ -132,6 +132,7 @@ def test_backlog_gauges_follow_the_database(
         "reviews_pending": 1.0,
         "alert_oldest_open_age_seconds": 0.0,
         "outbox_pending": 0.0,
+        "privacy_steps_due_soon": 0.0,
     }
     [pending] = points(reader, "agency.reviews.pending")
     assert pending.value == 1.0

@@ -156,7 +156,7 @@ SSE_CONNECTIONS = _meter.create_up_down_counter(
 
 # Operational gauges, refreshed by the background worker from the database (a gauge
 # callback cannot await a query). Keys: reviews_pending, alert_oldest_open_age_seconds,
-# outbox_pending.
+# outbox_pending, privacy_steps_due_soon.
 OPS: dict[str, float] = {}
 
 
@@ -184,4 +184,9 @@ _meter.create_observable_gauge(
     "agency.outbox.pending",
     callbacks=[_ops_gauge("outbox_pending")],
     description="Campaign messages waiting to be delivered",
+)
+_meter.create_observable_gauge(
+    "agency.privacy.steps_due_soon",
+    callbacks=[_ops_gauge("privacy_steps_due_soon")],
+    description="Privacy-case steps due within 24 hours or late (legal deadlines)",
 )

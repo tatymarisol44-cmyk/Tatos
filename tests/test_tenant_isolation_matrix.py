@@ -300,6 +300,14 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["contact"] = contact["contact_id"]
+    case = _ok(
+        c.post(
+            "/v1/privacy/cases",
+            json={"kind": "access", "subject_id": ids["patient"], "summary": "Pidió sus datos."},
+            headers=ACME,
+        )
+    )
+    ids["privacy_case"] = case["case_id"]
     assert _signed(c, _crisis_message()) == 200
     [alert] = _ok(c.get("/v1/social/alerts", headers=ACME))
     ids["alert"] = alert["alert_id"]
@@ -334,6 +342,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "accounts": get("/v1/social/accounts"),
         "publication": get(f"/v1/social/publications/{ids['publication']}"),
         "on_call": get("/v1/admin/on-call"),
+        "privacy_cases": get("/v1/privacy/cases"),
         "alerts": get("/v1/social/alerts"),
     }
 
@@ -657,6 +666,20 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/admin/on-call/{i['contact']}",
             None,
         ),
+        ("GET", "/v1/privacy/cases"): ("/v1/privacy/cases", None),
+        ("POST", "/v1/privacy/cases"): (
+            "/v1/privacy/cases",
+            {"kind": "breach", "summary": "Globex"},
+        ),
+        ("GET", "/v1/privacy/cases/{case_id}"): (f"/v1/privacy/cases/{i['privacy_case']}", None),
+        ("POST", "/v1/privacy/cases/{case_id}/steps/{step}"): (
+            f"/v1/privacy/cases/{i['privacy_case']}/steps/answer",
+            {"outcome": "Globex"},
+        ),
+        ("POST", "/v1/privacy/cases/{case_id}/close"): (
+            f"/v1/privacy/cases/{i['privacy_case']}/close",
+            None,
+        ),
     }
 
 
@@ -738,6 +761,9 @@ ADDRESSED = {
         ("POST", "/v1/me/appointments"),
         ("GET", "/v1/clinical/patients/{patient_id}/files"),
         ("GET", "/v1/clinical/files/{file_id}"),
+        ("GET", "/v1/privacy/cases/{case_id}"),
+        ("POST", "/v1/privacy/cases/{case_id}/steps/{step}"),
+        ("POST", "/v1/privacy/cases/{case_id}/close"),
     )
 }
 # Ids that live in each tenant's own namespace, so globex may use the same string for its

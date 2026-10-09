@@ -30,6 +30,7 @@ clinics' crisis on-call, which reaches each practice's own professionals (ADR 00
 | [api-latency.md](api-latency.md) | ApiLatencySloAtRisk |
 | [crisis-alert-unattended.md](crisis-alert-unattended.md) | CrisisAlertUnattended |
 | [review-backlog.md](review-backlog.md) | ReviewBacklogHigh |
+| [privacy-deadline.md](privacy-deadline.md) | PrivacyDeadlineAtRisk |
 | [model-outage.md](model-outage.md) | ModelCircuitOpen, ModelErrorRateHigh |
 | [outbox-stuck.md](outbox-stuck.md) | OutboxStuck |
 | [capacity.md](capacity.md) | ModelRoutesBusy |
