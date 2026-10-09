@@ -81,7 +81,7 @@ img="${API_IMAGE:-$(sed -n 's/^API_IMAGE=//p' .env | tail -1)}"
 case "$*" in
   "run --rm "*cosign*" verify "*) [[ "$*" == *"$UNSIGNED"* ]] && exit 1; exit 0 ;;
   "compose pull"*) [[ "$img" == "$MISSING" ]] && exit 1; exit 0 ;;
-  "compose --profile migrate run"*) exit 0 ;;
+  "compose --profile migrate run"*) [[ "$img" == "$MIGRATION_FAILS" ]] && exit 1; exit 0 ;;
   "compose up"*) [[ "$img" == "$UNHEALTHY" ]] && exit 1; echo "$img" > "$RUNNING"; exit 0 ;;
   *) exit 0 ;;
 esac
@@ -125,6 +125,7 @@ def deploy(node: Path, image: str, **fail: str) -> subprocess.CompletedProcess[s
         "UNSIGNED": fail.get("unsigned", "__none__"),
         "MISSING": fail.get("missing", "__none__"),
         "UNHEALTHY": fail.get("unhealthy", "__none__"),
+        "MIGRATION_FAILS": fail.get("migration", "__none__"),
         "SMOKE_FAILS": fail.get("smoke", "__none__"),
     }
     bash = _bash()
@@ -154,7 +155,8 @@ def test_a_healthy_release_is_recorded(node: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "failure", [{"unsigned": NEW}, {"missing": NEW}, {"unhealthy": NEW}, {"smoke": NEW}]
+    "failure",
+    [{"unsigned": NEW}, {"missing": NEW}, {"migration": NEW}, {"unhealthy": NEW}, {"smoke": NEW}],
 )
 def test_any_failure_rolls_back_to_the_running_image(node: Path, failure: dict[str, str]) -> None:
     done = deploy(node, NEW, **failure)

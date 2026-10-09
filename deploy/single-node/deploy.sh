@@ -51,10 +51,28 @@ smoke() {
     curl -fsS --max-time 10 -H "X-API-Key: $key" http://127.0.0.1:8000/v1/agents > /dev/null
 }
 
+annotate() {  # <title> <text>: under GitHub Actions, a failure anyone can read (no login)
+  [ "${GITHUB_ACTIONS:-}" = "true" ] || return 0
+  local text="${2//'%'/'%25'}"
+  text="${text//$'\r'/'%0D'}"
+  echo "::error title=$1::${text//$'\n'/'%0A'}"
+}
+
+migrate() {  # the schema, once, before the API (its output is lost with --rm: keep it)
+  local out rc=0
+  out="$(docker compose --profile migrate run --rm -T migrate 2>&1)" || rc=$?
+  echo "$out"
+  [ "$rc" = 0 ] || annotate "single-node migrate" "$(tail -n 40 <<< "$out")"
+  return "$rc"
+}
+
+start() {
+  docker compose up -d --remove-orphans --wait --wait-timeout "$timeout"
+}
+
 up() {  # <image>
   env_set API_IMAGE "$1"
-  docker compose --profile migrate run --rm migrate &&
-    docker compose up -d --remove-orphans --wait --wait-timeout "$timeout"
+  migrate && start
 }
 
 previous="$(env_get API_IMAGE)"
@@ -63,8 +81,10 @@ echo "deploying: $image"
 
 rollback() {
   echo "::error::deploy of $image failed${1:+: $1}" >&2
-  docker compose ps >&2 || true
-  docker compose logs --tail 60 migrate api >&2 || true
+  docker compose ps -a >&2 || true
+  for svc in api postgres qdrant redis; do
+    annotate "single-node $svc" "$(docker compose logs --no-color --tail 40 "$svc" 2>&1 || true)"
+  done
   if [ -n "$previous" ] && [ "$previous" != "$image" ]; then
     echo "rolling back to $previous" >&2
     up "$previous" && smoke || echo "::error::still unhealthy after the rollback" >&2
@@ -76,7 +96,9 @@ rollback() {
 
 verify "$image" || rollback "signature not valid for $CI_IDENTITY"
 API_IMAGE="$image" docker compose pull --quiet api || rollback "image not found"
-up "$image" || rollback "not healthy within ${timeout}s"
+env_set API_IMAGE "$image"
+migrate || rollback "schema migration failed"
+start || rollback "not healthy within ${timeout}s"
 smoke || rollback "smoke test failed"
 echo "$(date -u +%FT%TZ) $image" >> .deploy-history
 echo "deployed $image"

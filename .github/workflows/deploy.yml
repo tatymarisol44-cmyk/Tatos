@@ -195,8 +195,14 @@ jobs:
         if: failure()
         run: |
           cd "$D" || exit 0
-          sudo docker compose ps
-          sudo docker compose logs --tail 200
+          # API_IMAGE may be empty after a failed first install: give Compose one.
+          dc() { sudo env API_IMAGE="$API" docker compose "$@"; }
+          dc ps -a
+          for svc in api postgres qdrant redis; do
+            log="$(dc logs --no-color --tail 40 "$svc" 2>&1 || true)"
+            log="${log//'%'/'%25'}"; log="${log//$'\r'/'%0D'}"
+            echo "::error title=single-node $svc::${log//$'\n'/'%0A'}"
+          done
 
   production-vm:
     needs: [resolve, single-node]
