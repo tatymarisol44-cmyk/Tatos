@@ -326,7 +326,7 @@ Each requirement has an identifier, a status (**I**, **P** or **F**) and its ver
 | GOV-05 | Conversations shall be erasable per thread and per tenant, and conversations inactive for longer than `THREAD_RETENTION_DAYS` shall be purged by `agency purge-threads`. Erasing a thread shall drop its review record. | I | test_limits_and_retention, test_governance |
 | GOV-06 | Audit events shall have a configurable retention period (for example six years for HIPAA-covered tenants) and a purge job. | F | — |
 | GOV-07 | Data at rest shall be encrypted (managed Postgres/Qdrant encryption, encrypted volumes). | F (infrastructure) | — |
-| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Per-person keys with roles, and OIDC single sign-on with mandatory MFA (ADR 0018). Admin keys can still read shared clinical entries (P9). | P | test_audit_regressions (A01), test_business_api, test_oidc |
+| GOV-08 | Users shall authenticate individually (SSO/OIDC) with role-based access, for example clinical data restricted to clinicians. Per-person keys with roles, and OIDC single sign-on with mandatory MFA (ADR 0018). Patients' clinical data needs the clinician role held explicitly; admin and service keys are refused (need to know, LOPDP Art. 10.e). | I | test_audit_regressions (A01), test_business_api, test_oidc, test_need_to_know |
 | GOV-09 | Organisational documents shall exist before production with real data: DPIA (GDPR Art. 35), records of processing (Art. 30), DPA/BAA with LLM and hosting providers, transfer safeguards, and a breach-notification runbook (GDPR 72 h; LOPDP term). | F | — |
 
 ### 3.7 CRM (CRM)
@@ -438,7 +438,7 @@ Ecuador only for now. Every legal reference in a pack carries the status it real
 | PCK-08 | `agency pack validate --strict` shall fail a production pack that rests on `to_verify` references. | I | test_profession_packs |
 | PCK-09 | PHQ-9 and GAD-7 shall be scored with the original papers' severity bands, reported as bands and never as a diagnosis; any PHQ-9 item-9 answer above zero shall be flagged for a person whatever the total. | I | test_scales |
 | PCK-10 | An establishment (tenant) shall register professionals, each with a non-abstract profession pack; an account given to a professional shall name a registered, active one, and marketing shall follow that professional's pack (the establishment's pack otherwise). | I | test_establishment |
-| PCK-11 | Clinicians shall write append-only entries into a patient's record, typed by their own pack (corrections amend, never overwrite). A psychotherapy note shall be visible to its author only, not to other clinicians or an admin key, and not even listed for them; reception shall have no access; every read shall be audited without content. A data-subject export shall include the record but withhold psychotherapy notes, reporting how many. | I | test_clinical_records |
+| PCK-11 | Clinicians shall write append-only entries into a patient's record, typed by their own pack (corrections amend, never overwrite). A psychotherapy note shall be visible to its author only, not to other clinicians, and not even listed for them; reception, admin and service keys shall have no access to the record; every read shall be audited without content. A data-subject export shall include the record but withhold psychotherapy notes, reporting how many. | I | test_clinical_records |
 | PCK-12 | Patient diary store and scale item texts in Spanish. | F | — |
 
 ### 3.14 Social Channels (SOC)

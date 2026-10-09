@@ -7,7 +7,8 @@
   entries are not written here: they have their own store and rules (lawyer's I1, I3).
 * **Who reads what.** A psychotherapy note (`access: author_only`) is visible to its author
   only, not to other clinicians and not to an admin key; it is not even listed for anyone
-  else. Every other entry is visible to clinicians (role `reviewer`), not to reception.
+  else. Every other entry is visible to clinicians (role `reviewer`, held by the person
+  themselves), not to reception and not to admin or service keys (need to know).
 * **Every read is audited**, with document ids and never their content.
 * Nothing here is connected to retrieval, memory, insights, campaigns or models
   (`surfaces.HARD_EXCLUSIONS`): those modules have no path to this table."""
@@ -20,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Column, DateTime, String, Table, Text, and_, insert, or_, select
 
-from orchestrator.auth import Principal, Role
+from orchestrator.auth import Principal
 from orchestrator.crm import patients
 from orchestrator.db import Database, metadata, utcnow
 from orchestrator.establishment import Professionals, professionals
@@ -83,7 +84,7 @@ class ClinicalRecords:
             clinical_documents.c.access == "author_only",
             clinical_documents.c.author_id == principal.id,
         )
-        if principal.has(Role.REVIEWER):
+        if principal.is_clinician:
             return or_(clinical_documents.c.access != "author_only", own_restricted)
         return own_restricted
 

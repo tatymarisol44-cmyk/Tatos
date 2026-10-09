@@ -387,7 +387,10 @@ def test_agenda_booking_and_follow_up_in_the_console(server: str, subprocess_loo
             browser = pw.chromium.launch()
         except sync_api.Error as exc:
             pytest.skip(f"no browser: {exc.message.splitlines()[0]}")
-        page = _open(browser, server, SERVICE["X-API-Key"], errors, bypass_csp=True)
+        # A solo practitioner: books visits (reception) and reads follow-up (clinician).
+        # An admin key would be refused the follow-up: clinical data is need to know.
+        person = _key(server, "dra.agenda", "reception", "reviewer")
+        page = _open(browser, server, person, errors, bypass_csp=True)
         page.click("#tab-patients")
         page.click("#open-agenda")
         expect(page.get_by_role("heading", name="Agenda", exact=True)).to_be_focused()

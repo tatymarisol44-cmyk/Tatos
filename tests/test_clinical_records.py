@@ -1,5 +1,5 @@
 """The clinical record (ADR 0014): append-only entries typed by the author's pack, a
-psychotherapy note visible to its author only (not even to an admin key), no access for
+psychotherapy note visible to its author only, no access for admin keys or
 reception, and every read audited without content. Synthetic data only."""
 
 from __future__ import annotations
@@ -82,9 +82,12 @@ def test_a_psychotherapy_note_is_for_its_author_only(
 
     assert listed(client, vera) == ["session_note", "psychotherapy_note"]
     assert listed(client, ruiz) == ["session_note"]  # another clinician: not even listed
-    assert listed(client, ADMIN) == ["session_note"]  # an admin key neither
+    # An admin key opens no clinical data at all (need to know, test_need_to_know.py).
+    assert (
+        client.get(f"/v1/clinical/patients/{PATIENT}/documents", headers=ADMIN).status_code == 403
+    )
     assert client.get(f"/v1/clinical/documents/{note_id}", headers=ruiz).status_code == 404
-    assert client.get(f"/v1/clinical/documents/{note_id}", headers=ADMIN).status_code == 404
+    assert client.get(f"/v1/clinical/documents/{note_id}", headers=ADMIN).status_code == 403
     assert (
         client.get(f"/v1/clinical/documents/{note_id}", headers=vera).json()["body"] == SECRET_NOTE
     )
@@ -132,8 +135,12 @@ def test_the_psychiatrist_writes_with_his_own_pack(
 
 
 def test_a_key_without_a_professional_uses_the_establishment_pack(client: TestClient) -> None:
-    # The admin key is not a professional, and the establishment is on `general`: no documents.
-    assert write(client, ADMIN, "session_note").status_code == 422
+    # A clinician who is not a registered professional writes with the establishment's
+    # pack, here `general`, which has no clinical documents.
+    staff = client.post(
+        "/v1/admin/staff", json={"name": "suplente", "roles": ["reviewer"]}, headers=ADMIN
+    ).json()
+    assert write(client, {"X-API-Key": staff["key"]}, "session_note").status_code == 422
 
 
 def test_unknown_patients_and_tenants(
@@ -144,10 +151,13 @@ def test_unknown_patients_and_tenants(
     unknown = client.post("/v1/clinical/patients/p-999/documents", json=payload, headers=vera)
     assert unknown.status_code == 422
     made = write(client, vera, "session_note").json()
-    assert (
-        client.get(f"/v1/clinical/documents/{made['document_id']}", headers=GLOBEX).status_code
-        == 404
-    )
+    globex_doctor = client.post(
+        "/v1/admin/staff", json={"name": "dr.globex", "roles": ["reviewer"]}, headers=GLOBEX
+    ).json()
+    for other_tenant in (GLOBEX, {"X-API-Key": globex_doctor["key"]}):
+        response = client.get(f"/v1/clinical/documents/{made['document_id']}", headers=other_tenant)
+        assert response.status_code in {403, 404}
+        assert "Sesión" not in response.text
 
 
 def test_corrections_amend_and_never_overwrite(

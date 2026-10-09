@@ -240,6 +240,19 @@ def requires(*roles: Role) -> Callable[..., Awaitable[Principal]]:
     return check
 
 
+async def require_clinician(
+    principal: Annotated[Principal, Depends(require_staff)],
+) -> Principal:
+    """Dependency for patients' clinical data: a person holding the clinician role
+    (`reviewer`) themselves. Admin and service keys are refused (need to know)."""
+    if not principal.is_clinician:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "requires the clinician role (reviewer) held by the person; admin does not grant it",
+        )
+    return principal
+
+
 async def require_tenant(principal: Annotated[Principal, Depends(require_staff)]) -> str:
     """Any staff/service caller; returns the tenant (endpoints with no role check)."""
     return principal.tenant

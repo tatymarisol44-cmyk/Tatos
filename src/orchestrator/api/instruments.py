@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi import Path as FastAPIPath
 from pydantic import BaseModel, Field
 
-from orchestrator.api.security import requires
+from orchestrator.api.security import require_clinician, requires
 from orchestrator.auth import Principal, Role
 from orchestrator.instruments import (
     TEMPLATES,
@@ -22,7 +22,9 @@ from orchestrator.instruments import (
 )
 
 router = APIRouter(prefix="/v1/clinical", tags=["instruments"])
-Clinician = Annotated[Principal, Depends(requires(Role.REVIEWER))]
+Clinician = Annotated[Principal, Depends(requires(Role.REVIEWER))]  # the tests themselves
+# A patient's answers and scores are clinical data: the clinician role, held explicitly.
+PatientClinician = Annotated[Principal, Depends(require_clinician)]
 PatientId = Annotated[str, FastAPIPath(pattern=r"^[\w.-]{1,64}$")]
 InstrumentId = Annotated[str, FastAPIPath(pattern=r"^[\w-]{1,40}$")]
 ResultId = Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")]
@@ -112,7 +114,7 @@ async def retire_instrument(instrument_id: InstrumentId, request: Request, p: Cl
 
 @router.post("/patients/{patient_id}/instrument-results", status_code=status.HTTP_201_CREATED)
 async def administer(
-    patient_id: PatientId, body: AdministerIn, request: Request, p: Clinician
+    patient_id: PatientId, body: AdministerIn, request: Request, p: PatientClinician
 ) -> dict[str, Any]:
     """Record a patient's answers; returns the score, band and any alert to act on."""
     try:
@@ -127,7 +129,7 @@ async def administer(
 
 @router.get("/patients/{patient_id}/instrument-results")
 async def list_results(
-    patient_id: PatientId, request: Request, p: Clinician
+    patient_id: PatientId, request: Request, p: PatientClinician
 ) -> list[dict[str, Any]]:
     try:
         return await service(request).results(p, patient_id)
@@ -136,7 +138,7 @@ async def list_results(
 
 
 @router.get("/instrument-results/{result_id}")
-async def get_result(result_id: ResultId, request: Request, p: Clinician) -> dict[str, Any]:
+async def get_result(result_id: ResultId, request: Request, p: PatientClinician) -> dict[str, Any]:
     try:
         return await service(request).result(p, result_id)
     except KeyError as exc:

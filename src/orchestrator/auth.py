@@ -33,9 +33,11 @@ from orchestrator.governance import AuditLog
 
 
 class Role(StrEnum):
-    ADMIN = "admin"  # manage keys and documents; implies every other role
+    ADMIN = "admin"  # manage keys and documents; implies every role but clinical reads
     RECEPTION = "reception"  # patients, appointments, plans, consents, patient access
-    REVIEWER = "reviewer"  # resolve answers held for human review (e.g. a dentist)
+    # Resolve answers held for human review; held EXPLICITLY, also the clinician role that
+    # opens patients' clinical data (need to know: admin does not imply it).
+    REVIEWER = "reviewer"
     OWNER = "owner"  # insights, campaigns, discounts above the pack's cap
     MARKETING = "marketing"  # draft and send campaigns (not approve big discounts)
     PRIVACY = "privacy"  # data-subject export/erasure, audit trail, thread erasure
@@ -80,6 +82,12 @@ class Principal:
     @property
     def can_review(self) -> bool:
         return self.has(Role.REVIEWER)
+
+    @property
+    def is_clinician(self) -> bool:
+        """Holds the clinician role itself. Clinical data is need to know (LOPDP Art.
+        10.e): administering the practice, or a service key, does not open it."""
+        return self.kind == STAFF and Role.REVIEWER in self.roles
 
 
 def service_principal(tenant: str) -> Principal:

@@ -7,12 +7,12 @@ never a value the caller declares. Every route is scoped to the caller's tenant,
 record of another tenant answers exactly like a missing one (404).
 
 Role matrix:
-    reviewer   reviews
+    reviewer   reviews; held explicitly, also the clinician role for patients' clinical data
     privacy    subject export/erasure, audit trail
     reception  patients, appointments, plans, consents, patient access keys, alerts
     owner      insights; campaigns, including discounts above the pack's cap
     marketing  campaigns (create, edit, approve within the cap, send, results)
-    admin      staff keys, documents; implies every role"""
+    admin      staff keys, documents; implies every role except clinical reads (need to know)"""
 
 from __future__ import annotations
 

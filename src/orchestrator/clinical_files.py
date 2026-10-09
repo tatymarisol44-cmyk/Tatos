@@ -34,7 +34,7 @@ from sqlalchemy import (
     select,
 )
 
-from orchestrator.auth import Principal, Role
+from orchestrator.auth import Principal
 from orchestrator.crm import patients
 from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
@@ -109,7 +109,7 @@ class ClinicalFiles:
         own = and_(
             clinical_files.c.access == "author_only", clinical_files.c.author_id == principal.id
         )
-        if principal.has(Role.REVIEWER):
+        if principal.is_clinician:
             return or_(clinical_files.c.access != "author_only", own)
         return own
 

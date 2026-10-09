@@ -19,13 +19,13 @@ from fastapi import (
 from fastapi import Path as FastAPIPath
 from pydantic import BaseModel, Field
 
-from orchestrator.api.security import requires
-from orchestrator.auth import Principal, Role
+from orchestrator.api.security import require_clinician
+from orchestrator.auth import Principal
 from orchestrator.clinical_files import ClinicalFiles, FileRejected
 from orchestrator.clinical_records import MAX_BODY, ClinicalError, ClinicalRecords
 
 router = APIRouter(prefix="/v1/clinical", tags=["clinical"])
-Clinician = Annotated[Principal, Depends(requires(Role.REVIEWER))]
+Clinician = Annotated[Principal, Depends(require_clinician)]  # need to know: not admin
 PatientId = Annotated[str, FastAPIPath(pattern=r"^[\w.-]{1,64}$")]
 DocumentId = Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")]
 

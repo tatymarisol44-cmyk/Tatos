@@ -63,6 +63,8 @@ UNSCOPED = {
 @dataclass
 class Acme:
     ids: dict[str, str] = field(default_factory=dict)
+    # Clinical data is read by a clinician, not by the admin key (need to know).
+    clinician: dict[str, str] = field(default_factory=dict)
 
     def secrets(self) -> list[str]:
         """Strings that must never reach a globex caller."""
@@ -171,6 +173,7 @@ def seed(c: TestClient) -> Acme:
     )
     ids["principal"] = staff["id"]
     clinician = {"X-API-Key": staff["key"]}
+    acme.clinician = clinician
     _ok(
         c.post(
             "/v1/admin/professionals",
@@ -308,7 +311,8 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
     ids = acme.ids
 
     def get(path: str) -> Any:
-        return _ok(c.get(path, headers=ACME))
+        headers = acme.clinician if path.startswith("/v1/clinical/") else ACME
+        return _ok(c.get(path, headers=headers))
 
     return {
         "patient": get(f"/v1/crm/patients/{ids['patient']}"),
@@ -752,7 +756,7 @@ REFUSED = {403, 404, 409, 422}
 @pytest.fixture
 def world(
     settings: Settings, catalog: Catalog, tmp_path: Any
-) -> Iterator[tuple[TestClient, Acme, dict[str, str]]]:
+) -> Iterator[tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]]]:
     settings.tenant_packs = {"acme": "dental", "globex": "dental"}
     settings.campaign_default_holdout_pct = 0
     settings.media_dir = tmp_path / "media"
@@ -769,7 +773,14 @@ def world(
             )
         )
         access = _ok(c.post("/v1/crm/patients/p-globex-0/access", headers=GLOBEX))
-        yield c, acme, {"X-API-Key": access["key"]}
+        doctor = _ok(
+            c.post(
+                "/v1/admin/staff",
+                json={"name": "dr.globex", "roles": ["reviewer"]},
+                headers=GLOBEX,
+            )
+        )
+        yield c, acme, ({"X-API-Key": doctor["key"]}, {"X-API-Key": access["key"]})
 
 
 def schema_operations(client: TestClient) -> set[tuple[str, str]]:
@@ -778,7 +789,7 @@ def schema_operations(client: TestClient) -> set[tuple[str, str]]:
 
 
 def test_every_operation_is_in_the_matrix(
-    world: tuple[TestClient, Acme, dict[str, str]],
+    world: tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]],
 ) -> None:
     client, acme, _ = world
     covered = set(attacks(acme)) | set(patient_attacks(acme))
@@ -801,16 +812,22 @@ def _call(client: TestClient, method: str, path: str, body: Any, headers: dict[s
 
 
 def test_another_tenant_can_neither_read_nor_change_acme(
-    world: tuple[TestClient, Acme, dict[str, str]],
+    world: tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]],
 ) -> None:
-    client, acme, globex_patient = world
+    client, acme, (globex_clinician, globex_patient) = world
     before = snapshot(client, acme)
     secrets = acme.secrets()
     served: list[str] = []
     leaks: list[str] = []
     calls = [
         (headers, key, path, body)
-        for headers, table in ((GLOBEX, attacks(acme)), (globex_patient, patient_attacks(acme)))
+        for headers, table in (
+            (GLOBEX, attacks(acme)),
+            # Clinical routes refuse admin keys by role: a globex clinician must be refused
+            # by tenant, too.
+            (globex_clinician, {k: v for k, v in attacks(acme).items() if "/clinical/" in k[1]}),
+            (globex_patient, patient_attacks(acme)),
+        )
         for key, (path, body) in table.items()
     ]
 
@@ -840,7 +857,7 @@ def test_another_tenant_can_neither_read_nor_change_acme(
 
 
 def test_patient_keys_never_cross_patients(
-    world: tuple[TestClient, Acme, dict[str, str]],
+    world: tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]],
 ) -> None:
     """A patient key of acme sees its own record only, not another acme patient's."""
     client, acme, _ = world
