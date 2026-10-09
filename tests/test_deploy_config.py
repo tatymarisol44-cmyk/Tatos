@@ -373,3 +373,26 @@ def test_rollout_moves_the_cronjobs_with_the_api() -> None:
     # The retention and audit-anchor jobs run the API image: they must not lag a release.
     script = (ROOT / "deploy" / "scripts" / "rollout.sh").read_text(encoding="utf-8")
     assert "set image cronjob" in script
+
+
+def test_nothing_past_the_rehearsals_runs_until_a_target_is_chosen() -> None:
+    # Production waits for a human approval: it must never ask for one (on every push)
+    # for a cloud that does not exist. DEPLOY_TARGET picks vm (ADR 0021) or gke.
+    jobs = yaml.safe_load((WORKFLOWS / "deploy.yml").read_text(encoding="utf-8"))["jobs"]
+    assert "vars.DEPLOY_TARGET == 'gke'" in jobs["staging"]["if"]
+    assert jobs["production"]["if"] == "vars.DEPLOY_TARGET == 'gke'"
+    vm = jobs["production-vm"]
+    assert vm["if"] == "vars.DEPLOY_TARGET == 'vm'"
+    assert vm["environment"] == "production"
+    assert vm["needs"] == ["resolve", "single-node"]  # rehearsed before it reaches the server
+    runs = " ".join(str(s.get("run", "")) for s in vm["steps"])
+    assert "StrictHostKeyChecking=yes" in runs and "deploy.sh" in runs
+    rehearsal = " ".join(str(s.get("run", "")) for s in jobs["single-node"]["steps"])
+    for proof in (
+        "install.sh",
+        "agency demo",
+        "backup.sh",
+        "docker compose down",
+        "VERIFY_SIGNATURE=0",
+    ):
+        assert proof in rehearsal, proof

@@ -29,6 +29,7 @@ All of these run in CI on every commit:
 | Deploy rehearsal on kind with a forced rollback, green on every push (first green 2026-10-09) | `.github/workflows/deploy.yml` |
 | Only attested images run on GKE: CI signature verified, digest copied to Artifact Registry, Binary Authorization enforced (O4, O6) | `.github/workflows/deploy-gke.yml`, `deploy/terraform/supply_chain.tf` |
 | Platform paging rendered from env, checked with `amtool` (O1) | `deploy/monitoring/render_alertmanager.py` |
+| Single-node production profile installed, demo-walked, backed up, restarted and rolled back by CI on every push; `deploy.sh` rollback unit-tested | `deploy/single-node/`, `tests/test_single_node.py`, ADR 0021 |
 
 ## 2. Repository and CI live (done 2026-10-08; one owner step left)
 
@@ -37,7 +38,11 @@ All of these run in CI on every commit:
    - branch protection on `main`: PR required, plus the checks `quality`, `test`, `security`, `manifests` and `image`;
    - environments `staging` and `production`, with required reviewers on `production`.
 
-## 3. Cloud (owner, about 2 hours, needs billing)
+## 2b. Production MVP on one free server (ADR 0021; owner, about 30 minutes, US$0)
+
+The path chosen for the MVP: Oracle Cloud Always Free + Cloudflare Tunnel, rehearsed by CI on every push. Steps in `docs/DEPLOY-SINGLE-NODE.md`. Section 3 is the scale path, when a second clinic or an availability commitment needs it.
+
+## 3. Cloud at scale: GKE (owner, about 2 hours, needs billing)
 
 1. Region decided (O9): `us-east1`, with backups in `us-central1`.
 2. Create two GCP projects, staging and production (O3, decided: separate projects), with billing and a budget alert.

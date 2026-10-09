@@ -8,9 +8,21 @@ name: Deploy
 #   stored in GitHub), in deploy-gke.yml. Each runs only if its environment's variables
 #   are set, so the pipeline is green before the cloud exists. The image signature is
 #   verified before deploying. `production` waits for the environment's required reviewers.
+# - single-node: the MVP production profile (ADR 0021) installed with the real
+#   deploy/single-node/install.sh on the runner, every demo flow walked against it, a
+#   nightly backup taken and checked, a restart that keeps the data, and a broken
+#   release refused while the running one keeps serving.
 # - workflow_dispatch: redeploy (or roll back to) a given digest, through staging first.
 #
-# Per-environment variables (Settings -> Environments -> staging / production):
+# Where production is: repository variable DEPLOY_TARGET (Settings -> Secrets and
+# variables -> Actions -> Variables). Unset: nothing past the rehearsals runs, so no
+# approval is ever requested for a cloud that does not exist yet.
+#   DEPLOY_TARGET=vm   production-vm: the single-node server, over SSH. Environment
+#                      `production`: vars VM_HOST, VM_USER (sudo), VM_DIR (/opt/agency);
+#                      secrets VM_SSH_KEY (private key), VM_KNOWN_HOSTS (ssh-keyscan line).
+#   DEPLOY_TARGET=gke  staging then production on GKE (deploy-gke.yml), as below.
+#
+# Per-environment variables for GKE (Settings -> Environments -> staging / production):
 #   GCP_WIF_PROVIDER  projects/<number>/locations/global/workloadIdentityPools/github/providers/github
 #   GCP_DEPLOYER_SA   deployer@<project>.iam.gserviceaccount.com (roles/container.developer)
 #   GKE_CLUSTER, GKE_LOCATION, GCP_PROJECT
@@ -126,11 +138,103 @@ jobs:
           kubectl -n agency describe deploy/agency-orchestrator
           kubectl -n agency logs deploy/agency-orchestrator --all-containers --tail=200 || true
 
+  single-node:
+    needs: resolve
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      API: ${{ needs.resolve.outputs.api }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Install with the real installer (image signed by CI is verified)
+        run: |
+          echo "D=$RUNNER_TEMP/agency" >> "$GITHUB_ENV"
+          sudo bash deploy/single-node/install.sh --dir "$RUNNER_TEMP/agency" \
+            --image "$API" --tenant rehearsal --no-tunnel --no-timer
+      - name: Every demo flow against the installed stack
+        run: |
+          cd "$D"
+          key=$(sudo sed -n 's/^API_KEYS=//p' .env | cut -d, -f1 | cut -d: -f1)
+          meta=$(sudo sed -n 's/^META_APP_SECRET=//p' .env)
+          sudo docker compose exec -T api agency demo --url http://127.0.0.1:8000 \
+            --key "$key" --meta-app-secret "$meta"
+      - name: Nightly backup, then its checksum
+        run: |
+          sudo "$D/backup.sh"
+          # backups/ is root-only (mode 700): check it as root.
+          sudo bash -c 'cd "$1/backups" && sha256sum -c ./*.sha256 && test -s "$(ls ./*.anchors.jsonl | head -1)"' _ "$D"
+      - name: A full restart keeps the data
+        run: |
+          cd "$D"
+          key=$(sudo sed -n 's/^API_KEYS=//p' .env | cut -d, -f1 | cut -d: -f1)
+          count() { curl -fsS -H "X-API-Key: $key" http://127.0.0.1:8000/v1/crm/patients | jq length; }
+          before=$(count)
+          sudo docker compose down
+          sudo ./deploy.sh "$API"
+          after=$(count)
+          echo "patients before: $before, after: $after"
+          test "$before" -gt 0 && test "$before" = "$after"
+      - name: Broken releases are refused, the running one keeps serving
+        run: |
+          cd "$D"
+          bad="${API%@*}@sha256:$(printf '0%.0s' $(seq 64))"
+          set +e
+          sudo ./deploy.sh "$bad" 60; signed=$?
+          sudo env VERIFY_SIGNATURE=0 ./deploy.sh "$bad" 60; missing=$?
+          set -e
+          test "$signed" -eq 1 && test "$missing" -eq 1
+          sudo grep -qx "API_IMAGE=$API" .env
+          curl -fsS http://127.0.0.1:8000/readyz
+      - name: Diagnostics
+        if: failure()
+        run: |
+          cd "$D" || exit 0
+          sudo docker compose ps
+          sudo docker compose logs --tail 200
+
+  production-vm:
+    needs: [resolve, single-node]
+    if: vars.DEPLOY_TARGET == 'vm'
+    runs-on: ubuntu-latest
+    environment: production # required reviewers approve here
+    timeout-minutes: 20
+    env:
+      API: ${{ needs.resolve.outputs.api }}
+      VM: ${{ vars.VM_USER }}@${{ vars.VM_HOST }}
+      VM_DIR: ${{ vars.VM_DIR || '/opt/agency' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - name: SSH identity (host key pinned, never trust-on-first-use)
+        env:
+          KEY: ${{ secrets.VM_SSH_KEY }}
+          KNOWN: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Ship this commit's stack files, then the health-gated deploy
+        run: |
+          ssh_vm() { ssh -i ~/.ssh/id -o StrictHostKeyChecking=yes -o BatchMode=yes "$VM" "$@"; }
+          cd deploy/single-node
+          scp -i ~/.ssh/id -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            compose.yaml deploy.sh backup.sh "$VM:/tmp/"
+          ssh_vm "sudo install -m 0644 /tmp/compose.yaml $VM_DIR/" \
+            "&& sudo install -m 0755 /tmp/deploy.sh /tmp/backup.sh $VM_DIR/" \
+            "&& sudo $VM_DIR/deploy.sh '$API'"
+
   staging:
     needs: [resolve, rehearsal]
     # A manual redeploy skips the rehearsal (that image already passed it), never staging.
     if: >-
-      always() && needs.resolve.result == 'success' &&
+      always() && vars.DEPLOY_TARGET == 'gke' && needs.resolve.result == 'success' &&
       (needs.rehearsal.result == 'success' || needs.rehearsal.result == 'skipped')
     uses: ./.github/workflows/deploy-gke.yml
     with:
@@ -146,6 +250,7 @@ jobs:
 
   production:
     needs: [resolve, staging]
+    if: vars.DEPLOY_TARGET == 'gke'
     uses: ./.github/workflows/deploy-gke.yml
     with:
       environment: production

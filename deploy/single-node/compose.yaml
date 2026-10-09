@@ -1,0 +1,130 @@
+# Production on ONE server (ADR 0021): the MVP profile, for a free Oracle Cloud Ampere VM
+# or any Linux host with Docker (amd64 or arm64). Same image and same production checks
+# (APP_ENV=prod: Postgres, Qdrant, Redis, keys) as the Kubernetes profile; one replica.
+#
+#   installed and driven by install.sh / deploy.sh / backup.sh next to this file.
+#
+# Nothing listens on the internet: the API is published on 127.0.0.1 only, and the
+# public HTTPS entrance is a Cloudflare Tunnel (an outbound connection from this server).
+#   COMPOSE_PROFILES=quick-tunnel  free random https://*.trycloudflare.com address, no account
+#   COMPOSE_PROFILES=tunnel        a named tunnel on your own domain (TUNNEL_TOKEN)
+# State lives in named volumes; backup.sh copies it out every night.
+name: agency
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "5"}
+
+services:
+  migrate:
+    # The schema migrations, run by deploy.sh before the API starts (like the init
+    # container in Kubernetes): `docker compose run --rm migrate`. In a profile so that
+    # `up` never starts it: a one-shot container would trip `up --wait`. The API itself
+    # only checks the schema.
+    profiles: [migrate]
+    image: ${API_IMAGE:?set by deploy.sh}
+    command: ["agency", "db", "upgrade"]
+    env_file: .env
+    environment: &api-env
+      APP_ENV: prod
+      DATABASE_URL: postgresql+psycopg://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency
+      POSTGRES_URL: postgresql://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency
+      CHECKPOINTER_BACKEND: postgres
+      DB_AUTO_MIGRATE: "false"
+      VECTOR_BACKEND: qdrant
+      QDRANT_URL: http://qdrant:6333
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      MEDIA_DIR: /tmp/media
+      OTEL_ENABLED: "false"
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  api:
+    image: ${API_IMAGE:?set by deploy.sh}
+    env_file: .env
+    environment: *api-env
+    ports: ["127.0.0.1:8000:8000"]
+    read_only: true
+    tmpfs: ["/tmp:size=512m"]
+    cap_drop: [ALL]
+    healthcheck:
+      # Ready = schema checked, catalog indexed, Postgres, Qdrant and Redis reachable.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      postgres: {condition: service_healthy}
+      qdrant: {condition: service_started}
+      redis: {condition: service_healthy}
+    <<: *hardening
+
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_USER: agency
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: agency
+      TZ: UTC
+      PGTZ: UTC
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agency -d agency"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    <<: *hardening
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.2@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes: [qdrant-data:/qdrant/storage]
+    <<: *hardening
+
+  redis:
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    # Rate-limit counters only: nothing to persist.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    read_only: true
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    <<: *hardening
+
+  tunnel-quick:
+    profiles: [quick-tunnel]
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
+    depends_on:
+      api: {condition: service_healthy}
+    <<: *hardening
+
+  tunnel:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      # Compose interpolates every service, active or not: required only in practice
+      # (deploy.sh refuses the `tunnel` profile without it).
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+    <<: *hardening
+
+volumes:
+  postgres-data:
+  qdrant-data:
