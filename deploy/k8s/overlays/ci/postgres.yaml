@@ -29,6 +29,9 @@ spec:
             - {name: POSTGRES_USER, value: agency}
             - {name: POSTGRES_PASSWORD, value: agency}
             - {name: POSTGRES_DB, value: agency}
+            # The emptyDir mount point is owned by root and uid 70 cannot chmod it, so
+            # initdb would crash-loop. A subdirectory is created, and owned, by Postgres.
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
           ports: [{name: pg, containerPort: 5432}]
           resources:
             requests: {cpu: 100m, memory: 256Mi}

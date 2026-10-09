@@ -289,6 +289,18 @@ def test_the_rehearsal_api_may_reach_every_in_cluster_dependency() -> None:
         assert ingress and egress, f"API cannot reach {name}:{port} in the rehearsal"
 
 
+def test_the_rehearsal_postgres_owns_its_data_directory() -> None:
+    # An emptyDir mount point belongs to root; Postgres (uid 70, no capabilities) cannot
+    # chmod it and initdb crash-loops. PGDATA must be a subdirectory Postgres creates.
+    docs = _docs(ROOT / "deploy" / "k8s" / "overlays" / "ci" / "postgres.yaml")
+    pod = next(d for d in docs if d.get("kind") == "Deployment")["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    mounts = {m["name"]: m["mountPath"] for m in container["volumeMounts"]}
+    pgdata = env.get("PGDATA", "/var/lib/postgresql/data")
+    assert pgdata.startswith(mounts["data"].rstrip("/") + "/"), pgdata
+
+
 def test_failures_are_readable_without_signing_in() -> None:
     ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
     assert "scripts/ci/junit_annotations.py junit.xml" in ci
