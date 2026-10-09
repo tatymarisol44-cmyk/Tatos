@@ -16,8 +16,8 @@ HERE = Path(__file__).resolve().parent
 HEADER = """\
 # GENERATED from deploy/monitoring/alerts.yml by deploy/monitoring/render_gmp_rules.py.
 # Do not edit by hand. Google Managed Prometheus evaluates these rules; notification
-# routing (who gets paged, on which channel) is the Alertmanager config of the project
-# (owner decision O1 in docs/private/DECISIONS-PENDING.md).
+# routing (who gets paged, on which channel) is deploy/monitoring/render_alertmanager.py
+# (decision O1, docs/runbooks/README.md).
 """
 
 

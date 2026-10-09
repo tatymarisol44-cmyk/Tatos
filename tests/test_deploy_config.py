@@ -328,3 +328,48 @@ def test_junit_failures_become_annotations(tmp_path: Path) -> None:
     ).stdout
     assert "::error title=tests.test_x::test_bad::assert 1 == 2%0Aline one%0A100%25 wrong" in out
     assert "1 failed test(s)" in out
+
+
+def test_gke_runs_only_mirrored_and_attested_images() -> None:
+    # Decisions O4 and O6: every image is copied by digest into the project's Artifact
+    # Registry and attested for Binary Authorization by the deploy job, after the CI
+    # signature is verified. The cluster refuses anything else, even `kubectl set image`.
+    gke = yaml.safe_load((WORKFLOWS / "deploy-gke.yml").read_text(encoding="utf-8"))
+    # PyYAML follows YAML 1.1, which reads the key `on` as the boolean True.
+    assert {"image", "jvm_image"} <= set(gke[True]["workflow_call"]["inputs"])
+    steps = gke["jobs"]["deploy"]["steps"]
+    runs = [str(s.get("run", "")) for s in steps]
+    order = {
+        k: next(i for i, r in enumerate(runs) if k in r)
+        for k in (
+            "cosign verify",
+            "crane copy",
+            "binauthz attestations sign-and-create",
+            "rollout.sh agency",
+        )
+    }
+    assert order["cosign verify"] < order["crane copy"]
+    assert order["crane copy"] < order["binauthz attestations sign-and-create"]
+    assert order["binauthz attestations sign-and-create"] < order["rollout.sh agency"]
+    apply = next(r for r in runs if "kustomize edit set image" in r)
+    for name in ("agency-orchestrator", "jvm-agent", "qdrant/qdrant", "redis"):
+        assert f'"{name}=' in apply, name
+
+    flow = yaml.safe_load((WORKFLOWS / "deploy.yml").read_text(encoding="utf-8"))
+    for env in ("staging", "production"):
+        job = flow["jobs"][env]
+        assert job["with"]["jvm_image"] == "${{ needs.resolve.outputs.jvm }}"
+        assert job["permissions"]["packages"] == "read"  # crane reads GHCR
+
+    tf = "".join(p.read_text("utf-8") for p in (ROOT / "deploy" / "terraform").glob("*.tf"))
+    tf = re.sub(r"\s+", " ", tf)
+    assert 'resource "google_artifact_registry_repository"' in tf
+    assert 'evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"' in tf
+    assert 'evaluation_mode = "REQUIRE_ATTESTATION"' in tf
+    assert 'enforcement_mode = "ENFORCED_BLOCK_AND_AUDIT_LOG"' in tf
+
+
+def test_rollout_moves_the_cronjobs_with_the_api() -> None:
+    # The retention and audit-anchor jobs run the API image: they must not lag a release.
+    script = (ROOT / "deploy" / "scripts" / "rollout.sh").read_text(encoding="utf-8")
+    assert "set image cronjob" in script

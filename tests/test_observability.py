@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,3 +75,54 @@ def test_metrics_port_is_internal_and_scraped() -> None:
     assert allowed == {"gmp-system", "observability"}
     monitor = _docs(K8S / "overlays" / "gke" / "podmonitoring.yaml")[0]
     assert monitor["spec"]["endpoints"][0]["port"] == "metrics"
+
+
+def _alertmanager() -> Any:
+    spec = importlib.util.spec_from_file_location(
+        "render_alertmanager", ROOT / "deploy" / "monitoring" / "render_alertmanager.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PAGING_ENV = {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "-1001"}
+EMAIL_ENV = {
+    "ALERT_EMAIL_TO": "ops@example.test",
+    "SMTP_HOST": "smtp.example.test:587",
+    "SMTP_FROM": "alerts@example.test",
+    "SMTP_USERNAME": "alerts",
+    "SMTP_PASSWORD": "s3cret",
+}
+
+
+def test_alertmanager_pages_on_telegram_and_mails_tickets() -> None:
+    # Decision O1: `page` alerts reach the platform on-call on Telegram (and e-mail when
+    # configured), repeating hourly until resolved; `ticket` alerts go by e-mail, daily.
+    [secret] = yaml.safe_load_all(_alertmanager().render({**PAGING_ENV, **EMAIL_ENV}))
+    assert (secret["kind"], secret["metadata"]["namespace"]) == ("Secret", "gmp-public")
+    assert secret["metadata"]["name"] == "alertmanager"
+    config = yaml.safe_load(secret["stringData"]["alertmanager.yaml"])
+    routes = {r["matchers"][0]: r for r in config["route"]["routes"]}
+    page = next(
+        r for r in config["receivers"] if r["name"] == routes['severity="page"']["receiver"]
+    )
+    assert page["telegram_configs"][0]["chat_id"] == -1001
+    assert page["email_configs"][0]["to"] == "ops@example.test"
+    assert page["email_configs"][0]["require_tls"] is True
+    assert routes['severity="page"']["repeat_interval"] == "1h"
+    ticket = routes['severity="ticket"']
+    assert ticket["repeat_interval"] == "24h"
+    assert next(r for r in config["receivers"] if r["name"] == ticket["receiver"])["email_configs"]
+
+
+def test_alertmanager_without_email_still_pages_and_needs_telegram() -> None:
+    module = _alertmanager()
+    config = yaml.safe_load(
+        next(yaml.safe_load_all(module.render(PAGING_ENV)))["stringData"]["alertmanager.yaml"]
+    )
+    for receiver in config["receivers"]:  # tickets fall back to Telegram: never dropped
+        assert receiver.get("telegram_configs"), receiver["name"]
+    with pytest.raises(SystemExit, match="TELEGRAM_BOT_TOKEN"):
+        module.render({})

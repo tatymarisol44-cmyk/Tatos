@@ -19,6 +19,18 @@ output "GCP_DEPLOYER_SA" {
   value = google_service_account.deployer.email
 }
 
+output "AR_REPOSITORY" {
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
+}
+
+output "BINAUTHZ_ATTESTOR" {
+  value = google_binary_authorization_attestor.deploy.id
+}
+
+output "BINAUTHZ_KEY_VERSION" {
+  value = "${google_kms_crypto_key.attestor.id}/cryptoKeyVersions/${data.google_kms_crypto_key_version.attestor.version}"
+}
+
 # For the Kubernetes Secret (DATABASE_URL / POSTGRES_URL, with sslmode=require).
 output "db_private_ip" {
   value = google_sql_database_instance.this.private_ip_address

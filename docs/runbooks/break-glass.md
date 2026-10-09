@@ -15,3 +15,18 @@ request with a deadline.
      `kubectl -n agency rollout restart deployment/agency-orchestrator`.
    - Attach the list of audit events from the break-glass window (`GET /v1/audit`) to the
      incident note.
+
+## Deploying an image that is not attested (Binary Authorization)
+
+The GKE cluster admits only images that the deploy job attested (decision O6,
+`deploy/terraform/supply_chain.tf`). Normally a fix goes through CI and `deploy.yml`, and
+a rollback is `workflow_dispatch` with an older digest, which is already attested.
+
+Use break-glass only when the pipeline itself is down and the service is harmed:
+
+1. Get a second person's approval and open an incident note.
+2. Add the annotation `alpha.image-policy.k8s.io/break-glass: "true"` to the pod template of
+   the workload. The pod is admitted, and Binary Authorization writes a break-glass entry
+   to Cloud Audit Logs.
+3. Remove the annotation with the next normal deploy, and attach the audit log entry to the
+   incident note.

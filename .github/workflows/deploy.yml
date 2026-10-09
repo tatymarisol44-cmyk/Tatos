@@ -14,6 +14,9 @@ name: Deploy
 #   GCP_WIF_PROVIDER  projects/<number>/locations/global/workloadIdentityPools/github/providers/github
 #   GCP_DEPLOYER_SA   deployer@<project>.iam.gserviceaccount.com (roles/container.developer)
 #   GKE_CLUSTER, GKE_LOCATION, GCP_PROJECT
+#   AR_REPOSITORY     <region>-docker.pkg.dev/<project>/images (decision O4)
+#   BINAUTHZ_ATTESTOR, BINAUTHZ_KEY_VERSION  (decision O6)
+# All of them are `terraform output` values (deploy/terraform).
 # Secret: SMOKE_API_KEY (a service key of a smoke-test tenant with no real data).
 on:
   workflow_run:
@@ -25,6 +28,9 @@ on:
       digest:
         description: "API image digest to deploy (sha256:...), e.g. to roll back"
         required: true
+      jvm_digest:
+        description: "Java agent digest (sha256:...); default: the one built from main's head"
+        required: false
 
 permissions:
   contents: read
@@ -44,6 +50,7 @@ jobs:
       packages: read
     outputs:
       api: ${{ steps.digest.outputs.api }}
+      jvm: ${{ steps.digest.outputs.jvm }}
       sha: ${{ steps.digest.outputs.sha }}
     steps:
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -54,19 +61,26 @@ jobs:
       - id: digest
         env:
           REPO: ghcr.io/${{ github.repository_owner }}/agency-orchestrator
+          JVM_REPO: ghcr.io/${{ github.repository_owner }}/agency-orchestrator-jvm-agent
           HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           INPUT_DIGEST: ${{ inputs.digest }}
+          INPUT_JVM_DIGEST: ${{ inputs.jvm_digest }}
         run: |
-          if [ -n "$INPUT_DIGEST" ]; then
-            digest="$INPUT_DIGEST"
-          else
-            digest=$(docker buildx imagetools inspect "$REPO:sha-${HEAD_SHA:0:7}" \
-              --format '{{json .Manifest}}' | jq -r .digest)
-          fi
-          case "$digest" in sha256:*) ;; *) echo "::error::no digest ($digest)"; exit 1 ;; esac
-          echo "api=$REPO@$digest" >> "$GITHUB_OUTPUT"
+          resolve() {  # <repo> <given digest or empty>
+            local digest="$2"
+            if [ -z "$digest" ]; then
+              digest=$(docker buildx imagetools inspect "$1:sha-${HEAD_SHA:0:7}" \
+                --format '{{json .Manifest}}' | jq -r .digest)
+            fi
+            case "$digest" in sha256:*) ;; *) echo "::error::no digest for $1 ($digest)" >&2; exit 1 ;; esac
+            echo "$1@$digest"
+          }
+          api=$(resolve "$REPO" "$INPUT_DIGEST")
+          jvm=$(resolve "$JVM_REPO" "$INPUT_JVM_DIGEST")
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "jvm=$jvm" >> "$GITHUB_OUTPUT"
           echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
-          echo "deploying $REPO@$digest"
+          echo "deploying $api and $jvm"
 
   rehearsal:
     needs: resolve
@@ -122,10 +136,12 @@ jobs:
     with:
       environment: staging
       image: ${{ needs.resolve.outputs.api }}
+      jvm_image: ${{ needs.resolve.outputs.jvm }}
       ref: ${{ needs.resolve.outputs.sha }}
     secrets: inherit
     permissions:
       contents: read
+      packages: read  # crane copies the images from GHCR into Artifact Registry
       id-token: write
 
   production:
@@ -134,8 +150,10 @@ jobs:
     with:
       environment: production
       image: ${{ needs.resolve.outputs.api }}
+      jvm_image: ${{ needs.resolve.outputs.jvm }}
       ref: ${{ needs.resolve.outputs.sha }}
     secrets: inherit
     permissions:
       contents: read
+      packages: read  # crane copies the images from GHCR into Artifact Registry
       id-token: write

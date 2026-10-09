@@ -10,6 +10,8 @@
 # 2. Waits for the rollout. A pod becomes Ready only when the schema is migrated and
 #    /readyz answers (catalog indexed, databases reachable).
 # 3. Smoke test through the Service: /readyz and an authenticated /v1/agents.
+# 4. The scheduled jobs (retention, audit anchor) run the API image: they move with it,
+#    only once the release is healthy.
 # Any failure: `kubectl rollout undo` to the previous ReplicaSet, wait until that is
 # healthy again, and exit 1 so the pipeline fails loudly.
 set -euo pipefail
@@ -48,4 +50,5 @@ echo "deploying: $image"
 kubectl -n "$ns" set image "$deploy" api="$image" migrate="$image"
 kubectl -n "$ns" rollout status "$deploy" --timeout="$timeout" || rollback
 smoke || rollback
+kubectl -n "$ns" set image cronjob -l app.kubernetes.io/name=agency-retention "*=$image"
 echo "deployed $image"

@@ -31,6 +31,10 @@ locals {
     "sts.googleapis.com",
     "monitoring.googleapis.com",
     "storage.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "binaryauthorization.googleapis.com",
+    "containeranalysis.googleapis.com",
+    "cloudkms.googleapis.com",
   ]
 }
 
@@ -106,6 +110,10 @@ resource "google_container_cluster" "this" {
   # Workload Identity and Managed Prometheus are on by default in Autopilot.
   release_channel {
     channel = "REGULAR"
+  }
+  # Only attested images are admitted (supply_chain.tf, decision O6).
+  binary_authorization {
+    evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
   }
   ip_allocation_policy {
     cluster_secondary_range_name  = "pods"

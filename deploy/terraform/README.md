@@ -12,6 +12,8 @@ One environment per GCP project. Run it once for `staging`, once for `production
 | Bucket `creatives` | media for publishing (decision A3) |
 | Secret Manager: `pseudonym-key`, `db-password` | generated here, never in the database or in git |
 | Workload Identity Federation for GitHub, restricted to this repository and `main` | keyless `deploy-gke.yml` |
+| Artifact Registry `images` (immutable tags) in the cluster's region | the deploy job copies each image there by digest; nodes pull with their own identity (decision O4) |
+| Binary Authorization: KMS key, attestor, policy `REQUIRE_ATTESTATION` enforced on the cluster | only images the deploy job attested run, after it verified the CI signature (decision O6) |
 
 ## Use
 
@@ -25,7 +27,7 @@ terraform output                    # values for the GitHub environment variable
 
 Then:
 
-1. Copy the outputs into GitHub: Settings → Environments → `production` (or `staging`). They are `GCP_WIF_PROVIDER`, `GCP_DEPLOYER_SA`, `GKE_CLUSTER`, `GKE_LOCATION` and `GCP_PROJECT`.
+1. Copy the outputs into GitHub: Settings → Environments → `production` (or `staging`). They are `GCP_WIF_PROVIDER`, `GCP_DEPLOYER_SA`, `GKE_CLUSTER`, `GKE_LOCATION`, `GCP_PROJECT`, `AR_REPOSITORY`, `BINAUTHZ_ATTESTOR` and `BINAUTHZ_KEY_VERSION`.
 2. Create the Kubernetes Secret from Secret Manager. Use `deploy/k8s/base/deployment.yaml` (header) for the list of keys; `DATABASE_URL` goes through the Cloud SQL private IP with `sslmode=require`.
 3. **Lock the audit-anchors retention** only after the first anchors are flowing (`-var lock_retention=true`). **A locked policy can never be shortened or removed: this is the point of WORM.**
 
