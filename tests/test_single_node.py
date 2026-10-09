@@ -46,6 +46,10 @@ def test_the_api_runs_the_production_profile_hardened() -> None:
     assert api["read_only"] is True and api["cap_drop"] == ["ALL"]
     assert "no-new-privileges:true" in api["security_opt"]
     assert "readyz" in " ".join(api["healthcheck"]["test"])
+    # No exception to the prod rules: Postgres speaks TLS even on one host.
+    for url in ("DATABASE_URL", "POSTGRES_URL"):
+        assert env[url].endswith("?sslmode=require"), url
+    assert "ssl=on" in services["postgres"]["command"]
     assert services["migrate"]["profiles"] == ["migrate"]  # never started by `up`
     assert services["migrate"]["command"] == ["agency", "db", "upgrade"]
     for tunnel in ("tunnel", "tunnel-quick"):
@@ -164,3 +168,10 @@ def test_only_a_digest_is_deployed(node: Path) -> None:
     done = deploy(node, "ghcr.io/x/agency-orchestrator:latest")
     assert done.returncode == 2 and "digest" in done.stderr
     assert not (node / "calls").exists()  # refused before touching anything
+
+
+def test_no_escape_hatch_from_the_production_rules() -> None:
+    for path in NODE.iterdir():
+        text = path.read_text(encoding="utf-8")
+        for hatch in ("PROD_ALLOW_EPHEMERAL", "POSTGRES_ALLOW_INSECURE"):
+            assert hatch not in text, (path.name, hatch)

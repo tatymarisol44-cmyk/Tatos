@@ -30,8 +30,9 @@ services:
     env_file: .env
     environment: &api-env
       APP_ENV: prod
-      DATABASE_URL: postgresql+psycopg://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency
-      POSTGRES_URL: postgresql://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency
+      # TLS even on one host: the same rule as every prod profile (db.py, checkpoint.py).
+      DATABASE_URL: postgresql+psycopg://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency?sslmode=require
+      POSTGRES_URL: postgresql://agency:${POSTGRES_PASSWORD:?}@postgres:5432/agency?sslmode=require
       CHECKPOINTER_BACKEND: postgres
       DB_AUTO_MIGRATE: "false"
       VECTOR_BACKEND: qdrant
@@ -77,7 +78,11 @@ services:
       POSTGRES_DB: agency
       TZ: UTC
       PGTZ: UTC
-    volumes: [postgres-data:/var/lib/postgresql/data]
+    # The certificate install.sh generated (owned by the image's postgres user, uid 70).
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/tls/server.crt", "-c", "ssl_key_file=/tls/server.key"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-tls:/tls:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agency -d agency"]
       interval: 5s

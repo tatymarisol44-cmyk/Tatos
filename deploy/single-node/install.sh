@@ -96,6 +96,17 @@ EOF
   chmod 600 "$dir/.env"
 fi
 
+if [ ! -f "$dir/postgres-tls/server.key" ]; then
+  say "TLS certificate for Postgres (self-signed; the API requires sslmode=require in prod)"
+  mkdir -p "$dir/postgres-tls"
+  chmod 755 "$dir/postgres-tls"  # uid 70 must traverse it; the key itself stays 600
+  openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -subj "/CN=postgres" \
+    -keyout "$dir/postgres-tls/server.key" -out "$dir/postgres-tls/server.crt" 2> /dev/null
+  chmod 600 "$dir/postgres-tls/server.key"
+  chmod 644 "$dir/postgres-tls/server.crt"
+  chown 70:70 "$dir/postgres-tls/server.key" "$dir/postgres-tls/server.crt"  # postgres in the alpine image
+fi
+
 if [ -z "$image" ]; then
   say "resolving the image CI built from main"
   image="$REPO_IMAGE@$(docker buildx imagetools inspect "$REPO_IMAGE:main" --format '{{json .Manifest}}' \

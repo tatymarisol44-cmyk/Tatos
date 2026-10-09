@@ -396,3 +396,19 @@ def test_nothing_past_the_rehearsals_runs_until_a_target_is_chosen() -> None:
         "VERIFY_SIGNATURE=0",
     ):
         assert proof in rehearsal, proof
+
+
+def test_every_shell_script_is_executable_in_git() -> None:
+    # Windows checkouts lose the mode bit easily; a 100644 script fails as `./x.sh`.
+    import subprocess
+
+    listed = subprocess.run(
+        ["git", "ls-files", "-s", "--", "*.sh"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert listed, "no shell scripts found"
+    modes = {line.split("\t")[1]: line.split()[0] for line in listed}
+    assert {path for path, mode in modes.items() if mode != "100755"} == set()
