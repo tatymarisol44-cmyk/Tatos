@@ -114,6 +114,15 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
 
         # 2. The dentist sees it in the Reviews tab, edits the draft and approves it.
         reviewer = _open(browser, server, dentist, errors)
+        listed: list[str] = []  # each /v1/reviews answer, for the failure message
+        reviewer.on(
+            "response",
+            lambda r: (
+                listed.append(f"{time.monotonic():.3f} {r.status}")
+                if r.url.endswith("/v1/reviews")
+                else None
+            ),
+        )
         reviewer.click("#tab-reviews")
         card = reviewer.locator(".review-card").first
         expect(card).to_contain_text(CLINICAL)
@@ -122,9 +131,16 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
         # answer, a slow response): the edit must survive. CI caught this as a race.
         with reviewer.expect_response(lambda r: r.url.endswith("/v1/reviews")):
             reviewer.click("#reviews-refresh")
-        expect(reviewer.locator(".review-card textarea").first).to_have_value(
-            "Llámenos al consultorio, por favor."
-        )
+        try:
+            expect(reviewer.locator(".review-card textarea").first).to_have_value(
+                "Llámenos al consultorio, por favor."
+            )
+        except AssertionError as exc:  # a public CI annotation must be enough to fix it
+            cards = reviewer.evaluate(
+                "[...document.querySelectorAll('.review-card')].map((c) =>"
+                " `${c.dataset.review} => ${c.querySelector('textarea').value}`)"
+            )
+            raise AssertionError(f"{exc}\ncards: {cards}\nlists: {listed}") from None
         # Worst case: the card is rebuilt from scratch. The edit still comes back.
         reviewer.evaluate("document.querySelector('#reviews').replaceChildren()")
         with reviewer.expect_response(lambda r: r.url.endswith("/v1/reviews")):

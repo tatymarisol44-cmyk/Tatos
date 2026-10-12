@@ -490,9 +490,12 @@ let reviewsRequest = 0;
 // come back as a "new" card (and the edit lost) when only `created_at` differed. A later
 // turn of the same thread brings another question, so it is still a different card.
 const reviewKey = (item) => `${item.thread_id}|${item.payload?.question || ""}|${item.payload?.draft_answer || ""}`;
-// What the reviewer typed, per review: even if a card is ever rebuilt (CI found a
-// second, rarer path on py3.13), it comes back with the edit, never with the AI draft.
-const reviewEdits = new Map();
+// What the reviewer typed, per thread (a thread has at most one review waiting) and for
+// which question. A card rebuilt for any reason comes back with the edit, never with the
+// AI draft: CI found three rare paths on py3.13, the third not pinned down, so the edit no
+// longer depends on the card's key or on every list containing it. It is dropped once
+// this page resolves the review, and comes back only for its own thread and question.
+const reviewEdits = new Map(); // thread_id -> { question, text }
 
 async function loadReviews() {
   const status = $("#reviews-status");
@@ -512,10 +515,6 @@ async function loadReviews() {
     if (mine !== reviewsRequest) return;
     const onScreen = new Map([...$("#reviews").children].map((card) => [card.dataset.review, card]));
     $("#reviews").replaceChildren(...items.map((item) => onScreen.get(reviewKey(item)) || reviewCard(item)));
-    // An edit of a review that is no longer waiting (resolved elsewhere) must not come
-    // back if that thread is held again later.
-    const waiting = new Set(items.map(reviewKey));
-    for (const key of [...reviewEdits.keys()]) if (!waiting.has(key)) reviewEdits.delete(key);
     status.textContent = items.length ? `${items.length} waiting` : "Nothing waiting for review.";
     count.textContent = String(items.length);
     count.hidden = !items.length;
@@ -528,9 +527,11 @@ function reviewCard(item) {
   const p = item.payload || {};
   const reasons = p.risk?.reasons || [];
   const key = reviewKey(item);
+  const question = p.question || "";
+  const saved = reviewEdits.get(item.thread_id);
   const edit = el("textarea", { rows: "6", "aria-label": "Answer to send" });
-  edit.value = reviewEdits.has(key) ? reviewEdits.get(key) : p.draft_answer || "";
-  edit.addEventListener("input", () => reviewEdits.set(key, edit.value));
+  edit.value = saved && saved.question === question ? saved.text : p.draft_answer || "";
+  edit.addEventListener("input", () => reviewEdits.set(item.thread_id, { question, text: edit.value }));
   const feedback = el("input", { placeholder: "Note for the record (optional)", maxlength: "2000", "aria-label": "Feedback" });
   const msg = el("p", { class: "muted small", role: "status" });
   const decide = async (approved) => {
@@ -542,7 +543,7 @@ function reviewCard(item) {
         method: "POST", headers: headers(), body: JSON.stringify(body),
       });
       if (!resp.ok) throw await apiError(resp);
-      reviewEdits.delete(key);
+      reviewEdits.delete(item.thread_id);
       await loadReviews();
     } catch (err) {
       msg.textContent = err.message;
