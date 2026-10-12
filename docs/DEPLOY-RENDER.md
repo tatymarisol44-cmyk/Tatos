@@ -6,7 +6,32 @@ Real patients need the legal steps first: the lawyer, the DPO, and the processin
 
 Put every service in **AWS us-east-1 (North Virginia)**: the API talks to all of them on every request.
 
-**Never paste a password or key into a chat, an issue or a commit.** Each one goes straight from the provider's page into Render's dashboard.
+**Never paste a password or key into a chat, an issue or a commit.** Each one goes straight from the provider's page into Render's dashboard, or into the private file below.
+
+## Automatic setup (recommended)
+
+`deploy/render/setup.py` does sections 4 and 5 for you, from one private file outside the repository:
+
+1. Do by hand what only the provider's console can do:
+   - section 1, items 1–3 (the Supabase project, Data API off, SSL enforced);
+   - section 2, item 1 (the Upstash database);
+   - section 3, items 1–2 (the Qdrant cluster and its key);
+   - a Render API key (Account Settings → API Keys).
+2. Fill in the private file, for example `C:\Users\<you>\agency-render.env`. The keys are listed in the header of `setup.py`; paste Supabase's session-pooler string as shown, `[YOUR-PASSWORD]` included.
+3. Check the three services from your computer, changing nothing:
+
+   ```
+   python deploy/render/setup.py C:\Users\<you>\agency-render.env --check-only
+   ```
+
+4. Create the service (or update it: a re-run keeps the secrets Render generated):
+
+   ```
+   python deploy/render/setup.py C:\Users\<you>\agency-render.env
+   ```
+
+   It builds the environment from `render.yaml`, creates the free service, follows the first start until it is live, and checks `/readyz`. The practice's service key is generated once and written into the file as `SERVICE_KEY`. Nothing secret is printed.
+5. Then section 6 (UptimeRobot).
 
 ## 1. Supabase: the database (about 10 minutes)
 

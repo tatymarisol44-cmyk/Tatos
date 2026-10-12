@@ -39,6 +39,13 @@ Measured on the owner's computer: the API started with 190 MB and stayed at 195 
    - Render moves traffic only once `/readyz` answers on the new instance, so a failed release never serves;
    - then `/readyz` is checked through the public address.
 
+8. **Setup from one private file** (`deploy/render/setup.py`):
+   - the owner fills in the providers' values, kept outside the repository;
+   - the script checks Supabase, Upstash and Qdrant from the owner's computer first;
+   - it creates or updates the service through Render's API, with the environment of `render.yaml`;
+   - a re-run keeps the generated secrets, because the pseudonyms depend on `PSEUDONYM_KEY`;
+   - no secret is ever printed.
+
 ## Consequences
 
 - **US$0, no card, nothing on at the practice.** Steps for the owner: `docs/DEPLOY-RENDER.md`.

@@ -102,6 +102,8 @@ def test_the_rehearsal_gives_a_value_to_everything_the_owner_types() -> None:
 
 def test_no_escape_hatch_from_the_production_rules() -> None:
     for path in RENDER.iterdir():
+        if not path.is_file():
+            continue  # __pycache__ of setup.py
         text = path.read_text(encoding="utf-8")
         for hatch in ("PROD_ALLOW_EPHEMERAL", "POSTGRES_ALLOW_INSECURE", "sslmode=disable"):
             assert hatch not in text, (path.name, hatch)
