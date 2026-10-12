@@ -32,11 +32,15 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 # The agent catalog is baked in, so image tag == (code, catalog) version.
 COPY vendor/agency-agents /app/catalog
+# MALLOC_ARENA_MAX: glibc opens up to 8 malloc arenas per visible CPU, each holding freed
+# memory, so the API's footprint grew with the host's CPU count, not its load (the 512 MB
+# Render rehearsal, ADR 0022). Two arenas serve one event loop and its thread pool.
 ENV PATH=/app/.venv/bin:$PATH \
     AGENTS_DIR=/app/catalog \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LITELLM_LOCAL_MODEL_COST_MAP=True
+    LITELLM_LOCAL_MODEL_COST_MAP=True \
+    MALLOC_ARENA_MAX=2
 USER 10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s \

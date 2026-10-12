@@ -162,7 +162,10 @@ before = rss()
 import litellm
 print(rss() - before)')"
 total=$((peak_mb + litellm_mb))
-summary="API peak ${peak_mb} MB + LiteLLM ${litellm_mb} MB = ${total} MB (budget ${BUDGET_MB} of 512 MB); ready after ${ready_s}s at 0.1 CPU"
+# The peak counts the page cache too, which the kernel reclaims before killing anything:
+# the split now says how much of the budget is the process's own memory.
+stat_mb() { docker exec api awk -v k="$1" '$1 == k { print int($2 / 1048576) }' /sys/fs/cgroup/memory.stat 2> /dev/null || echo "?"; }
+summary="API peak ${peak_mb} MB + LiteLLM ${litellm_mb} MB = ${total} MB (budget ${BUDGET_MB} of 512 MB); after the demo: anon $(stat_mb anon) MB, file cache $(stat_mb file) MB; ready after ${ready_s}s at 0.1 CPU"
 echo "$summary"
 [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "Render free profile: $summary" >> "$GITHUB_STEP_SUMMARY"
 [ "$total" -le "$BUDGET_MB" ] || {
