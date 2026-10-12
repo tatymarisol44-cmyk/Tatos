@@ -4,6 +4,7 @@ renders correctly, and the files are what Instagram and TikTok accept."""
 from __future__ import annotations
 
 import hashlib
+import itertools
 import os
 import shutil
 import sys
@@ -139,6 +140,26 @@ def test_video_is_an_mp4_that_tiktok_accepts_privately(tmp_path: Path, settings:
     assert (creative.width, creative.height) == SIZES["story"]
     check = creative.preflight("tiktok")
     assert check.allowed and check.visibility == "private"  # unaudited client
+
+
+def test_video_encoding_is_bounded_whatever_the_cpu_count(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # x264's defaults grow with the CPUs it sees (782 MB measured on 12 CPUs): on a
+    # 512 MB instance that killed the API mid-demo (ADR 0022).
+    seen: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> None:
+        seen.append(command)
+        Path(command[-1]).write_bytes(b"\0\0\0\x18ftypisom")
+
+    monkeypatch.setattr("orchestrator.creatives.subprocess.run", run)
+    configured = settings.model_copy(update={"ffmpeg_binary": sys.executable})
+    render_video(brief(), PSY, tmp_path / "ad.mp4", configured)
+    (command,) = seen
+    pairs = dict(itertools.pairwise(command))
+    assert pairs["-threads"] == "1"
+    assert pairs["-preset"] == "ultrafast" and pairs["-tune"] == "stillimage"
 
 
 def test_video_without_ffmpeg_says_so(tmp_path: Path, settings: Settings) -> None:

@@ -289,6 +289,16 @@ def render_video(
             str(Path(tmp) / "slide_%02d.png"),
             "-c:v",
             "libx264",
+            # Bounded memory. x264's defaults open 1.5 threads per visible CPU and look 40
+            # frames ahead: 782 MB for one 1080x1920 story on a 12-CPU machine, which killed
+            # the API on a 512 MB instance (Render rehearsal, ADR 0022). Still slides need
+            # neither: one thread, no lookahead took 92 MB and the same 2 seconds.
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "stillimage",
+            "-threads",
+            "1",
             "-pix_fmt",
             "yuv420p",  # what phones and TikTok play
             "-r",

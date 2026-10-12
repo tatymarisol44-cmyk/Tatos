@@ -50,6 +50,7 @@ Measured on the owner's computer: the API started with 190 MB and stayed at 195 
 
 - **US$0, no card, nothing on at the practice.** Steps for the owner: `docs/DEPLOY-RENDER.md`.
 - **Slow CPU.** The console feels slower than on a server. Chat latency is dominated by the model.
+- **The rehearsal already paid for itself.** Its first run had the API killed for memory while rendering a marketing video. ffmpeg's x264 defaults grow with the visible CPUs: 782 MB for one story on 12 CPUs. Videos are now encoded with one thread and no lookahead, which takes 92 MB in the same 2 seconds, on every profile.
 - **Four sub-processors instead of one server** (Render, Supabase, Upstash, Qdrant). Each needs its processing agreement before real patients (`docs/legal/subprocessors.md`).
 - **Open before real patients:** an off-site encrypted nightly backup. Supabase Free has no downloadable backups.
 - **Qdrant Free pauses a cluster unused for a week.** Knowledge documents and semantic memory live there; daily use keeps it active.
