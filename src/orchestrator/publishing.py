@@ -112,6 +112,9 @@ class PublicationService:
         self.store = store
         self.settings = settings
         self.transport = transport  # tests replace the network
+        # One creative at a time: a video's slides and ffmpeg take ~130 MB for a few
+        # seconds, and two at once would not fit a 512 MB instance (ADR 0022).
+        self._rendering = asyncio.Semaphore(1)
 
     async def _pack_for(self, tenant: str, professional_id: str | None) -> Pack:
         if self.social.professionals is not None:
@@ -189,10 +192,18 @@ class PublicationService:
         name = object_name(tenant, publication_id, suffix)
         with tempfile.TemporaryDirectory(prefix="publication-") as tmp:
             out = Path(tmp) / f"creative{suffix}"
-            if kind == "infographic":
-                made = creatives.render_infographic(brief, pack, out, fmt or "feed")
-            else:
-                made = creatives.render_video(brief, pack, out, self.settings, fmt or "story")
+            # Drawing and ffmpeg run in a worker thread: on the event loop they held every
+            # other request for the whole render, crisis webhooks included (about 20 s at
+            # the 0.1 CPU of a free instance).
+            async with self._rendering:
+                if kind == "infographic":
+                    made = await asyncio.to_thread(
+                        creatives.render_infographic, brief, pack, out, fmt or "feed"
+                    )
+                else:
+                    made = await asyncio.to_thread(
+                        creatives.render_video, brief, pack, out, self.settings, fmt or "story"
+                    )
             # Format and type only here; the URL and the audit status are checked at publish.
             shape = check_publish(
                 network, media_type=made.media_type, media_format=made.media_format, public_url=True

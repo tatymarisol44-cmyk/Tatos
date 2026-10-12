@@ -3,6 +3,7 @@ credential, and the official Instagram and TikTok flows against a simulated netw
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -128,6 +129,30 @@ def test_approve_then_publish_once_in_dry_run(
     audit = client.get("/v1/audit", headers=ADMIN).text
     for action in ("publication.created", "publication.approved", "publication.published"):
         assert action in audit
+
+
+def test_creatives_are_rendered_off_the_event_loop(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On the loop, drawing and ffmpeg held every other request (crisis webhooks included)
+    # for the whole render: about 20 s on a 0.1-CPU instance (ADR 0022).
+    from orchestrator import creatives
+
+    on_loop: list[bool] = []
+    real = creatives.render_infographic
+
+    def render(*args: Any, **kwargs: Any) -> Any:
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(creatives, "render_infographic", render)
+    client, _ = app
+    assert create(client, connect(client)).status_code == 201
+    assert on_loop == [False]
 
 
 def test_forbidden_caption_or_creative_stores_nothing(

@@ -21,6 +21,7 @@ import hashlib
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -223,8 +224,9 @@ def draw_infographic(brief: Brief, pack: Pack, fmt: Format = "feed") -> Image.Im
     return image
 
 
-def draw_slides(brief: Brief, pack: Pack, fmt: Format = "story") -> list[Image.Image]:
-    """One slide for the title, one per point, and one for the call to action."""
+def iter_slides(brief: Brief, pack: Pack, fmt: Format = "story") -> Iterator[Image.Image]:
+    """One slide for the title, one per point, and one for the call to action, drawn one
+    at a time: a 1080x1920 slide is ~8 MB, and a video only needs one in memory."""
     width = SIZES[fmt][0] - 2 * MARGIN
     texts = [
         (brief.title, 84, brief.accent, True),
@@ -232,13 +234,15 @@ def draw_slides(brief: Brief, pack: Pack, fmt: Format = "story") -> list[Image.I
     ]
     if brief.cta:
         texts.append((brief.cta, 72, brief.accent, True))
-    slides = []
     for text, size, fill, bold in texts:
         image, draw = _canvas(brief, fmt)
         _block(draw, text, top=SIZES[fmt][1] // 3, size=size, fill=fill, width=width, bold=bold)
         _footer(draw, brief, pack, fmt)
-        slides.append(image)
-    return slides
+        yield image
+
+
+def draw_slides(brief: Brief, pack: Pack, fmt: Format = "story") -> list[Image.Image]:
+    return list(iter_slides(brief, pack, fmt))
 
 
 def _sha256(path: Path) -> str:
@@ -275,8 +279,9 @@ def render_video(
         raise CreativeUnavailable(f"ffmpeg not found ({settings.ffmpeg_binary!r})")
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="creative-") as tmp:
-        for i, slide in enumerate(draw_slides(brief, pack, fmt)):
+        for i, slide in enumerate(iter_slides(brief, pack, fmt)):
             slide.save(Path(tmp) / f"slide_{i:02d}.png", format="PNG")
+            slide.close()
         command = [
             binary,
             "-y",
