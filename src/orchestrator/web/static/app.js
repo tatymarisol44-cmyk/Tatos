@@ -491,11 +491,22 @@ let reviewsRequest = 0;
 // turn of the same thread brings another question, so it is still a different card.
 const reviewKey = (item) => `${item.thread_id}|${item.payload?.question || ""}|${item.payload?.draft_answer || ""}`;
 // What the reviewer typed, per thread (a thread has at most one review waiting) and for
-// which question. A card rebuilt for any reason comes back with the edit, never with the
-// AI draft: CI found three rare paths on py3.13, the third not pinned down, so the edit no
-// longer depends on the card's key or on every list containing it. It is dropped once
-// this page resolves the review, and comes back only for its own thread and question.
+// which question: a card rebuilt for any reason comes back with the edit, never with the
+// AI draft. It is dropped once this page resolves the review, and comes back only for its
+// own thread and question.
 const reviewEdits = new Map(); // thread_id -> { question, text }
+
+// The list is updated in place: a card already on screen is never taken out of the page,
+// even to put it back. Detaching an element blurs it, so the reviewer's next keystrokes
+// went nowhere (CI, py3.13: a refresh landed while the draft was being replaced, and the
+// AI draft stayed). Only cards out of order move.
+function showReviews(list, cards) {
+  const keep = new Set(cards);
+  for (const card of [...list.children]) if (!keep.has(card)) card.remove();
+  cards.forEach((card, i) => {
+    if (list.children[i] !== card) list.insertBefore(card, list.children[i] || null);
+  });
+}
 
 async function loadReviews() {
   const status = $("#reviews-status");
@@ -513,8 +524,9 @@ async function loadReviews() {
     if (!resp.ok) throw await apiError(resp);
     const items = await resp.json();
     if (mine !== reviewsRequest) return;
-    const onScreen = new Map([...$("#reviews").children].map((card) => [card.dataset.review, card]));
-    $("#reviews").replaceChildren(...items.map((item) => onScreen.get(reviewKey(item)) || reviewCard(item)));
+    const list = $("#reviews");
+    const onScreen = new Map([...list.children].map((card) => [card.dataset.review, card]));
+    showReviews(list, items.map((item) => onScreen.get(reviewKey(item)) || reviewCard(item)));
     status.textContent = items.length ? `${items.length} waiting` : "Nothing waiting for review.";
     count.textContent = String(items.length);
     count.hidden = !items.length;

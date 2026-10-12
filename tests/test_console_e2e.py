@@ -141,6 +141,12 @@ def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
                 " `${c.dataset.review} => ${c.querySelector('textarea').value}`)"
             )
             raise AssertionError(f"{exc}\ncards: {cards}\nlists: {listed}") from None
+        # A refresh never takes the card out of the page: that blurs the textarea, and
+        # the reviewer's next keystrokes went nowhere (the race CI kept catching).
+        textarea = reviewer.locator(".review-card textarea").first
+        textarea.focus()
+        reviewer.evaluate("loadReviews()")  # async: resolves once the list is shown again
+        expect(textarea).to_be_focused()
         # Worst case: the card is rebuilt from scratch. The edit still comes back.
         reviewer.evaluate("document.querySelector('#reviews').replaceChildren()")
         with reviewer.expect_response(lambda r: r.url.endswith("/v1/reviews")):
