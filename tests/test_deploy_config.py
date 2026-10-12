@@ -396,6 +396,13 @@ def test_nothing_past_the_rehearsals_runs_until_a_target_is_chosen() -> None:
         "VERIFY_SIGNATURE=0",
     ):
         assert proof in rehearsal, proof
+    render = jobs["production-render"]  # the free managed profile (ADR 0022)
+    assert "vars.DEPLOY_TARGET == 'render'" in render["if"]
+    assert "needs.render.result == 'success'" in render["if"]  # rehearsed first
+    assert render["environment"] == "production"
+    assert render["needs"] == ["resolve", "render"]
+    assert "deploy/render/deploy.sh" in " ".join(str(s.get("run", "")) for s in render["steps"])
+    assert "deploy/render/rehearse.sh" in str(jobs["render"]["steps"])
 
 
 def test_every_shell_script_is_executable_in_git() -> None:

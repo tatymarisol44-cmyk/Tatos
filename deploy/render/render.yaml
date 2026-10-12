@@ -1,0 +1,83 @@
+# Render Blueprint for the free managed profile (ADR 0022): the API on a Render free web
+# service, state in free managed services (Supabase Postgres, Upstash Redis, Qdrant Cloud).
+# No server to keep on, no card. Steps: docs/DEPLOY-RENDER.md.
+#
+# Render dashboard -> New -> Blueprint -> this repository, Blueprint path
+# deploy/render/render.yaml. `sync: false` values are typed in the dashboard once (never
+# committed); `generateValue` ones are random secrets Render creates.
+#
+# Rehearsed by CI on every push to main with the free instance's limits (512 MB, 0.1 CPU):
+# deploy/render/rehearse.sh. Deploys go by digest through deploy/render/deploy.sh.
+services:
+  - type: web
+    name: agency-api
+    runtime: image
+    image:
+      # The first deploy only; then deploy.yml deploys each signed digest from main.
+      url: ghcr.io/tatymarisol44-cmyk/agency-orchestrator:main
+    plan: free
+    region: virginia # next to Supabase, Upstash and Qdrant Cloud in AWS us-east-1
+    # Render moves traffic to a new release only once it answers here: schema checked,
+    # catalog indexed, Postgres reachable.
+    healthCheckPath: /readyz
+    envVars:
+      # --- fixed: the production profile ------------------------------------------
+      - key: APP_ENV
+        value: prod
+      - key: PORT # the image listens on 8000; tells Render where
+        value: "8000"
+      - key: CHECKPOINTER_BACKEND
+        value: postgres
+      - key: VECTOR_BACKEND
+        value: qdrant
+      - key: RATE_LIMIT_BACKEND
+        value: redis
+      # One instance, no pre-deploy step on the free plan: the API migrates at startup,
+      # under the migrations' advisory lock.
+      - key: DB_AUTO_MIGRATE
+        value: "true"
+      # Supabase's session pooler lends each client connection a server connection (15
+      # on the free plan): 3 + 2 overflow for the API, 3 for the conversation checkpoints.
+      - key: POSTGRES_POOL_SIZE
+        value: "3"
+      - key: POSTGRES_MAX_OVERFLOW
+        value: "2"
+      - key: MEDIA_DIR
+        value: /tmp/media
+      - key: OTEL_ENABLED
+        value: "false"
+      # Hashing embeddings: no message text leaves the service for routing.
+      - key: EMBEDDING_BACKEND
+        value: hashing
+      - key: LLM_FALLBACK_MODELS
+        value: "[]"
+      # --- random secrets, created by Render --------------------------------------
+      - key: PSEUDONYM_KEY
+        generateValue: true
+      - key: META_APP_SECRET
+        generateValue: true
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      # --- typed by the owner in the dashboard (docs/DEPLOY-RENDER.md) -------------
+      - key: DATABASE_URL # postgresql+psycopg://postgres.<ref>:<pw>@<pooler host>:5432/postgres?sslmode=require
+        sync: false
+      - key: POSTGRES_URL # the same, starting postgresql://
+        sync: false
+      - key: REDIS_URL # rediss://default:<pw>@<host>.upstash.io:6379
+        sync: false
+      - key: QDRANT_URL # https://<cluster>.us-east-1-0.aws.cloud.qdrant.io:6333
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: API_KEYS # svc_<random>:<practice id>
+        sync: false
+      - key: TENANT_PACKS # {"<practice id>":"ec-psychologist"}
+        sync: false
+      - key: PRACTICE_DISPLAY_NAME
+        sync: false
+      - key: PUBLIC_BASE_URL # https://<service>.onrender.com
+        sync: false
+      # fake (fixed texts) until Anthropic's DPA is signed; then litellm, and add
+      # ANTHROPIC_API_KEY in the dashboard.
+      - key: LLM_BACKEND
+        sync: false

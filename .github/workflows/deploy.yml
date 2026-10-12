@@ -12,6 +12,9 @@ name: Deploy
 #   deploy/single-node/install.sh on the runner, every demo flow walked against it, a
 #   nightly backup taken and checked, a restart that keeps the data, and a broken
 #   release refused while the running one keeps serving.
+# - render: the free managed profile (ADR 0022), the image under the Render free
+#   instance's limits (512 MB, 0.1 CPU) with render.yaml's environment, against TLS
+#   stand-ins for Supabase, Upstash and Qdrant Cloud; every demo flow; memory budget.
 # - workflow_dispatch: redeploy (or roll back to) a given digest, through staging first.
 #
 # Where production is: repository variable DEPLOY_TARGET (Settings -> Secrets and
@@ -20,6 +23,10 @@ name: Deploy
 #   DEPLOY_TARGET=vm   production-vm: the single-node server, over SSH. Environment
 #                      `production`: vars VM_HOST, VM_USER (sudo), VM_DIR (/opt/agency);
 #                      secrets VM_SSH_KEY (private key), VM_KNOWN_HOSTS (ssh-keyscan line).
+#   DEPLOY_TARGET=render  production-render: the Render free service (ADR 0022).
+#                      Environment `production`: vars RENDER_SERVICE_ID (srv-...),
+#                      RENDER_PUBLIC_URL (https://<service>.onrender.com); secret
+#                      RENDER_API_KEY. Steps: docs/DEPLOY-RENDER.md.
 #   DEPLOY_TARGET=gke  staging then production on GKE (deploy-gke.yml), as below.
 #
 # Per-environment variables for GKE (Settings -> Environments -> staging / production):
@@ -235,6 +242,41 @@ jobs:
           ssh_vm "sudo install -m 0644 /tmp/compose.yaml $VM_DIR/" \
             "&& sudo install -m 0755 /tmp/deploy.sh /tmp/backup.sh $VM_DIR/" \
             "&& sudo $VM_DIR/deploy.sh '$API'"
+
+  render:
+    needs: resolve
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      API: ${{ needs.resolve.outputs.api }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: The free Render profile under its limits, every demo flow, memory budget
+        run: bash deploy/render/rehearse.sh "$API"
+
+  production-render:
+    needs: [resolve, render]
+    # The rehearsal runs on pushes only; a manual redeploy or rollback goes without it.
+    if: >-
+      always() && vars.DEPLOY_TARGET == 'render' && needs.resolve.result == 'success' &&
+      (needs.render.result == 'success' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production # required reviewers approve here
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - name: Signature verified, deployed by digest, followed until live and serving
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+          PUBLIC_URL: ${{ vars.RENDER_PUBLIC_URL }}
+          API: ${{ needs.resolve.outputs.api }}
+        run: bash deploy/render/deploy.sh "$API"
 
   staging:
     needs: [resolve, rehearsal]

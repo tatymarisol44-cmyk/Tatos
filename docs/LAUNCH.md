@@ -30,6 +30,7 @@ All of these run in CI on every commit:
 | Only attested images run on GKE: CI signature verified, digest copied to Artifact Registry, Binary Authorization enforced (O4, O6) | `.github/workflows/deploy-gke.yml`, `deploy/terraform/supply_chain.tf` |
 | Platform paging rendered from env, checked with `amtool` (O1) | `deploy/monitoring/render_alertmanager.py` |
 | Single-node production profile installed, demo-walked, backed up, restarted and rolled back by CI on every push; `deploy.sh` rollback unit-tested | `deploy/single-node/`, `tests/test_single_node.py`, ADR 0021 |
+| Free managed profile (Render + Supabase + Upstash + Qdrant Cloud) rehearsed by CI under 512 MB / 0.1 CPU with a memory budget; Blueprint checked against the production rules; `deploy.sh` unit-tested | `deploy/render/`, `tests/test_render_profile.py`, ADR 0022 |
 
 ## 2. Repository and CI live (done 2026-10-08; one owner step left)
 
@@ -41,6 +42,10 @@ All of these run in CI on every commit:
 ## 2b. Production MVP on one free server (ADR 0021; owner, about 30 minutes, US$0)
 
 The path chosen for the MVP: Oracle Cloud Always Free + Cloudflare Tunnel, rehearsed by CI on every push. Steps in `docs/DEPLOY-SINGLE-NODE.md`. Section 3 is the scale path, when a second clinic or an availability commitment needs it.
+
+## 2c. Production MVP with no card and no server (ADR 0022; owner, about 40 minutes, US$0)
+
+The path taken on 2026-10-12, because Oracle asks for a card: Render free web service + Supabase + Upstash + Qdrant Cloud, kept awake by UptimeRobot. CI rehearses it on every push under the free instance's limits (512 MB, 0.1 CPU). Steps in `docs/DEPLOY-RENDER.md`. Before real patients, beyond section 5: an off-site encrypted backup (Supabase Free has none to download) and the four providers' processing agreements.
 
 ## 3. Cloud at scale: GKE (owner, about 2 hours, needs billing)
 
