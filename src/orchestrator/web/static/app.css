@@ -7,6 +7,7 @@
   --muted: #6b6a64;
   --accent: #3b5bdb;
   --accent-soft: #e7ecff;
+  --on-accent: #fff; /* text on an accent background */
   /* AA contrast (4.5:1) as text on --surface/--surface-2 and under white text
      (checked by axe in tests/test_console_e2e.py). */
   --ok: #1e6b2f;
@@ -30,6 +31,7 @@
     --muted: #9c9a92;
     --accent: #8ea4ff;
     --accent-soft: #252c47;
+    --on-accent: #10131f;
     --ok: #69db7c;
     --warn: #ffa94d;
     /* Light fills in dark mode: dark text on them. */
@@ -160,9 +162,8 @@ input, select, textarea {
 }
 .composer textarea { flex: 1; resize: vertical; min-height: 44px; max-height: 40vh; }
 #send {
-  background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 0 20px; font-weight: 600;
+  background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px; padding: 0 20px; font-weight: 600;
 }
-@media (prefers-color-scheme: dark) { #send { color: #10131f; } }
 #send:disabled { opacity: .5; cursor: progress; }
 
 /* --- narrow screens ----------------------------------------------------- */
