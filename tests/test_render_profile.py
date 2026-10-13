@@ -23,10 +23,12 @@ ROOT = Path(__file__).resolve().parents[1]
 RENDER = ROOT / "deploy" / "render"
 GOOD = "ghcr.io/x/agency-orchestrator@sha256:" + "a" * 64
 NEW = "ghcr.io/x/agency-orchestrator@sha256:" + "b" * 64
+_POOLER = "postgres.ref:pw@pooler.example:5432/postgres"
+_VERIFY = "sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt"
 # What the owner types in the dashboard, shaped like the real values.
 OWNER = {
-    "DATABASE_URL": "postgresql+psycopg://postgres.ref:pw@pooler.example:5432/postgres?sslmode=require",
-    "POSTGRES_URL": "postgresql://postgres.ref:pw@pooler.example:5432/postgres?sslmode=require",
+    "DATABASE_URL": f"postgresql+psycopg://{_POOLER}?{_VERIFY}",
+    "POSTGRES_URL": f"postgresql://{_POOLER}?{_VERIFY}",
     "REDIS_URL": "rediss://default:pw@x.upstash.io:6379",
     "QDRANT_URL": "https://x.us-east-1-0.aws.cloud.qdrant.io:6333",
     "QDRANT_API_KEY": "qk",

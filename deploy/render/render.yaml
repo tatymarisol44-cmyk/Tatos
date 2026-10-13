@@ -64,7 +64,9 @@ services:
       - key: WHATSAPP_VERIFY_TOKEN
         generateValue: true
       # --- typed by the owner in the dashboard (docs/DEPLOY-RENDER.md) -------------
-      - key: DATABASE_URL # postgresql+psycopg://postgres.<ref>:<pw>@<pooler host>:5432/postgres?sslmode=require
+      # postgresql+psycopg://postgres.<ref>:<pw>@<pooler host>:5432/postgres
+      #   ?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt (setup.py)
+      - key: DATABASE_URL
         sync: false
       - key: POSTGRES_URL # the same, starting postgresql://
         sync: false

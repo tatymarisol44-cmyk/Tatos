@@ -46,8 +46,29 @@ def _write(tmp_path: Path, **override: str) -> Path:
 def test_supabase_session_pooler_string_becomes_both_urls() -> None:
     database, postgres = setup.database_urls(POOLER, PASSWORD)
     tail = "postgres.abcdref:p%40ss%2Fw%3Ard%231@aws-0-us-east-1.pooler.supabase.com:5432"
-    assert database == f"postgresql+psycopg://{tail}/postgres?sslmode=require"
-    assert postgres == f"postgresql://{tail}/postgres?sslmode=require"
+    # The server's name and chain are verified against Supabase's root in the image.
+    tls = "sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt"
+    assert database == f"postgresql+psycopg://{tail}/postgres?{tls}"
+    assert postgres == f"postgresql://{tail}/postgres?{tls}"
+    # From the owner's computer: the repo's copy, path encoded (spaces, drive letters).
+    _, local = setup.database_urls(POOLER, PASSWORD, "C:\\My Docs\\ca.crt")
+    assert local.endswith("sslrootcert=C%3A%5CMy%20Docs%5Cca.crt")
+
+
+def test_the_supabase_root_is_the_verified_one() -> None:
+    # Fingerprint checked against the live pooler and an independent copy (deploy/certs).
+    import hashlib
+    import ssl
+
+    pem = setup.LOCAL_SUPABASE_CA.read_text(encoding="ascii")
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    assert hashlib.sha256(der).hexdigest().upper() == (
+        "807025AD50D4ED219D2C9C7D299C004F824EB00CF7F65AFEF607D07B72E6CAFA"
+    )
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY deploy/certs /app/certs" in dockerfile
+    assert "!deploy/certs" in (ROOT / ".dockerignore").read_text(encoding="utf-8")
+    assert f"/app/certs/{setup.LOCAL_SUPABASE_CA.name}" == setup.IMAGE_SUPABASE_CA
 
 
 @pytest.mark.parametrize(

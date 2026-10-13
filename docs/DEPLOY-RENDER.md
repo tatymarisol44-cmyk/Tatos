@@ -50,8 +50,8 @@ Put every service in **AWS us-east-1 (North Virginia)**: the API talks to all of
 
    | Render variable | Value |
    |---|---|
-   | `DATABASE_URL` | `postgresql+psycopg://postgres.<ref>:<password>@<host>:5432/postgres?sslmode=require` |
-   | `POSTGRES_URL` | `postgresql://postgres.<ref>:<password>@<host>:5432/postgres?sslmode=require` |
+   | `DATABASE_URL` | `postgresql+psycopg://postgres.<ref>:<password>@<host>:5432/postgres?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt` |
+   | `POSTGRES_URL` | `postgresql://postgres.<ref>:<password>@<host>:5432/postgres?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt` |
 
 ## 2. Upstash: the shared rate limit (about 3 minutes)
 

@@ -32,6 +32,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 # The agent catalog is baked in, so image tag == (code, catalog) version.
 COPY vendor/agency-agents /app/catalog
+# Roots of the managed databases' TLS chains (Supabase's private CA), for sslmode=verify-full.
+COPY deploy/certs /app/certs
 # MALLOC_ARENA_MAX: glibc opens up to 8 malloc arenas per visible CPU, each holding freed
 # memory, so the API's footprint grew with the host's CPU count, not its load (the 512 MB
 # Render rehearsal, ADR 0022). Two arenas serve one event loop and its thread pool.

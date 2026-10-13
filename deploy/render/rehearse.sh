@@ -95,8 +95,8 @@ say "the API's environment, from render.yaml"
   done
   # What the owner types in the dashboard (sync: false), here for the stand-ins.
   cat << EOF
-DATABASE_URL=postgresql+psycopg://postgres:$pg_pw@postgres:5432/postgres?sslmode=require
-POSTGRES_URL=postgresql://postgres:$pg_pw@postgres:5432/postgres?sslmode=require
+DATABASE_URL=postgresql+psycopg://postgres:$pg_pw@postgres:5432/postgres?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt
+POSTGRES_URL=postgresql://postgres:$pg_pw@postgres:5432/postgres?sslmode=verify-full&sslrootcert=/app/certs/supabase-root-2021.crt
 REDIS_URL=rediss://default:$redis_pw@redis:6379
 QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=$qdrant_key
@@ -116,13 +116,15 @@ done
 meta="$(sed -n 's/^META_APP_SECRET=//p' "$work/api.env")"
 
 say "the API under the free instance's limits: 512 MB, no swap, 0.1 CPU"
-# No Docker health check: Render does not run it. SSL_CERT_FILE: the stand-in Redis
-# certificate is the only trusted authority, so the rediss:// connection is verified as it
-# is against Upstash's public certificate.
+# No Docker health check: Render does not run it. The stand-in certificate is the only
+# trusted authority, in the places production's are: SSL_CERT_FILE for Redis (Upstash's
+# public CA in production) and the image's Supabase root for Postgres (sslmode=verify-full:
+# the server's name and chain are checked, as against Supabase's pooler).
 docker run -d --name api --network "$net" -p 127.0.0.1:8000:8000 \
   --memory 512m --memory-swap 512m --cpus 0.1 --no-healthcheck \
   --env-file "$work/api.env" -e SSL_CERT_FILE=/tls/ca.crt \
-  -v "$work/tls.crt:/tls/ca.crt:ro" "$image" > /dev/null
+  -v "$work/tls.crt:/tls/ca.crt:ro" \
+  -v "$work/tls.crt:/app/certs/supabase-root-2021.crt:ro" "$image" > /dev/null
 start=$SECONDS
 until curl -fsS --max-time 5 http://127.0.0.1:8000/readyz > /dev/null 2>&1; do
   [ "$(docker inspect -f '{{.State.Running}}' api)" = true ] || {

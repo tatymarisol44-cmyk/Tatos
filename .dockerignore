@@ -10,6 +10,8 @@
 tests
 docs
 deploy
+# Except the database CAs the API verifies against (ADR 0022).
+!deploy/certs
 evals
 # Only agent markdown + divisions.json are needed from the catalog.
 vendor/agency-agents/.git

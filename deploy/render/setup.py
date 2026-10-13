@@ -40,6 +40,12 @@ import yaml
 HERE = Path(__file__).resolve().parent
 BLUEPRINT = HERE / "render.yaml"
 RENDER_API = "https://api.render.com/v1"
+# Supabase's pooler presents a chain from Supabase's own root, not a public CA, so the
+# server is verified against that root (sslmode=verify-full): the image ships it
+# (Dockerfile, deploy/certs); the checks from the owner's computer use the repo's copy.
+# Fingerprint and provenance: deploy/certs/README.md.
+IMAGE_SUPABASE_CA = "/app/certs/supabase-root-2021.crt"
+LOCAL_SUPABASE_CA = HERE.parent / "certs" / "supabase-root-2021.crt"
 REQUIRED = (
     "RENDER_API_KEY",
     "SUPABASE_POOLER_URL",
@@ -107,8 +113,11 @@ _POSTGRES = re.compile(
 )
 
 
-def database_urls(pooler_url: str, password: str) -> tuple[str, str]:
-    """(DATABASE_URL, POSTGRES_URL) from Supabase's session-pooler string."""
+def database_urls(
+    pooler_url: str, password: str, root_ca: str = IMAGE_SUPABASE_CA
+) -> tuple[str, str]:
+    """(DATABASE_URL, POSTGRES_URL) from Supabase's session-pooler string, verifying the
+    server's name and chain against `root_ca`."""
     m = _POSTGRES.fullmatch(pooler_url.strip())
     if m is None:
         raise SetupError("SUPABASE_POOLER_URL: copy the string that starts with postgresql://")
@@ -122,7 +131,8 @@ def database_urls(pooler_url: str, password: str) -> tuple[str, str]:
     if not user.startswith("postgres."):
         raise SetupError("SUPABASE_POOLER_URL: the user must look like postgres.<project ref>")
     tail = f"{quote(user, safe='.')}:{quote(password, safe='')}@{host}"
-    path = f"{tail}:5432{m['db'] or '/postgres'}?sslmode=require"
+    tls = f"sslmode=verify-full&sslrootcert={quote(root_ca, safe='/')}"
+    path = f"{tail}:5432{m['db'] or '/postgres'}?{tls}"
     return f"postgresql+psycopg://{path}", f"postgresql://{path}"
 
 
@@ -194,7 +204,7 @@ def check_postgres(owner: Mapping[str, str]) -> str:
 
     with psycopg.connect(owner["POSTGRES_URL"], connect_timeout=15) as conn:
         row = conn.execute("SELECT current_setting('server_version')").fetchone()
-    return f"Postgres {row[0] if row else '?'} over TLS"
+    return f"Postgres {row[0] if row else '?'} over TLS, server verified"
 
 
 def check_redis(owner: Mapping[str, str]) -> str:
@@ -342,7 +352,11 @@ def main(argv: list[str] | None = None, render: Render | None = None, poll: floa
         owner = owner_values(values, public_url)
         env = env_vars(service, owner)
         print("Managed services:")
-        if not run_checks(owner, values):
+        # From this computer the root is the repo's copy; in the image, IMAGE_SUPABASE_CA.
+        _, local_postgres = database_urls(
+            values["SUPABASE_POOLER_URL"], values["SUPABASE_PASSWORD"], str(LOCAL_SUPABASE_CA)
+        )
+        if not run_checks({**owner, "POSTGRES_URL": local_postgres}, values):
             print("Fix the values marked FAIL in the file, then run this again.")
             return 1
         if args.check_only:
