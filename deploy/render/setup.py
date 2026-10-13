@@ -303,7 +303,13 @@ class Render:
         self._json("PUT", f"/services/{service_id}/env-vars/{key}", json={"value": value})
 
     def deploy(self, service_id: str) -> str:
-        return str(self._json("POST", f"/services/{service_id}/deploys", json={})["id"])
+        made = self._json("POST", f"/services/{service_id}/deploys", json={})
+        if made:  # 201: this deploy
+            return str(made["id"])
+        # 202 with no body: queued behind a deploy in progress (the first one, right after
+        # creation). The newest deploy is the one that carries the latest variables.
+        rows = self._json("GET", f"/services/{service_id}/deploys", params={"limit": 1})
+        return str(rows[0]["deploy"]["id"])
 
     def wait_live(self, service_id: str, deploy_id: str, timeout: float, poll: float) -> None:
         deadline = time.monotonic() + timeout

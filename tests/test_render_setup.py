@@ -143,7 +143,11 @@ class FakeRender:
         if request.method == "PUT":
             return httpx.Response(200, json=[])
         if (request.method, path) == ("POST", "/services/srv-1/deploys"):
+            if not self.existing:  # right after creation the first deploy is running:
+                return httpx.Response(202)  # Render queues this one and says nothing more
             return httpx.Response(201, json={"id": "dep-2"})
+        if (request.method, path) == ("GET", "/services/srv-1/deploys"):
+            return httpx.Response(200, json=[{"deploy": {"id": "dep-2", "status": "queued"}}])
         if request.method == "GET" and path.startswith("/services/srv-1/deploys/"):
             return httpx.Response(200, json={"id": path.rsplit("/", 1)[1], "status": "live"})
         return httpx.Response(404, json={"message": "unexpected"})
