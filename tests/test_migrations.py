@@ -23,7 +23,7 @@ from pydantic import SecretStr
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from orchestrator import migrate
+from orchestrator import migrate, schema
 from orchestrator.config import Settings
 from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
@@ -127,9 +127,9 @@ async def test_service_refuses_an_outdated_schema(
         settings.database_url = SecretStr(database_url)
         db = Database(settings)
         with pytest.raises(migrate.SchemaOutOfDateError):
-            await db.start()
+            await schema.prepare(db)
         settings.db_auto_migrate = True
-        await Database(settings).start()  # or migrates itself when allowed to
+        await schema.prepare(Database(settings))  # or migrates itself when allowed to
         assert await migrate.current(engine) == migrate.head()
 
 

@@ -8,6 +8,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from orchestrator import schema
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
@@ -75,7 +76,7 @@ def store(request: pytest.FixtureRequest) -> ChunkStore:
 @pytest.fixture
 async def kb(store: ChunkStore, settings: Settings) -> AsyncIterator[KnowledgeBase]:
     db = Database(settings)  # the live-version pointers
-    await db.start()
+    await schema.prepare(db)
     yield KnowledgeBase(HashingEmbedder(), store, settings, db)
     await db.close()
 

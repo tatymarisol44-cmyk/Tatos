@@ -14,7 +14,7 @@ from typing import Any, Literal
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from orchestrator import packs
+from orchestrator import packs, schema
 from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
@@ -227,7 +227,7 @@ class Orchestrator:
 
     async def start(self) -> None:
         packs.validate_config(self.settings)
-        await self.db.start()
+        await schema.prepare(self.db)
         await self.checkpointer.start()
         if self.remote is not None:
             # Before indexing: remote agents are routed like local ones.
@@ -366,7 +366,7 @@ class Orchestrator:
         indexing, no remote-agent discovery, no model or embedding call (A31), so the
         job neither costs money nor fails because a provider is down."""
         packs.validate_config(self.settings)
-        await self.db.start()
+        await schema.prepare(self.db)
         await self.checkpointer.start()
         self.knowledge.attach()
         self.memory.attach()
