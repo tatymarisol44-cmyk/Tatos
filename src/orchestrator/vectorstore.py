@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from qdrant_client import AsyncQdrantClient
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,51 @@ class VectorStore(Protocol):
     async def upsert(self, ids: list[str], vectors: list[list[float]]) -> None: ...
 
     async def search(self, vector: list[float], k: int) -> list[Hit]: ...
+
+
+def qdrant_client(url: str, api_key: str | None = None) -> AsyncQdrantClient:
+    """The async Qdrant client every store uses. ":memory:" runs Qdrant's embedded local
+    mode (the tests)."""
+    from qdrant_client import AsyncQdrantClient
+
+    if url == ":memory:":
+        return AsyncQdrantClient(location=":memory:")
+    return AsyncQdrantClient(url=url, api_key=api_key)
+
+
+async def ensure_tenant_collection(
+    client: AsyncQdrantClient,
+    name: str,
+    dim: int,
+    keyword_fields: tuple[str, ...] = (),
+    float_fields: tuple[str, ...] = (),
+) -> None:
+    """One collection for all tenants, partitioned by a `tenant` payload index
+    (`is_tenant=True` lets Qdrant co-locate each tenant's points): it scales to many
+    tenants far better than one collection per tenant. Indexes `keyword_fields` and
+    `float_fields` for filtering. Does nothing if the collection exists."""
+    from qdrant_client.models import (
+        Distance,
+        KeywordIndexParams,
+        KeywordIndexType,
+        PayloadSchemaType,
+        VectorParams,
+    )
+
+    if await client.collection_exists(name):
+        return
+    await client.create_collection(
+        name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
+    )
+    await client.create_payload_index(
+        name,
+        "tenant",
+        field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
+    )
+    for field in keyword_fields:
+        await client.create_payload_index(name, field, field_schema=PayloadSchemaType.KEYWORD)
+    for field in float_fields:
+        await client.create_payload_index(name, field, field_schema=PayloadSchemaType.FLOAT)
 
 
 class InMemoryVectorStore:
@@ -52,14 +100,7 @@ class QdrantVectorStore:
     produces a new collection, so every deployed index is reproducible."""
 
     def __init__(self, url: str, api_key: str | None = None) -> None:
-        from qdrant_client import AsyncQdrantClient
-
-        # ":memory:" runs Qdrant's embedded local mode (used by the tests).
-        self._client = (
-            AsyncQdrantClient(location=":memory:")
-            if url == ":memory:"
-            else AsyncQdrantClient(url=url, api_key=api_key)
-        )
+        self._client = qdrant_client(url, api_key)
         self._active = ""
 
     async def ensure(self, name: str, dim: int) -> bool:

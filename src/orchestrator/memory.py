@@ -33,6 +33,7 @@ from orchestrator.db import utcnow
 from orchestrator.embeddings import Embedder
 from orchestrator.llm import LLMClient
 from orchestrator.telemetry import tracer
+from orchestrator.vectorstore import ensure_tenant_collection, qdrant_client
 
 # key -> value -> the sentence stored and shown to the assistant.
 PREFERENCES: dict[str, dict[str, str]] = {
@@ -175,40 +176,13 @@ class QdrantMemoryStore:
     same layout as the knowledge base. Expiry is a numeric payload filtered server-side."""
 
     def __init__(self, url: str, api_key: str | None = None) -> None:
-        from qdrant_client import AsyncQdrantClient
-
-        self._client = (
-            AsyncQdrantClient(location=":memory:")
-            if url == ":memory:"
-            else AsyncQdrantClient(url=url, api_key=api_key)
-        )
+        self._client = qdrant_client(url, api_key)
         self._name = ""
 
     async def ensure(self, name: str, dim: int) -> None:
-        from qdrant_client.models import (
-            Distance,
-            KeywordIndexParams,
-            KeywordIndexType,
-            PayloadSchemaType,
-            VectorParams,
-        )
-
         self._name = name
-        if await self._client.collection_exists(name):
-            return
-        await self._client.create_collection(
-            name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
-        )
-        await self._client.create_payload_index(
-            name,
-            "tenant",
-            field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
-        )
-        await self._client.create_payload_index(
-            name, "subject_id", field_schema=PayloadSchemaType.KEYWORD
-        )
-        await self._client.create_payload_index(
-            name, "expires_ts", field_schema=PayloadSchemaType.FLOAT
+        await ensure_tenant_collection(
+            self._client, name, dim, keyword_fields=("subject_id",), float_fields=("expires_ts",)
         )
 
     @staticmethod

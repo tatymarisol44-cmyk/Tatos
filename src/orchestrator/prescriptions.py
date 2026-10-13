@@ -20,6 +20,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# The public modulo-10 check of a cédula: it says the number is well formed, not that it
+# belongs to the patient. One implementation, shared with the PII guardrail.
+from orchestrator.guardrails import cedula_ok
+
 # Art. 25: only médicos (general and specialist) and odontólogos.
 PRESCRIBERS = ("medico_general", "medico_especialista", "odontologo")
 # ICD-10 shape: a letter, two digits, optionally a dot and one or two characters (F32.1).
@@ -163,25 +167,6 @@ def words_to_int(text: str) -> int | None:
     return total + current
 
 
-# --- Ecuadorian cédula (format check only, not an identity check) ----------------------
-
-
-def cedula_shape_ok(number: str) -> bool:
-    """The public modulo-10 check of a 10-digit Ecuadorian cédula: province 01-24 or 30,
-    third digit below 6, check digit. It says the number is well formed, not that it
-    belongs to the patient."""
-    if not re.fullmatch(r"\d{10}", number):
-        return False
-    province, third = int(number[:2]), int(number[2])
-    if not (1 <= province <= 24 or province == 30) or third >= 6:
-        return False
-    total = 0
-    for i, digit in enumerate(number[:9]):
-        product = int(digit) * (2 if i % 2 == 0 else 1)
-        total += product - 9 if product > 9 else product
-    return (10 - total % 10) % 10 == int(number[9])
-
-
 def _date_ok(value: str, today: date) -> bool:
     try:
         parsed = datetime.strptime(value, "%d/%m/%Y").date()
@@ -203,7 +188,7 @@ def check_worksheet(rx: SpecialPrescription, *, today: date | None = None) -> Wo
         check.errors.append(
             Finding("date", "not_dd_mm_aaaa_or_future", "ACESS-2022-0046 Art. 6 I i")
         )
-    if "id_number" not in missing and rx.id_type == "cedula" and not cedula_shape_ok(rx.id_number):
+    if "id_number" not in missing and rx.id_type == "cedula" and not cedula_ok(rx.id_number):
         check.errors.append(
             Finding("id_number", "cedula_not_well_formed", "ACESS-2022-0046 Art. 6 I iv")
         )

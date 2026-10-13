@@ -39,6 +39,7 @@ from orchestrator.db import Database, metadata, utcnow
 from orchestrator.embeddings import Embedder
 from orchestrator.guardrails import detect_injection
 from orchestrator.telemetry import tracer
+from orchestrator.vectorstore import ensure_tenant_collection, qdrant_client
 
 log = logging.getLogger(__name__)
 
@@ -155,39 +156,14 @@ class QdrantChunkStore:
     tenants far better than one collection per tenant."""
 
     def __init__(self, url: str, api_key: str | None = None) -> None:
-        from qdrant_client import AsyncQdrantClient
-
-        self._client = (
-            AsyncQdrantClient(location=":memory:")
-            if url == ":memory:"
-            else AsyncQdrantClient(url=url, api_key=api_key)
-        )
+        self._client = qdrant_client(url, api_key)
         self._name = ""
 
     async def ensure(self, name: str, dim: int) -> None:
-        from qdrant_client.models import (
-            Distance,
-            KeywordIndexParams,
-            KeywordIndexType,
-            PayloadSchemaType,
-            VectorParams,
-        )
-
         self._name = name
-        if await self._client.collection_exists(name):
-            return
-        await self._client.create_collection(
-            name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
+        await ensure_tenant_collection(
+            self._client, name, dim, keyword_fields=("doc_id", "version")
         )
-        await self._client.create_payload_index(
-            name,
-            "tenant",
-            field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
-        )
-        for field in ("doc_id", "version"):
-            await self._client.create_payload_index(
-                name, field, field_schema=PayloadSchemaType.KEYWORD
-            )
 
     @staticmethod
     def _filter(tenant: str, doc_id: str | None = None, version: str | None = None) -> Any:

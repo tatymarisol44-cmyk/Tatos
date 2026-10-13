@@ -7,9 +7,9 @@ from datetime import date
 
 import pytest
 
+from orchestrator.guardrails import cedula_ok
 from orchestrator.prescriptions import (
     SpecialPrescription,
-    cedula_shape_ok,
     check_worksheet,
     words_to_int,
 )
@@ -129,7 +129,7 @@ def test_spanish_number_words(words: str, number: int | None) -> None:
 
 
 def test_cedula_shape() -> None:
-    assert cedula_shape_ok(synthetic_cedula())
-    assert not cedula_shape_ok("123")
-    assert not cedula_shape_ok("9910034065")  # province 99 does not exist
-    assert not cedula_shape_ok("1770034060")  # third digit 7: not a natural person
+    assert cedula_ok(synthetic_cedula())
+    assert not cedula_ok("123")
+    assert not cedula_ok("9910034065")  # province 99 does not exist
+    assert not cedula_ok("1770034060")  # third digit 7: not a natural person
