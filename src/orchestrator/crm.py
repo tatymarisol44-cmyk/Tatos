@@ -236,7 +236,9 @@ class CrmService:
             patients.c.created_at,
         ).where(patients.c.tenant == tenant)
         if search:
-            query = query.where(patients.c.display_name.ilike(f"%{search}%"))
+            # A bound parameter, with % and _ escaped: "%" finds names containing "%",
+            # not every patient of the practice.
+            query = query.where(patients.c.display_name.icontains(search, autoescape=True))
         query = query.order_by(patients.c.display_name).limit(limit)
         async with self.db.engine.connect() as conn:
             rows = (await conn.execute(query)).mappings().all()

@@ -59,6 +59,11 @@ async def test_patient_crud_is_audited_and_tenant_scoped(clinic: Orchestrator) -
     updated = await crm.update_patient("acme", "p-1", {"preferred_channel": "telegram"}, "ana")
     assert updated["preferred_channel"] == "telegram"
     assert [p["id"] for p in await crm.list_patients("acme", search="p-1")] == ["p-1"]
+    await _patient(clinic, "p-2")
+    # Wildcards are text, not patterns: "%" and "_" match no name here.
+    assert await crm.list_patients("acme", search="%") == []
+    assert await crm.list_patients("acme", search="Paciente_p") == []
+    assert len(await crm.list_patients("acme", search="Paciente p")) == 2
     with pytest.raises(NotFoundError):
         await crm.get_patient("globex", "p-1", actor="x")  # other tenant: does not exist
     trail = await clinic.audit.list("acme", subject_id="p-1")

@@ -44,6 +44,11 @@ services:
         value: "2"
       - key: MEDIA_DIR
         value: /tmp/media
+      # HTTPS only, remembered by browsers for a year: a browser that saw it once never
+      # sends the API key over plain HTTP again (Render redirects, but only after the
+      # first plain request has left the browser).
+      - key: HSTS_MAX_AGE_SECONDS
+        value: "31536000"
       - key: OTEL_ENABLED
         value: "false"
       # Hashing embeddings: no message text leaves the service for routing.
