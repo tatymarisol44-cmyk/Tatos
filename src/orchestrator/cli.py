@@ -172,33 +172,55 @@ async def _retention(days: int, dry_run: bool) -> None:
 
 
 def _backup_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    """`agency backup` (docs/runbooks/backup.md). Keys and files are named on the
-    command line; the private key is read from a file, never from an argument."""
+    """`agency backup` (docs/runbooks/backup.md). Keys are read from files or typed at a
+    prompt, never passed as arguments, and never printed."""
     from orchestrator import backup
 
     try:
         if args.backup_cmd == "keygen":
-            if args.private_key_file.exists():
-                parser.error(f"{args.private_key_file} exists: it may open older backups")
-            public, private = backup.keygen()
-            args.private_key_file.write_text(f"{private}\n", encoding="ascii")
+            target = args.private_key_file or args.recovery_code_file
+            if target.exists():
+                parser.error(f"{target} exists: it may open older backups")
+            if args.private_key_file:
+                public, private = backup.keygen()
+                target.write_text(f"{private}\n", encoding="ascii")
+            else:
+                public, code = backup.recovery_code()
+                target.write_text(backup.recovery_sheet(code), encoding="utf-8")
             print(public)
             return 0
         if args.backup_cmd == "create":
             if not args.recipient:
                 parser.error("--recipient (or BACKUP_PUBLIC_KEY) is required")
+            missing = [name for name in args.with_secret if not os.environ.get(name)]
+            if missing:
+                parser.error(f"--with-secret: not set in the environment: {missing}")
+            secrets = {name: os.environ[name] for name in args.with_secret}
             partial = args.out.with_name(args.out.name + ".partial")
             with partial.open("wb") as out:
-                summary = _run(_with_engine(lambda e: backup.create(e, out, args.recipient)))
+                summary = _run(
+                    _with_engine(lambda e: backup.create(e, out, args.recipient, secrets))
+                )
             partial.replace(args.out)  # only a complete backup carries the final name
             _print(summary.to_dict())
             return 0
-        identity = args.private_key_file.read_text(encoding="ascii")
+        if args.key_file:
+            identity = backup.identity(args.key_file.read_text(encoding="utf-8"))
+        else:
+            import getpass
+
+            identity = getpass.getpass("Recovery code (it is not shown): ")
         with args.source.open("rb") as source:
             if args.check:
-                _print(backup.check(source, identity).to_dict())
+                summary = backup.check(source, identity)
             else:
-                _print(_run(_with_engine(lambda e: backup.restore(e, source, identity))).to_dict())
+                summary = _run(_with_engine(lambda e: backup.restore(e, source, identity)))
+        if args.secrets_out and summary.secrets:
+            if args.secrets_out.exists():
+                parser.error(f"{args.secrets_out} exists: choose a new file")
+            lines = [f"{name}={value}" for name, value in sorted(summary.secrets.items())]
+            args.secrets_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _print(summary.to_dict())
         return 0
     except backup.BackupError as exc:
         print(f"backup: {exc}", file=sys.stderr)
@@ -440,19 +462,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     backup_sub = p_backup.add_subparsers(dest="backup_cmd", required=True)
     p_keygen = backup_sub.add_parser("keygen", help="Make the key pair, once")
-    p_keygen.add_argument(
-        "--private-key-file", type=Path, required=True, help="Where to write the private key"
+    where = p_keygen.add_mutually_exclusive_group(required=True)
+    where.add_argument("--private-key-file", type=Path, help="Write the private key to a file")
+    where.add_argument(
+        "--recovery-code-file",
+        type=Path,
+        help="Write a recovery code to copy on paper (then delete the file)",
     )
     p_create = backup_sub.add_parser("create", help="Write an encrypted backup")
     p_create.add_argument("--out", type=Path, required=True)
     p_create.add_argument(
         "--recipient", default=os.environ.get("BACKUP_PUBLIC_KEY"), help="The public key"
     )
+    p_create.add_argument(
+        "--with-secret",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Carry this environment variable inside the backup (e.g. PSEUDONYM_KEY)",
+    )
     p_restore = backup_sub.add_parser("restore", help="Load a backup into an empty database")
     p_restore.add_argument("--in", dest="source", type=Path, required=True)
-    p_restore.add_argument("--private-key-file", type=Path, required=True)
+    p_restore.add_argument(
+        "--key-file",
+        "--private-key-file",
+        dest="key_file",
+        type=Path,
+        help="The private key or recovery code; without it, the code is asked for",
+    )
     p_restore.add_argument(
         "--check", action="store_true", help="Only decrypt and count; touch no database"
+    )
+    p_restore.add_argument(
+        "--secrets-out", type=Path, help="Write the secrets carried in the backup to this file"
     )
     sub.add_parser("audit-anchor", help="Print each tenant's audit-chain head (JSON lines)")
     p_verify = sub.add_parser(

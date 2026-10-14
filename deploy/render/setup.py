@@ -90,7 +90,7 @@ def read_values(path: Path) -> dict[str, str]:
     return values
 
 
-def _save(path: Path, key: str, value: str) -> None:
+def save_value(path: Path, key: str, value: str) -> None:
     lines = path.read_text(encoding="utf-8-sig").splitlines()
     lines = [ln for ln in lines if not ln.strip().startswith(f"{key}=")]
     lines.append(f"{key}={value}")
@@ -102,7 +102,7 @@ def keep_service_key(path: Path, values: dict[str, str]) -> bool:
     if values.get("SERVICE_KEY"):
         return False
     values["SERVICE_KEY"] = f"svc_{secrets.token_hex(24)}"
-    _save(path, "SERVICE_KEY", values["SERVICE_KEY"])
+    save_value(path, "SERVICE_KEY", values["SERVICE_KEY"])
     return True
 
 
@@ -117,7 +117,7 @@ def keep_generated(path: Path, values: dict[str, str], live: Mapping[str, str]) 
     for key in KEPT_FROM_RENDER:
         if live.get(key) and values.get(key) != live[key]:
             values[key] = live[key]
-            _save(path, key, live[key])
+            save_value(path, key, live[key])
             copied.append(key)
     return copied
 

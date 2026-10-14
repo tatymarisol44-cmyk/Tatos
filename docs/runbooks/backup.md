@@ -19,25 +19,28 @@ buckets of [restore.md](restore.md) belong to the Google Cloud profile.
   matching private key opens it: X25519, HKDF-SHA256 and AES-256-GCM in 1 MiB chunks.
   Each chunk's nonce carries its number and a last-chunk mark (STREAM), so a file that
   was altered, reordered or cut short does not open.
-- **The private key is not on the computer that makes the backups.** Keep it on a USB
-  drive and on paper, in two places. Losing it makes every backup useless. If it leaks,
-  make a new pair and delete the old backups.
+- **The private half is not on the computer that makes the backups.** It is a recovery
+  code written by hand on paper, in two places (or a key file on a USB drive). The code
+  has 28 characters in 7 groups of 4, no O, I, L or U to misread, and a 2-character
+  checksum that catches a copying mistake. Its 128 random bits are far beyond guessing.
+  Losing it makes every backup useless. If it leaks, make a new pair and delete the old
+  backups.
 - **Never in the public repository.** GitHub artifacts of a public repository can be
   downloaded by anyone signed in, so even encrypted copies of health data do not go there.
-- **What is not in the backup:** the secrets that live outside the database. Keep
-  `PSEUDONYM_KEY` (it unseals the inbox and matches opt-outs) with the private key. The
-  Render setup copies it into the private file (`deploy/render/setup.py`).
+- **One code restores everything.** The daily task carries `PSEUDONYM_KEY` (it unseals
+  the inbox and matches opt-outs) inside the encrypted backup. The provider's own backups
+  never hold it.
 
 ## Set up (once)
 
-1. Make the key pair, writing the private key straight to the USB drive:
-   `.venv\Scripts\python.exe -m orchestrator.cli backup keygen --private-key-file E:\agency-backup-private.txt`
-   It prints the public key (`agency-backup-public:...`).
-2. Add it to the private file: `BACKUP_PUBLIC_KEY=agency-backup-public:...`
-   (optionally `BACKUP_DIR=...`).
-3. Make one backup by hand and check it:
-   `.venv\Scripts\python.exe deploy\backup\run_backup.py %USERPROFILE%\agency-render.env`
-   then `... -m orchestrator.cli backup restore --in <file> --private-key-file E:\agency-backup-private.txt --check`.
+1. Make the pair and the first backup, and prove they work:
+   `.venv\Scripts\python.exe deploy\backup\run_backup.py %USERPROFILE%\agency-render.env --new-key`
+   It writes the recovery code to `Desktop\CODIGO-RESPALDO.txt` and the public key into the
+   private file (`BACKUP_PUBLIC_KEY`). It then makes a backup and opens it with that code.
+2. The owner copies the code by hand twice, checks each group, deletes the sheet and empties
+   the recycle bin.
+3. Prove the paper copy, typing it at the prompt (nothing is shown):
+   `.venv\Scripts\python.exe -m orchestrator.cli backup restore --in <newest backup> --check`
 4. Schedule it: `powershell -ExecutionPolicy Bypass -File deploy\backup\register-task.ps1`.
 
 ## Restore
@@ -46,10 +49,12 @@ buckets of [restore.md](restore.md) belong to the Google Cloud profile.
    a fresh database, and migrate it to the backup's revision:
    `DATABASE_URL=<new> agency db upgrade`. The restore refuses a different revision or
    tables that already hold rows.
-2. `DATABASE_URL=<new> agency backup restore --in <file> --private-key-file <usb>`.
-   It loads every table in one transaction: on any error nothing is kept.
-3. Point Render at the new database (the private file's Supabase values, then
-   `deploy/render/setup.py`). `PSEUDONYM_KEY` must be the one kept with the backup key.
+2. `DATABASE_URL=<new> agency backup restore --in <file> --secrets-out <private file>.restored`
+   and type the recovery code. It loads every table in one transaction: on any error
+   nothing is kept. The secrets carried in the backup (`PSEUDONYM_KEY`) are written to the
+   file named.
+3. Point Render at the new database (the private file's Supabase values, with
+   `PSEUDONYM_KEY` from that file, then `deploy/render/setup.py`).
 4. Rebuild the vector index: `agency knowledge reindex` (as in [restore.md](restore.md)).
 5. Check: the console signs in, a patient's record opens, `agency audit-verify` passes.
 

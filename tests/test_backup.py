@@ -197,7 +197,91 @@ def test_the_command_line(
     assert "does not open" in capsys.readouterr().err
 
 
-def test_the_daily_runner_names_and_keeps_the_newest(tmp_path: Path) -> None:
+def test_a_recovery_code_is_short_safe_to_copy_and_catches_typos() -> None:
+    public, code = backup.recovery_code()
+    groups = code.split("-")
+    assert len(groups) == 7 and all(len(g) == 4 for g in groups)
+    assert not set(code.replace("-", "")) - set(backup.CROCKFORD)  # no O, I, L or U
+    opened = backup.private_key(code).public_key().public_bytes_raw()
+    assert backup.public_key(public).public_bytes_raw() == opened
+    # Written by hand: lower case, spaces, O for zero and I or L for one still work.
+    sloppy = code.lower().replace("-", " ").replace("0", "o").replace("1", "l")
+    assert backup.private_key(sloppy).public_key().public_bytes_raw() == opened
+    swapped = ("Z" if code[0] != "Z" else "Y") + code[1:]
+    with pytest.raises(backup.BackupError, match="typo"):
+        backup.private_key(swapped)
+    with pytest.raises(backup.BackupError, match="7 groups of 4"):
+        backup.private_key(code[:-5])
+    # The sheet holds the code with instructions; the code is found in it.
+    sheet = backup.recovery_sheet(code)
+    assert code in sheet and "DOS veces" in sheet and backup.identity(sheet) == code
+    assert backup.identity(f"nota\n{code}\n") == code
+
+
+async def test_secrets_travel_inside_the_encryption(source: Settings) -> None:
+    public, code = backup.recovery_code()
+    db = Database(source)
+    try:
+        out = io.BytesIO()
+        await backup.create(db.engine, out, public, {"PSEUDONYM_KEY": "synthetic-pseudonym"})
+    finally:
+        await db.close()
+    assert b"synthetic-pseudonym" not in out.getvalue()
+    summary = backup.check(io.BytesIO(out.getvalue()), code)
+    assert summary.secrets == {"PSEUDONYM_KEY": "synthetic-pseudonym"}
+    assert summary.to_dict()["secrets"] == ["PSEUDONYM_KEY"]
+    assert "synthetic-pseudonym" not in str(summary.to_dict()) + repr(summary)
+
+
+def test_the_command_line_with_a_recovery_code(
+    source: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(cli, "get_settings", lambda: source)
+    monkeypatch.setenv("PSEUDONYM_KEY", "synthetic-pseudonym")
+    sheet = tmp_path / "CODIGO-RESPALDO.txt"
+    assert cli.main(["backup", "keygen", "--recovery-code-file", str(sheet)]) == 0
+    public = capsys.readouterr().out.strip()
+    code = backup.identity(sheet.read_text(encoding="utf-8"))
+    assert code not in public
+    out = tmp_path / "copia.agbk"
+    create = ["backup", "create", "--out", str(out), "--recipient", public]
+    assert cli.main([*create, "--with-secret", "PSEUDONYM_KEY"]) == 0
+    assert "synthetic-pseudonym" not in capsys.readouterr().out
+    with pytest.raises(SystemExit):  # a secret that is not set is an error, not a silent gap
+        cli.main([*create, "--with-secret", "NOT_SET_ANYWHERE"])
+    capsys.readouterr()
+    secrets_out = tmp_path / "secretos.env"
+    check = ["backup", "restore", "--in", str(out), "--key-file", str(sheet), "--check"]
+    assert cli.main([*check, "--secrets-out", str(secrets_out)]) == 0
+    assert secrets_out.read_text(encoding="utf-8") == "PSEUDONYM_KEY=synthetic-pseudonym\n"
+    assert "synthetic-pseudonym" not in capsys.readouterr().out
+    # Typed from the paper at a prompt when no file is given.
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": code.lower())
+    assert cli.main(["backup", "restore", "--in", str(out), "--check"]) == 0
+
+
+def test_the_first_run_makes_the_pair_once(tmp_path: Path) -> None:
+    runner = _runner()
+    secrets = tmp_path / "agency-render.env"
+    secrets.write_text("SUPABASE_PASSWORD=x\n", encoding="utf-8")
+    values: dict[str, str] = {}
+    sheet = tmp_path / "CODIGO-RESPALDO.txt"
+    public = runner.new_key(secrets, values, sheet)
+    assert f"BACKUP_PUBLIC_KEY={public}" in secrets.read_text(encoding="utf-8")
+    code = backup.identity(sheet.read_text(encoding="utf-8"))
+    assert backup.private_key(code).public_key().public_bytes_raw() == (
+        backup.public_key(public).public_bytes_raw()
+    )
+    with pytest.raises(runner.setup.SetupError, match="already set"):
+        runner.new_key(secrets, values, tmp_path / "other.txt")
+    with pytest.raises(runner.setup.SetupError, match="exists"):
+        runner.new_key(secrets, {}, sheet)
+
+
+def _runner() -> Any:
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
@@ -206,6 +290,11 @@ def test_the_daily_runner_names_and_keeps_the_newest(tmp_path: Path) -> None:
     assert spec is not None and spec.loader is not None
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
+    return runner
+
+
+def test_the_daily_runner_names_and_keeps_the_newest(tmp_path: Path) -> None:
+    runner = _runner()
     for day in range(1, 36):
         name = runner.backup_name(datetime(2026, 9, day % 30 + 1, day % 24, tzinfo=UTC))
         (tmp_path / name).write_bytes(b"x")

@@ -4,9 +4,11 @@ Supabase's free plan keeps backups the practice cannot download, so the practice
 its own (docs/runbooks/backup.md):
 
 * **Keys.** `agency backup keygen` makes a key pair once. The public key can sit anywhere
-  (the scheduled task's settings): it only locks. The private key stays with the owner,
-  offline (a USB drive, a printed copy). Without it no backup opens, not even for whoever
-  runs the task or holds the file.
+  (the scheduled task's settings): it only locks. The private half stays with the owner,
+  offline: a key file on a USB drive, or a **recovery code** written on paper (28 Crockford
+  base32 characters in groups of 4, no O, I or L to misread, the last two a checksum that
+  catches a copying mistake; the key is derived from its 128 random bits with HKDF).
+  Without it no backup opens, not even for whoever runs the task or holds the file.
 * **Create.** `agency backup create` reads every table in the database (the conversation
   checkpoints and the migration version included), as JSON lines, gzipped, then
   encrypted: X25519 with a fresh key per backup, HKDF-SHA256, and AES-256-GCM in 1 MiB
@@ -15,19 +17,22 @@ its own (docs/runbooks/backup.md):
 * **Restore.** `agency backup restore` loads a backup into an empty database migrated to
   the same version; `--check` only decrypts it and counts the rows. A restore drill runs
   in CI (tests/test_backup.py).
-* Secrets that live outside the database (PSEUDONYM_KEY among them, which unseals the
-  inbox) are not in the backup: they are kept in the owner's private file, backed up
-  the same way."""
+* **Secrets that live outside the database** can travel inside the encrypted backup
+  (`--with-secret PSEUDONYM_KEY`, which unseals the inbox and matches opt-outs), so the
+  one recovery code restores everything; `restore --secrets-out` writes them to a file.
+  The provider's own backups never hold them."""
 
 from __future__ import annotations
 
 import base64
 import gzip
+import hashlib
 import io
 import json
 import os
+import re
 import struct
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -70,13 +75,7 @@ def keygen() -> tuple[str, str]:
         serialization.PrivateFormat.Raw,
         serialization.NoEncryption(),
     )
-    raw_public = private.public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw
-    )
-    return (
-        PUBLIC_PREFIX + base64.b64encode(raw_public).decode(),
-        PRIVATE_PREFIX + base64.b64encode(raw_private).decode(),
-    )
+    return _public_line(private), PRIVATE_PREFIX + base64.b64encode(raw_private).decode()
 
 
 def _key(value: str, prefix: str) -> bytes:
@@ -97,7 +96,92 @@ def public_key(value: str) -> X25519PublicKey:
 
 
 def private_key(value: str) -> X25519PrivateKey:
-    return X25519PrivateKey.from_private_bytes(_key(value, PRIVATE_PREFIX))
+    """From a key file's line or from a recovery code."""
+    if value.strip().startswith(PRIVATE_PREFIX):
+        return X25519PrivateKey.from_private_bytes(_key(value, PRIVATE_PREFIX))
+    return _from_seed(_seed(value))
+
+
+def _public_line(private: X25519PrivateKey) -> str:
+    raw = private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return PUBLIC_PREFIX + base64.b64encode(raw).decode()
+
+
+# --- the recovery code: the private key, short enough to copy by hand ----------------------
+
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # no I, L, O, U: nothing to misread
+SEED_BYTES = 16  # 128 bits: far beyond any guessing, and 26 characters
+CODE_CHARS = 28  # 26 for the seed, 2 for the checksum
+
+
+def _base32(data: bytes, chars: int) -> str:
+    number = int.from_bytes(data, "big")
+    return "".join(CROCKFORD[(number >> (5 * i)) & 31] for i in reversed(range(chars)))
+
+
+def _checksum(seed: bytes) -> str:
+    return _base32(hashlib.sha256(seed).digest()[:2], 4)[-2:]
+
+
+def _from_seed(seed: bytes) -> X25519PrivateKey:
+    raw = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None, info=b"agency-backup-recovery-v1"
+    ).derive(seed)
+    return X25519PrivateKey.from_private_bytes(raw)
+
+
+def recovery_code() -> tuple[str, str]:
+    """(public key line, recovery code `XXXX-XXXX-...`): a new pair."""
+    seed = os.urandom(SEED_BYTES)
+    code = _base32(seed, 26) + _checksum(seed)
+    return _public_line(_from_seed(seed)), "-".join(
+        code[i : i + 4] for i in range(0, CODE_CHARS, 4)
+    )
+
+
+def _seed(code: str) -> bytes:
+    clean = code.upper().translate(str.maketrans("OIL", "011", "- \t\r\n"))
+    if len(clean) != CODE_CHARS or any(c not in CROCKFORD for c in clean):
+        raise BackupError("a recovery code has 28 letters and digits, in 7 groups of 4")
+    number = 0
+    for char in clean[:26]:
+        number = number * 32 + CROCKFORD.index(char)
+    if number >> (8 * SEED_BYTES):
+        raise BackupError("the recovery code has a typo: check it group by group")
+    seed = number.to_bytes(SEED_BYTES, "big")
+    if _checksum(seed) != clean[26:]:
+        raise BackupError("the recovery code has a typo: check it group by group")
+    return seed
+
+
+_CODE = re.compile(r"\b[0-9A-Za-z]{4}(?:-[0-9A-Za-z]{4}){6}\b")
+
+
+def identity(text: str) -> str:
+    """The key in a key file, or the recovery code in a recovery sheet or a typed note."""
+    for line in text.splitlines():
+        if line.strip().startswith(PRIVATE_PREFIX):
+            return line.strip()
+    found = _CODE.search(text)
+    return found.group(0) if found else text.strip()
+
+
+def recovery_sheet(code: str) -> str:
+    """What the owner reads once, copies by hand, then deletes (Spanish: it is for her)."""
+    return (
+        "CÓDIGO DE RECUPERACIÓN DE LOS RESPALDOS DEL CONSULTORIO\n"
+        "========================================================\n\n"
+        f"    {code}\n\n"
+        "1. Cópialo a mano en un papel, DOS veces. Revisa grupo por grupo.\n"
+        "   (No lleva la letra O ni la I: lo que parece O es un cero, lo que parece I es un uno.)\n"
+        "2. Guarda cada papel en un lugar distinto (por ejemplo, tu casa y la de un familiar).\n"
+        "3. Cierra este archivo, bórralo y vacía la papelera.\n\n"
+        "Sin este código ningún respaldo se puede abrir, y nadie más lo tiene: ni el\n"
+        "consultorio, ni la plataforma, ni el asistente que te ayudó a crearlo.\n"
+        "Con él y una copia del respaldo se recupera todo, incluidos los mensajes.\n"
+    )
 
 
 def _derive(shared: bytes, ephemeral: bytes, recipient: bytes) -> AESGCM:
@@ -269,6 +353,8 @@ class Summary:
     created_at: str = ""
     revision: str | None = None
     counts: dict[str, int] = field(default_factory=dict)
+    # Secrets carried inside the encryption; the summary shows their names only.
+    secrets: dict[str, str] = field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -277,6 +363,7 @@ class Summary:
             "tables": len(self.counts),
             "rows": sum(self.counts.values()),
             "counts": self.counts,
+            "secrets": sorted(self.secrets),
         }
 
 
@@ -298,11 +385,16 @@ async def _rows(conn: AsyncConnection, table: Table) -> AsyncIterator[dict[str, 
         yield dict(row._mapping)
 
 
-async def create(engine: AsyncEngine, out: IO[bytes], recipient: str) -> Summary:
-    """Write an encrypted backup of every table to `out`."""
+async def create(
+    engine: AsyncEngine,
+    out: IO[bytes],
+    recipient: str,
+    secrets: Mapping[str, str] | None = None,
+) -> Summary:
+    """Write an encrypted backup of every table to `out`, with `secrets` inside it."""
     key = public_key(recipient)
     sealing = _Sealing(out, key)
-    summary = Summary(created_at=utcnow().isoformat())
+    summary = Summary(created_at=utcnow().isoformat(), secrets=dict(secrets or {}))
     with gzip.GzipFile(fileobj=sealing, mode="wb", mtime=0) as packed:
 
         def line(doc: dict[str, Any]) -> None:
@@ -319,6 +411,7 @@ async def create(engine: AsyncEngine, out: IO[bytes], recipient: str) -> Summary
                     "created_at": summary.created_at,
                     "revision": summary.revision,
                     "tables": [t.name for t in tables],
+                    "secrets": summary.secrets,
                 }
             )
             for table in tables:
@@ -354,6 +447,7 @@ def check(source: IO[bytes], identity: str) -> Summary:
             if doc["format"] != FORMAT or doc["version"] != VERSION:
                 raise BackupError("a backup of another format or version")
             summary.created_at, summary.revision = doc["created_at"], doc["revision"]
+            summary.secrets = doc.get("secrets", {})
         elif "t" in doc:
             counted[doc["t"]] = counted.get(doc["t"], 0) + 1
         elif doc.get("end"):
@@ -401,6 +495,7 @@ async def restore(engine: AsyncEngine, source: IO[bytes], identity: str) -> Summ
                     if used:
                         raise BackupError(f"restore into an empty database: {name} has rows")
                 summary.created_at, summary.revision = doc["created_at"], doc["revision"]
+                summary.secrets = doc.get("secrets", {})
             elif "t" in doc:
                 name = doc["t"]
                 if name in BOOKKEEPING:
