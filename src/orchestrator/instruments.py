@@ -286,11 +286,15 @@ def _template(scale_id: Literal["phq9", "gad7"], name: str) -> InstrumentSpec:
         )
     return InstrumentSpec(
         name=name,
-        description="Plantilla de dominio público. Banda de severidad, no diagnóstico.",
+        # For the professional: what to do before sending it. The instructions below are
+        # what the patient reads, so they carry nothing else.
+        description=(
+            "Plantilla de dominio público. Banda de severidad, no diagnóstico. Copie el "
+            "texto oficial de cada ítem del formulario publicado (decisión P7)."
+        ),
         instructions=(
             "Durante las últimas 2 semanas, ¿con qué frecuencia le han molestado los "
-            "siguientes problemas? Copie el texto oficial de cada ítem del formulario "
-            "publicado (decisión P7)."
+            "siguientes problemas?"
         ),
         administration="self_report",
         items=[

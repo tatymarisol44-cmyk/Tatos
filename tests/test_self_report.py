@@ -81,6 +81,7 @@ def test_the_patient_answers_and_never_sees_the_score(
     [test] = client.get("/v1/me/tests", headers=me).json()
     assert test["name"].startswith("PHQ-9") and len(test["items"]) == 9
     assert test["items"][0]["text"] == "Pregunta sintética 1"
+    assert "Copie" not in test["instructions"]  # notes for the professional stay out
     assert test["items"][0]["options"][0]["label"] == "Nunca"
     assert "scoring" not in test and "band" not in str(test).lower()
 

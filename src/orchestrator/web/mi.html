@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E6E6B">
+  <title>Mi consultorio</title>
+  <link rel="manifest" href="/mi/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/app-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/app-192.png">
+  <link rel="stylesheet" href="/static/ui.css">
+  <script src="/static/mi.js" defer></script>
+</head>
+<body>
+  <div class="mi">
+    <header class="mi-top">
+      <span class="avatar" aria-hidden="true">✚</span>
+      <span><strong id="practice">Mi consultorio</strong><br><span id="who" class="muted"></span></span>
+    </header>
+    <main id="view" class="mi-body" tabindex="-1"></main>
+    <p class="mi-help" role="note">
+      <strong>¿Estás en crisis o en peligro?</strong> Llama al <strong>ECU 911</strong> o a la línea
+      <strong>171, opción 6</strong> (salud mental, gratuita, las 24 horas). Esta app no atiende emergencias.
+    </p>
+    <nav id="tabs" class="tabbar" aria-label="Menú" hidden>
+      <a href="#inicio" data-nav="inicio">Inicio</a>
+      <a href="#citas" data-nav="citas">Citas</a>
+      <a href="#tests" data-nav="tests">Tests <span id="badge-tests" class="count" hidden></span></a>
+      <a href="#perfil" data-nav="perfil">Mi perfil</a>
+    </nav>
+  </div>
+</body>
+</html>

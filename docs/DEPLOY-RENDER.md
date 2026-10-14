@@ -109,7 +109,7 @@ $k = 'svc_' + -join ($b | ForEach-Object { $_.ToString('x2') })
 
    Later, when the Meta app exists: its webhook is `https://<service>.onrender.com/v1/channels/meta`, with `WHATSAPP_VERIFY_TOKEN` as the verify token, subscribed to `messages` for WhatsApp, the Page (Messenger) and Instagram. Put the app's secret in `META_APP_SECRET`.
 3. **Apply.** The first start migrates the database and indexes the catalog: a few minutes at 0.1 CPU. The service turns *Live* when `/readyz` answers.
-4. Check: open `https://<service>.onrender.com/readyz` (`"status": "ready"`), then the console at `https://<service>.onrender.com/` with the service key.
+4. Check: open `https://<service>.onrender.com/readyz` (`"status": "ready"`), then the practice's app at `https://<service>.onrender.com/app` with a personal staff key (the developer console stays at `/`). Patients use `https://<service>.onrender.com/mi/`, opened from the personal link the practice sends them.
 
 ## 6. UptimeRobot: awake and watched (2 minutes)
 

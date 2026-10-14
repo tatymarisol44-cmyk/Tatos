@@ -6,6 +6,9 @@ and Chromium; skipped otherwise. Synthetic data only."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 import socket
 import sys
 import threading
@@ -15,6 +18,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
@@ -25,6 +29,8 @@ from orchestrator.service import Orchestrator
 sync_api = pytest.importorskip("playwright.sync_api")
 
 SERVICE = {"X-API-Key": "test-key"}
+APP_SECRET = "app-secret-synthetic"
+NUMBER_ID = "106540352242922"
 
 
 @pytest.fixture
@@ -33,6 +39,8 @@ def server(settings: Settings, catalog: Catalog) -> Iterator[str]:
 
     settings.tenant_packs = {"acme": "ec-psychologist"}
     settings.practice_display_name = "Consultorio Demo"
+    settings.meta_app_secret = SecretStr(APP_SECRET)
+    settings.whatsapp_verify_token = SecretStr("verify-synthetic")
     app = create_app(settings, Orchestrator(settings, catalog=catalog, llm=FakeLLM()))
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -270,4 +278,107 @@ def test_a_slow_screen_never_paints_over_a_newer_one(server: str, browser: Any) 
     page.wait_for_timeout(500)
     assert "Aún no hay pacientes" in page.inner_text("#view")
     assert "Citas de hoy" not in page.inner_text("#view")
+    assert not problems, problems
+
+
+def _whatsapp(server: str, text: str, sender: str = "15550001111") -> None:
+    message = {"from": sender, "id": f"wamid.{len(text)}", "type": "text", "text": {"body": text}}
+    value = {"metadata": {"phone_number_id": NUMBER_ID}, "messages": [message]}
+    body = json.dumps(
+        {
+            "object": "whatsapp_business_account",
+            "entry": [{"id": "WABA", "changes": [{"field": "messages", "value": value}]}],
+        }
+    ).encode()
+    signature = "sha256=" + hmac.new(APP_SECRET.encode(), body, hashlib.sha256).hexdigest()
+    headers = {"X-Hub-Signature-256": signature, "Content-Type": "application/json"}
+    assert (
+        httpx.post(f"{server}/v1/channels/meta", content=body, headers=headers).status_code == 200
+    )
+
+
+def test_the_inbox_draft_reply_link_and_close(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    account = {
+        "network": "whatsapp",
+        "external_id": NUMBER_ID,
+        "handle": "+1 555 000 0000",
+        "secret_ref": "WA_DEMO",
+    }
+    assert (
+        httpx.post(f"{server}/v1/social/accounts", json=account, headers=SERVICE).status_code == 201
+    )
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "p-sol", "display_name": "Sol Sintética"},
+        headers=SERVICE,
+    )
+    _whatsapp(server, "Hola, ¿atienden los sábados por la mañana?")
+    page, problems = _signed_in(browser, server, key)
+    page.wait_for_selector("#badge-unread:not([hidden])")
+
+    page.click("a[data-nav=mensajes]")
+    page.wait_for_selector(".thread >> text=Persona sin vincular")
+    page.click(".thread >> text=Persona sin vincular")
+    page.wait_for_selector(".bubble.in >> text=atienden los sábados")
+
+    # The AI suggests; nothing is sent until the person sends it.
+    page.click("text=Sugerir respuesta con IA")
+    page.wait_for_selector(".bubble.draft")
+    page.click("text=Usar este borrador")
+    assert "Gracias por escribirnos" in page.input_value("textarea")
+    page.click("form >> text=Enviar")
+    page.wait_for_selector("text=Guardado sin enviar")  # no credential here: a dry run
+
+    # Linked to Sol's record, then marked as handled.
+    page.wait_for_selector(".bubble.out >> text=No enviado")
+    page.select_option("select[aria-label='Vincular a una paciente']", "p-sol")
+    page.wait_for_selector(".thread >> text=Sol Sintética")
+    page.click("text=Marcar como atendida")
+    page.wait_for_selector(".thread >> text=Sol Sintética")
+    page.wait_for_selector("#badge-unread", state="hidden")
+    conversations = httpx.get(f"{server}/v1/inbox", headers={"X-API-Key": key}).json()
+    assert [(c["patient_id"], c["status"]) for c in conversations] == [("p-sol", "closed")]
+    assert not problems, problems
+
+
+def test_tests_with_official_texts_and_the_on_call_list(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "p-mar", "display_name": "Mar Sintética"},
+        headers=SERVICE,
+    )
+    page, problems = _signed_in(browser, server, key)
+    page.click("a[data-nav=ajustes]")
+    page.wait_for_selector("text=Nadie está de guardia")
+
+    # PHQ-9 from the template: not sendable until every item has its official text.
+    page.click("text=Agregar PHQ-9 (depresión)")
+    page.wait_for_selector("text=Guardar textos")
+    page.click("text=Guardar textos")
+    page.wait_for_selector("text=Faltan 9 preguntas")
+    for n, area in enumerate(page.query_selector_all("form textarea")[1:], start=1):
+        area.fill(f"Pregunta sintética número {n}")
+    page.click("text=Guardar textos")
+    page.wait_for_selector("text=Textos guardados")
+    page.click("text=Volver a Ajustes")
+    page.wait_for_selector("text=Lista para enviar")
+
+    # Now it can be sent to a patient's app.
+    page.goto(f"{server}/app#paciente/p-mar/tests")
+    page.wait_for_selector("text=Enviar un test a su app")
+    page.select_option("form select", index=1)
+    page.click("text=Enviar a su app")
+    page.wait_for_selector("text=Esperando respuesta >> nth=1")
+
+    # Someone on call for crises.
+    page.click("a[data-nav=ajustes]")
+    page.wait_for_selector("text=Agregar a la guardia")
+    page.fill("form:has-text('Agregar a la guardia') input[type=text]", "Psic. Demo de guardia")
+    page.fill("form:has-text('Agregar a la guardia') input[type=tel]", "+593 99 000 0000")
+    page.click("text=Agregar a la guardia")
+    page.wait_for_selector("text=Psic. Demo de guardia")
+    shown = page.inner_text(".doc:has-text('Psic. Demo de guardia')")
+    assert "De guardia" in shown and "WhatsApp" in shown and "0000" in shown
     assert not problems, problems

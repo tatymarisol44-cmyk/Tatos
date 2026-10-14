@@ -14,7 +14,13 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import __version__
@@ -237,6 +243,50 @@ def create_app(
     async def staff_app() -> FileResponse:
         """The practice's app for its staff, in Spanish (same API, same strict CSP)."""
         return FileResponse(WEB_DIR / "consultorio.html", headers=UI_HEADERS)
+
+    # The patient's app, installable (PWA). It lives under /mi/ so that its service worker,
+    # served at /mi/sw.js, covers the app and nothing else of the site.
+    @app.get("/mi", include_in_schema=False)
+    async def patient_app_redirect() -> RedirectResponse:
+        return RedirectResponse("/mi/", status_code=status.HTTP_308_PERMANENT_REDIRECT)
+
+    @app.get("/mi/", include_in_schema=False)
+    async def patient_app() -> FileResponse:
+        return FileResponse(WEB_DIR / "mi.html", headers=UI_HEADERS)
+
+    @app.get("/mi/manifest.webmanifest", include_in_schema=False)
+    async def patient_manifest() -> JSONResponse:
+        icons = [
+            {
+                "src": f"/static/icons/app-{n}.png",
+                "sizes": f"{n}x{n}",
+                "type": "image/png",
+                "purpose": "any maskable",
+            }
+            for n in (192, 512)
+        ]
+        return JSONResponse(
+            {
+                "name": settings.practice_display_name,
+                "short_name": "Mi consultorio",
+                "lang": "es",
+                "start_url": "/mi/#inicio",
+                "scope": "/mi/",
+                "display": "standalone",
+                "background_color": "#F5F7F8",
+                "theme_color": "#0E6E6B",
+                "icons": icons,
+            },
+            media_type="application/manifest+json",
+        )
+
+    @app.get("/mi/sw.js", include_in_schema=False)
+    async def patient_service_worker() -> FileResponse:
+        return FileResponse(
+            WEB_DIR / "static" / "mi-sw.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache"},  # an update reaches phones at once
+        )
 
     @app.get("/media/{name:path}", include_in_schema=False)
     async def signed_media(

@@ -550,15 +550,128 @@ function openVisitActions(visit) {
 }
 
 // --- AJUSTES: profile and hours ------------------------------------------------------------------
-VIEWS.ajustes = async (main) => {
+VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
-  const parts = [page("Ajustes", "Tu perfil y tu horario de atención")];
+  if (section === "test" && which) return testEditor(main, which);
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia")];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
+  if (s.clinician) parts.push(await testsCard());
+  parts.push(await onCallCard());
   parts.push(card("Tu cuenta", "",
     el("p", { text: `Entraste como ${s.id}.` }),
     el("p", { class: "muted", text: `Permisos: ${s.roles.map((r) => ({ admin: "administración", owner: "dueña", reviewer: "psicóloga (datos clínicos)", reception: "recepción", marketing: "marketing", privacy: "protección de datos" })[r] || r).join(", ")}.` })));
   main.replaceChildren(...parts);
 };
+
+// Tests: start from a public-domain template, paste the official wording of each item.
+const PLACEHOLDER = "(texto oficial del formulario)";
+
+async function testsCard() {
+  const tests = await api("/v1/clinical/instruments");
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const add = (template, label) => {
+    const b = el("button", { class: "btn", type: "button", text: label });
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        const made = await api("/v1/clinical/instruments/from-template", { method: "POST", body: { template } });
+        location.hash = `#ajustes/test/${encodeURIComponent(made.instrument_id)}`;
+      } catch (err) { say(status, humanError(err), "error"); b.disabled = false; }
+    });
+    return b;
+  };
+  const rows = tests.map((t) => {
+    const missing = t.spec.items.filter((i) => i.text.includes(PLACEHOLDER)).length;
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: t.name }), el("br"),
+        el("span", { class: "muted", text: `${t.spec.items.length} preguntas · versión ${t.version}` })),
+      missing
+        ? el("span", { class: "chip wait", text: `Faltan ${missing} textos oficiales` })
+        : el("span", { class: "chip ok", text: t.spec.administration === "self_report" ? "Lista para enviar" : "Para aplicar en sesión" }),
+      link(`#ajustes/test/${encodeURIComponent(t.instrument_id)}`, "Editar textos", "btn small"));
+  });
+  return card("Tus tests", "",
+    ...(rows.length ? rows : [empty("Aún no tienes tests. Empieza con una plantilla de dominio público.")]),
+    el("div", { class: "row tight" }, add("phq9", "Agregar PHQ-9 (depresión)"), add("gad7", "Agregar GAD-7 (ansiedad)")),
+    status,
+    el("p", { class: "muted", text: "Por derechos de autor, las plantillas no traen el texto de las preguntas: cópialo del formulario oficial publicado. Hasta entonces el test no se puede enviar a las pacientes." }));
+}
+
+async function testEditor(main, id) {
+  const test = await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`);
+  const spec = test.spec;
+  const instructions = el("textarea", { rows: "3" });
+  instructions.value = spec.instructions || "";
+  const fields = spec.items.map((item, i) => {
+    const area = el("textarea", { rows: "2", required: true });
+    area.value = item.text.includes(PLACEHOLDER) ? "" : item.text;
+    return { item, area, node: el("label", { class: "field" }, `Pregunta ${i + 1}`, area) };
+  });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Guardar textos" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Instrucciones para la paciente", instructions),
+    ...fields.map((f) => f.node),
+    el("p", { class: "muted", text: `Opciones de respuesta: ${spec.items[0]?.options.map((o) => o.label).join(" · ") || "—"}` }),
+    save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const empties = fields.filter((f) => !f.area.value.trim()).length;
+    if (empties) return say(status, `Faltan ${empties} preguntas por completar.`, "error");
+    save.disabled = true;
+    const revised = { ...spec, instructions: instructions.value.trim(),
+      items: fields.map((f) => ({ ...f.item, text: f.area.value.trim() })) };
+    try {
+      await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, { method: "PUT", body: { spec: revised } });
+      say(status, "Textos guardados. Ya puedes enviar este test a tus pacientes.", "done");
+    } catch (err) { say(status, humanError(err), "error"); }
+    save.disabled = false;
+  });
+  main.replaceChildren(page(test.name, "Pega el texto oficial de cada pregunta", link("#ajustes", "Volver a Ajustes")),
+    card("Textos del test", "", form));
+}
+
+// On call: who is told at once about a crisis, by WhatsApp, Telegram or e-mail (ADR 0017).
+async function onCallCard() {
+  const contacts = (await api("/v1/admin/on-call")).filter((c) => c.active);
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const rows = contacts.sort((a, b) => a.level - b.level).map((c) => {
+    const drop = el("button", { class: "btn small", type: "button", text: "Quitar" });
+    drop.addEventListener("click", async () => {
+      drop.disabled = true;
+      try { await api(`/v1/admin/on-call/${encodeURIComponent(c.contact_id)}`, { method: "DELETE" }); route(); } catch (err) { say(status, humanError(err), "error"); drop.disabled = false; }
+    });
+    const ways = [c.whatsapp_number && `WhatsApp ${c.whatsapp_number}`, c.telegram_chat_id && "Telegram", c.email].filter(Boolean).join(" · ");
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: c.display_name }), el("br"),
+        el("span", { class: "muted", text: `${c.level === 1 ? "De guardia" : `Respaldo (nivel ${c.level})`} · ${ways || "sin medio de aviso"}` })),
+      isAdmin() ? drop : null);
+  });
+  const parts = [...(rows.length ? rows : [el("div", { class: "notice", role: "note" }, el("span", { text: "Nadie está de guardia: las alertas de crisis solo se ven dentro de la app. Agrega a quien debe recibir el aviso al instante." }))])];
+  if (isAdmin()) {
+    const name = el("input", { type: "text", maxlength: "120", required: true });
+    const level = el("select", {}, el("option", { value: "1", text: "De guardia (primer aviso)" }), el("option", { value: "2", text: "Respaldo (si nadie responde en 5 minutos)" }));
+    const phone = el("input", { type: "tel", maxlength: "24", placeholder: "Ej.: +593 99 123 4567" });
+    const mail = el("input", { type: "email", maxlength: "254" });
+    const save = el("button", { class: "btn primary", type: "submit", text: "Agregar a la guardia" });
+    const form = el("form", { class: "stack", novalidate: true },
+      el("div", { class: "fields" }, el("label", { class: "field" }, "Nombre", name), el("label", { class: "field" }, "Nivel", level)),
+      el("div", { class: "fields" }, el("label", { class: "field" }, "WhatsApp", phone), el("label", { class: "field" }, "Correo", mail)),
+      save, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!name.value.trim() || (!phone.value.trim() && !mail.value.trim())) return say(status, "Escribe el nombre y al menos un WhatsApp o un correo.", "error");
+      save.disabled = true;
+      try {
+        await api("/v1/admin/on-call", { method: "POST", body: { display_name: name.value.trim(), level: Number(level.value), whatsapp_number: phone.value.trim() || null, email: mail.value.trim() || null } });
+        route();
+      } catch (err) { say(status, humanError(err), "error"); save.disabled = false; }
+    });
+    parts.push(form);
+  }
+  return card("Guardia para crisis", "", ...parts,
+    el("p", { class: "muted", text: "El aviso dice solo que hay una alerta y el enlace a la app: nunca el mensaje ni datos de la paciente." }));
+}
 
 function profileCard() {
   if (!isAdmin()) {
@@ -720,6 +833,8 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
   const contact = [patient.phone, patient.email].filter(Boolean).join(" · ") || "Sin datos de contacto";
   const visit = el("button", { class: "btn primary", type: "button", text: "Nueva cita" });
   visit.addEventListener("click", () => openVisitDialog({ patientId: patient.id }));
+  const access = el("button", { class: "btn", type: "button", text: "Acceso a su app" });
+  access.addEventListener("click", () => openAccessDialog(patient));
   const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Secciones de la ficha" },
     ...TABS.map(([key, label]) => {
       const b = el("button", { type: "button", role: "tab", "aria-selected": String(key === tab), text: label });
@@ -728,12 +843,43 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
     }));
   const body = el("div", { class: "stack", role: "tabpanel" }, el("p", { class: "muted", text: "Cargando…" }));
   main.replaceChildren(
-    page(patient.display_name, contact, visit),
+    page(patient.display_name, contact, patient.restricted ? null : access, visit),
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
     tabs, body);
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
   body.replaceChildren(...await render(patient));
 };
+
+/** The patient's personal link to their app: shown once, sent by the professional. */
+async function openAccessDialog(patient) {
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const make = el("button", { class: "btn primary", type: "button", text: "Generar su enlace personal" });
+  const area = el("div", { class: "stack" });
+  make.addEventListener("click", async () => {
+    make.disabled = true;
+    try {
+      const access = await api(`/v1/crm/patients/${encodeURIComponent(patient.id)}/access`, { method: "POST" });
+      const url = `${location.origin}/mi/#k=${encodeURIComponent(access.key)}`;
+      const field = el("input", { type: "text", readonly: true, value: url, "aria-label": "Enlace personal" });
+      const copy = el("button", { class: "btn", type: "button", text: "Copiar enlace" });
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(url); say(status, "Enlace copiado.", "done"); }
+        catch { field.select(); say(status, "Selecciónalo y cópialo con Ctrl+C.", ""); }
+      });
+      const message = `Hola ${patient.display_name.split(/\s+/)[0]}, este es tu enlace personal para la app del consultorio: ${url} . Es solo tuyo: no lo compartas.`;
+      const digits = (patient.phone || "").replace(/\D/g, "");
+      const number = digits.startsWith("0") ? `593${digits.slice(1)}` : digits;
+      area.replaceChildren(field, el("div", { class: "row tight" }, copy,
+        number ? el("a", { class: "btn primary", href: `https://wa.me/${number}?text=${encodeURIComponent(message)}`, target: "_blank", rel: "noopener noreferrer", text: "Enviar por WhatsApp" }) : null),
+        el("p", { class: "muted", text: `Vence en 90 días. Si lo pierde, genera uno nuevo.` }));
+      make.hidden = true;
+    } catch (err) { say(status, humanError(err), "error"); make.disabled = false; }
+  });
+  dialog("Acceso a su app",
+    el("p", { text: `Con este enlace, ${patient.display_name} ve sus citas, reserva en tus horarios libres y responde los tests que le envíes.` }),
+    el("p", { class: "muted", text: "Envíaselo solo a ella: quien tenga el enlace entra a su app. No muestra su historia clínica." }),
+    make, area, status);
+}
 
 async function tabResumen(patient) {
   if (!state.session.clinician) return [empty("El resumen clínico es solo para el rol de psicóloga.")];
@@ -911,10 +1057,144 @@ async function tabMensajes(patient) {
   return [card("Conversaciones vinculadas", "", ...(rows.length ? rows : [empty("No hay conversaciones vinculadas a esta paciente. Puedes vincularlas desde Mensajes.")]))];
 }
 
-// --- views still being built ---------------------------------------------------------------
-VIEWS.mensajes = VIEWS.mensajes || (async (main) => {
-  main.replaceChildren(page("Mensajes", ""), empty("Esta sección se está construyendo y llegará muy pronto."));
-});
+// --- MENSAJES: one inbox for WhatsApp, Instagram and Facebook (ADR 0023) ---------------------------
+const SENT = {
+  sent: "Enviado",
+  dry_run: "Guardado sin enviar: la cuenta de la red aún no está conectada",
+  failed: "No se pudo enviar",
+  uncertain: "Envío incierto: revisa en la red antes de volver a enviar",
+};
+const BUBBLE_NOTE = { received: "", sent: "Enviado", dry_run: "No enviado (cuenta sin conectar)", failed: "No se pudo enviar", uncertain: "Envío incierto" };
+let inboxFilter = "";
+
+VIEWS.mensajes = async (main, conversationId) => {
+  if (!state.session.clinician) {
+    main.replaceChildren(page("Mensajes", ""), empty("Los mensajes de pacientes son solo para el rol de psicóloga."));
+    return;
+  }
+  const list = await api(`/v1/inbox${inboxFilter ? `?network=${inboxFilter}` : ""}`);
+  const filters = el("div", { class: "filters", role: "group", "aria-label": "Filtrar por red" },
+    ...[["", "Todos"], ["whatsapp", "WhatsApp"], ["instagram", "Instagram"], ["facebook", "Facebook"]].map(([value, label]) => {
+      const b = el("button", { type: "button", "aria-pressed": String(inboxFilter === value), text: label });
+      b.addEventListener("click", () => { inboxFilter = value; route(); });
+      return b;
+    }));
+  const threads = list.map((c) => {
+    const [network, cls] = NETWORKS[c.network] || [c.network, "app"];
+    const name = c.patient_id ? patientName(c.patient_id) : "Persona sin vincular";
+    return el("a", { class: "thread", href: `#mensajes/${encodeURIComponent(c.conversation_id)}`, "aria-current": String(c.conversation_id === conversationId) },
+      el("span", { class: "row tight" },
+        el("span", { class: `ch ${cls}`, text: network }), el("strong", { text: name }),
+        c.attention === "crisis" ? el("span", { class: "chip bad", text: "Crisis" }) : null,
+        c.attention === "human" ? el("span", { class: "chip wait", text: "Pide una persona" }) : null,
+        c.unread ? el("span", { class: "count", text: String(c.unread), "aria-label": `${c.unread} sin leer` }) : null),
+      el("span", { class: "muted", text: c.preview || "" }));
+  });
+  await knownPatients();
+  const left = el("section", { class: "card grow-1", "aria-label": "Conversaciones" }, filters,
+    ...(threads.length ? threads : [empty("No hay conversaciones todavía. Cuando alguien escriba por WhatsApp, Instagram o Facebook, aparecerá aquí.")]));
+  const right = conversationId ? await conversationCard(conversationId) : card("Conversación", "grow-2", empty("Elige una conversación de la lista."));
+  main.replaceChildren(page("Mensajes", "WhatsApp, Instagram y Facebook en un solo lugar. La IA solo sugiere: tú decides qué se envía."),
+    el("div", { class: "row" }, left, right));
+};
+
+let patientNames = {};
+async function knownPatients() {
+  const all = await patientsList();
+  patientNames = Object.fromEntries(all.map((p) => [p.id, p.display_name]));
+}
+function patientName(id) { return patientNames[id] || "Paciente vinculada"; }
+
+async function conversationCard(id) {
+  const c = await api(`/v1/inbox/${encodeURIComponent(id)}`);
+  refreshBadges();
+  const [network, cls] = NETWORKS[c.network] || [c.network, "app"];
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const text = el("textarea", { rows: "4", maxlength: "2000", "aria-label": "Tu respuesta" });
+  let draftId = null;
+
+  const bubbles = c.messages.filter((m) => m.status !== "used").map((m) => {
+    const when = partsIn(new Date(m.created_at));
+    const stamp = `${when.day}/${when.month} ${when.hour}:${when.minute}`;
+    if (m.status === "draft") {
+      const use = el("button", { class: "btn small", type: "button", text: "Usar este borrador" });
+      use.addEventListener("click", () => { text.value = m.text; draftId = m.message_id; text.focus(); });
+      const drop = el("button", { class: "btn small", type: "button", text: "Descartar" });
+      drop.addEventListener("click", async () => {
+        drop.disabled = true;
+        try { await api(`/v1/inbox/${encodeURIComponent(id)}/drafts/${encodeURIComponent(m.message_id)}`, { method: "DELETE" }); route(); } catch (err) { say(status, humanError(err), "error"); }
+      });
+      return el("div", { class: "bubble draft" }, el("strong", { text: "Borrador de la IA (no enviado)" }), el("br"), m.text,
+        el("small", { text: stamp }), el("span", { class: "row tight" }, use, drop));
+    }
+    const note = m.direction === "out"
+      ? [m.author?.startsWith("auto:") ? "Respuesta automática" : "", BUBBLE_NOTE[m.status] || ""].filter(Boolean).join(" · ")
+      : "";
+    return el("div", { class: `bubble ${m.direction === "in" ? "in" : "out"}` }, m.text, el("small", { text: [stamp, note].filter(Boolean).join(" · ") }));
+  });
+
+  const suggest = el("button", { class: "btn", type: "button", text: "Sugerir respuesta con IA" });
+  const send = el("button", { class: "btn primary", type: "submit", text: "Enviar" });
+  const person = c.attention === "crisis" || c.attention === "human";
+  if (person) { suggest.disabled = true; suggest.title = "En una crisis o cuando piden una persona, responde tú."; }
+  if (!c.window_open) { send.disabled = true; suggest.disabled = true; }
+  suggest.addEventListener("click", async () => {
+    suggest.disabled = true;
+    say(status, "Preparando un borrador…");
+    try {
+      await api(`/v1/inbox/${encodeURIComponent(id)}/draft`, { method: "POST" });
+      route();
+    } catch (err) {
+      say(status, err.status === 409 ? "Esta vez no salió una sugerencia segura. Escribe tú la respuesta." : humanError(err), "error");
+      suggest.disabled = false;
+    }
+  });
+  const form = el("form", { class: "stack", novalidate: true }, text, el("div", { class: "row tight" }, suggest, send), status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!text.value.trim()) return say(status, "Escribe la respuesta.", "error");
+    send.disabled = true;
+    say(status, "Enviando…");
+    try {
+      const out = await api(`/v1/inbox/${encodeURIComponent(id)}/reply`, { method: "POST", body: { body: text.value, draft_id: draftId } });
+      say(status, SENT[out.status] || out.status, out.status === "sent" ? "done" : "error");
+      if (out.status === "sent" || out.status === "dry_run") setTimeout(route, 900);
+      else send.disabled = false;
+    } catch (err) {
+      say(status, /24-hour/.test(err.detail || "") ? "Pasaron más de 24 horas desde su último mensaje: la red ya no permite responder libremente."
+        : /not to be contacted/.test(err.detail || "") ? "Esta persona pidió que no le escribamos (escribió BAJA o STOP)." : humanError(err), "error");
+      send.disabled = false;
+    }
+  });
+
+  // Link to a patient's record, and close.
+  const options = Object.entries(patientNames).sort((a, b) => a[1].localeCompare(b[1], "es"));
+  const linkTo = el("select", { "aria-label": "Vincular a una paciente" },
+    el("option", { value: "", text: c.patient_id ? `Vinculada a ${patientName(c.patient_id)}` : "Vincular a una paciente…" }),
+    ...options.map(([pid, name]) => el("option", { value: pid, text: name })));
+  linkTo.addEventListener("change", async () => {
+    if (!linkTo.value) return;
+    try { await api(`/v1/inbox/${encodeURIComponent(id)}/patient`, { method: "PUT", body: { patient_id: linkTo.value } }); route(); } catch (err) { say(status, humanError(err), "error"); }
+  });
+  const close = el("button", { class: "btn small", type: "button", text: "Marcar como atendida" });
+  close.addEventListener("click", async () => {
+    close.disabled = true;
+    try { await api(`/v1/inbox/${encodeURIComponent(id)}/close`, { method: "POST" }); refreshBadges(); route(); } catch (err) { say(status, humanError(err), "error"); close.disabled = false; }
+  });
+
+  return el("section", { class: "card grow-2", "aria-label": "Conversación" },
+    el("div", { class: "head" },
+      el("div", { class: "row tight" }, el("span", { class: `ch ${cls}`, text: network }),
+        el("strong", { text: c.patient_id ? patientName(c.patient_id) : "Persona sin vincular" })),
+      el("div", { class: "row tight" }, c.patient_id ? link(`#paciente/${encodeURIComponent(c.patient_id)}`, "Ver ficha", "btn small") : null, close)),
+    c.attention === "crisis" ? el("div", { class: "alert", role: "alert" }, el("span", { text: "Posible crisis. Ya recibió la contención automática con el ECU 911 y la línea 171 (opción 6). Contáctala tú; la IA no sugiere respuestas aquí." })) : null,
+    c.attention === "human" ? el("div", { class: "notice", role: "note" }, el("span", { text: "Pidió hablar con una persona. Respóndele tú." })) : null,
+    !c.window_open ? el("div", { class: "notice", role: "note" }, el("span", { text: "Pasaron más de 24 horas desde su último mensaje: la red solo permite responder con plantillas aprobadas." })) : null,
+    el("div", { class: "bubbles" }, ...bubbles),
+    form,
+    el("label", { class: "field" }, "Ficha", linkTo),
+    el("p", { class: "muted", text: "Los mensajes se guardan cifrados y se borran a los 90 días. Cada lectura queda registrada." }));
+}
 
 // --- start -------------------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
