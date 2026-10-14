@@ -32,7 +32,8 @@ import json
 import os
 import re
 import struct
-from collections.abc import AsyncIterator, Iterator, Mapping
+import uuid
+from collections.abc import AsyncIterator, Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -323,6 +324,8 @@ def encode(value: Any) -> Any:
         return {"$dec": str(value)}
     if isinstance(value, bytes | bytearray | memoryview):
         return {"$b64": base64.b64encode(bytes(value)).decode()}
+    if isinstance(value, uuid.UUID):
+        return {"$uuid": str(value)}
     if isinstance(value, dict | list):
         return {"$json": value}
     raise BackupError(f"a value of type {type(value).__name__} cannot be backed up")
@@ -340,6 +343,8 @@ def decode(value: Any) -> Any:
         return Decimal(raw)
     if tag == "$b64":
         return base64.b64decode(raw)
+    if tag == "$uuid":
+        return uuid.UUID(raw)
     if tag == "$json":
         return raw
     raise BackupError(f"unknown value tag {tag!r}")
@@ -355,6 +360,8 @@ class Summary:
     counts: dict[str, int] = field(default_factory=dict)
     # Secrets carried inside the encryption; the summary shows their names only.
     secrets: dict[str, str] = field(default_factory=dict, repr=False)
+    # Tables in the database that are not the application's, left out on purpose.
+    skipped: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -364,6 +371,7 @@ class Summary:
             "rows": sum(self.counts.values()),
             "counts": self.counts,
             "secrets": sorted(self.secrets),
+            "skipped": self.skipped,
         }
 
 
@@ -390,8 +398,10 @@ async def create(
     out: IO[bytes],
     recipient: str,
     secrets: Mapping[str, str] | None = None,
+    only: Collection[str] | None = None,
 ) -> Summary:
-    """Write an encrypted backup of every table to `out`, with `secrets` inside it."""
+    """Write an encrypted backup to `out`, with `secrets` inside it: every table, or
+    those named in `only` (the application's; any other is listed as skipped)."""
     key = public_key(recipient)
     sealing = _Sealing(out, key)
     summary = Summary(created_at=utcnow().isoformat(), secrets=dict(secrets or {}))
@@ -403,6 +413,9 @@ async def create(
 
         async with engine.connect() as conn:
             tables = await _tables(conn)
+            if only is not None:
+                summary.skipped = [t.name for t in tables if t.name not in only]
+                tables = [t for t in tables if t.name in only]
             summary.revision = await _revision(conn, {t.name for t in tables})
             line(
                 {

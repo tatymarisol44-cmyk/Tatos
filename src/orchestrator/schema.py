@@ -35,7 +35,23 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
 )
 from orchestrator.db import Database, metadata
 
-__all__ = ["metadata", "prepare"]
+__all__ = ["metadata", "owned_tables", "prepare"]
+
+# Tables the platform owns but does not declare: the migration version (Alembic) and the
+# conversation checkpoints (LangGraph's Postgres saver creates and migrates its own).
+UNDECLARED = (
+    "alembic_version",
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+)
+
+
+def owned_tables() -> frozenset[str]:
+    """Every table the platform owns. A database may hold others (a provider's sample
+    tables, another project's): the backup leaves those out and names them."""
+    return frozenset(metadata.tables) | frozenset(UNDECLARED)
 
 
 async def prepare(db: Database) -> None:

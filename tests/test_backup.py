@@ -5,6 +5,7 @@ altered, or when cut short. Synthetic data only."""
 from __future__ import annotations
 
 import io
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import MetaData, select
+from sqlalchemy import MetaData, select, text
 
 import orchestrator.backup as backup
 import orchestrator.cli as cli
@@ -22,7 +23,7 @@ from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.db import Database
 from orchestrator.llm import FakeLLM
-from orchestrator.schema import prepare
+from orchestrator.schema import owned_tables, prepare
 from orchestrator.service import Orchestrator
 
 ADMIN = {"X-API-Key": "test-key"}
@@ -167,6 +168,7 @@ def test_keys_and_values() -> None:
         b"\x00\xff",
         {"$dt": "a JSON column that looks like a tag"},
         [1, {"a": 2}],
+        uuid.UUID("12345678-1234-5678-1234-567812345678"),
     ]
     for value in values:
         assert backup.decode(backup.encode(value)) == value
@@ -195,6 +197,47 @@ def test_the_command_line(
     key_file.write_text(other, encoding="ascii")
     assert cli.main([*check, "--check"]) == 1  # another key: a clear message, no traceback
     assert "does not open" in capsys.readouterr().err
+
+
+async def test_only_the_applications_tables_are_kept(source: Settings, tmp_path: Path) -> None:
+    """A database may hold tables that are not the platform's (a provider's sample tables):
+    the backup leaves them out, names them, and the restore does not need them."""
+    db = Database(source)
+    try:
+        async with db.engine.begin() as conn:
+            await conn.execute(text("CREATE TABLE goals (id TEXT PRIMARY KEY, title TEXT)"))
+            await conn.execute(text("INSERT INTO goals VALUES ('g1', 'not ours')"))
+        public, code = backup.recovery_code()
+        out = io.BytesIO()
+        summary = await backup.create(db.engine, out, public, only=owned_tables())
+    finally:
+        await db.close()
+    assert summary.skipped == ["goals"] and "goals" not in summary.counts
+    assert backup.check(io.BytesIO(out.getvalue()), code).counts == summary.counts
+    target = await _empty(source, tmp_path, "target.db")
+    restored = Database(target)
+    try:
+        loaded = await backup.restore(restored.engine, io.BytesIO(out.getvalue()), code)
+    finally:
+        await restored.close()
+    assert loaded.counts["crm_patients"] == 1
+
+
+def test_a_failed_backup_leaves_no_file(
+    source: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "get_settings", lambda: source)
+
+    async def broken(*args: Any, **kwargs: Any) -> None:
+        raise backup.BackupError("a value of type Point cannot be backed up")
+
+    monkeypatch.setattr(backup, "create", broken)
+    public, _ = backup.recovery_code()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    out = backups / "copia.agbk"
+    assert cli.main(["backup", "create", "--out", str(out), "--recipient", public]) == 1
+    assert list(backups.iterdir()) == []
 
 
 def test_a_recovery_code_is_short_safe_to_copy_and_catches_typos() -> None:

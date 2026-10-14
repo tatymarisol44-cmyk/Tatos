@@ -196,11 +196,20 @@ def _backup_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             if missing:
                 parser.error(f"--with-secret: not set in the environment: {missing}")
             secrets = {name: os.environ[name] for name in args.with_secret}
+            from orchestrator.schema import owned_tables
+
+            owned = owned_tables()
             partial = args.out.with_name(args.out.name + ".partial")
-            with partial.open("wb") as out:
-                summary = _run(
-                    _with_engine(lambda e: backup.create(e, out, args.recipient, secrets))
-                )
+            try:
+                with partial.open("wb") as out:
+                    summary = _run(
+                        _with_engine(
+                            lambda e: backup.create(e, out, args.recipient, secrets, owned)
+                        )
+                    )
+            except BaseException:
+                partial.unlink(missing_ok=True)  # no half backup is ever left behind
+                raise
             partial.replace(args.out)  # only a complete backup carries the final name
             _print(summary.to_dict())
             return 0
