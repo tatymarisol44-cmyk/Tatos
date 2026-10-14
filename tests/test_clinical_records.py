@@ -210,3 +210,23 @@ def test_reads_are_audited_without_content(
     ):
         assert action in audit
     assert "transferencia" not in audit and "figura paterna" not in audit
+
+
+def test_a_clinician_is_offered_the_entries_of_their_own_pack(client: TestClient) -> None:
+    vera = clinician(client, "dra.vera", "ec-psychologist")
+    offered = client.get("/v1/clinical/document-types", headers=vera).json()
+    by_type = {d["doc_type"]: d for d in offered}
+    assert by_type["session_note"]["access"] == "care_team"
+    assert by_type["psychotherapy_note"]["access"] == "author_only"
+    assert "diary_entry" not in by_type  # the patient writes those
+    assert "prescription" not in by_type  # a psychologist does not prescribe
+    psychiatrist = clinician(client, "dr.ruiz", "ec-psychiatrist")
+    assert "prescription" in {
+        d["doc_type"]
+        for d in client.get("/v1/clinical/document-types", headers=psychiatrist).json()
+    }
+    reception = client.post(
+        "/v1/admin/staff", json={"name": "recepcion", "roles": ["reception"]}, headers=ADMIN
+    ).json()
+    for headers in (ADMIN, {"X-API-Key": reception["key"]}):
+        assert client.get("/v1/clinical/document-types", headers=headers).status_code == 403

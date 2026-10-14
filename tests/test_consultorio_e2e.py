@@ -1,0 +1,273 @@
+"""Browser test of the staff app (/app): sign in with a personal key, complete the
+profile and hours, book a visit on a free slot of the agenda, confirm it, and see it
+on Hoy when it is today. No error and no policy violation on the page. Needs Playwright
+and Chromium; skipped otherwise. Synthetic data only."""
+
+from __future__ import annotations
+
+import asyncio
+import socket
+import sys
+import threading
+import time
+from collections.abc import Iterator
+from typing import Any
+
+import httpx
+import pytest
+
+from orchestrator.api.app import create_app
+from orchestrator.catalog import Catalog
+from orchestrator.config import Settings
+from orchestrator.llm import FakeLLM
+from orchestrator.service import Orchestrator
+
+sync_api = pytest.importorskip("playwright.sync_api")
+
+SERVICE = {"X-API-Key": "test-key"}
+
+
+@pytest.fixture
+def server(settings: Settings, catalog: Catalog) -> Iterator[str]:
+    import uvicorn
+
+    settings.tenant_packs = {"acme": "ec-psychologist"}
+    settings.practice_display_name = "Consultorio Demo"
+    app = create_app(settings, Orchestrator(settings, catalog=catalog, llm=FakeLLM()))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=srv.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 15
+    while not srv.started and time.time() < deadline:
+        time.sleep(0.05)
+    assert srv.started, "server did not start"
+    yield f"http://127.0.0.1:{port}"
+    srv.should_exit = True
+    thread.join(timeout=10)
+
+
+@pytest.fixture
+def subprocess_loop() -> Iterator[None]:
+    """Playwright's driver needs the Proactor loop on Windows (see test_console_e2e)."""
+    if sys.platform != "win32":
+        yield
+        return
+    previous = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    try:
+        yield
+    finally:
+        asyncio.set_event_loop_policy(previous)
+
+
+@pytest.fixture
+def browser(subprocess_loop: None) -> Iterator[Any]:
+    with sync_api.sync_playwright() as pw:
+        try:
+            chromium = pw.chromium.launch()
+        except Exception as exc:  # no browser installed here
+            pytest.skip(f"Chromium not available: {exc}")
+        yield chromium
+        chromium.close()
+
+
+def _staff_key(base: str) -> str:
+    resp = httpx.post(
+        f"{base}/v1/admin/staff",
+        json={"name": "dra.demo", "roles": ["admin", "owner", "reviewer"]},
+        headers=SERVICE,
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["key"])
+
+
+def _watch(page: Any) -> list[str]:
+    """Script errors and console errors (a policy violation is one). The browser also logs
+    every refused request ("Failed to load resource"): the app handles those on purpose."""
+    problems: list[str] = []
+    page.on("pageerror", lambda exc: problems.append(str(exc)))
+
+    def console(msg: Any) -> None:
+        if msg.type == "error" and not msg.text.startswith("Failed to load resource"):
+            problems.append(msg.text)
+
+    page.on("console", console)
+    return problems
+
+
+def test_sign_in_profile_hours_and_a_booking(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "p-ana", "display_name": "Ana Sintética"},
+        headers=SERVICE,
+    )
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app")
+
+    # A wrong key is refused in Spanish; the right one opens the app.
+    page.fill("#signin-key", "sk_not-a-real-key")
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#signin-status.error")
+    assert "no es válida" in page.inner_text("#signin-status")
+    page.fill("#signin-key", key)
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    assert page.inner_text("#me-name") == "dra.demo"
+    assert "Consultorio Demo" in page.inner_text("#me-practice")
+    page.wait_for_selector("text=Completa tu perfil")
+
+    # Profile, then hours every day, so this week and the next have free slots.
+    page.click("text=Completar ahora")
+    page.fill("input[placeholder^='Ej.']", "Psic. Demo Sintética")
+    page.click("text=Guardar mi perfil")
+    page.wait_for_selector("text=Guardar horario")
+    assert page.inner_text("#me-name") == "Psic. Demo Sintética"
+    for box in page.query_selector_all("fieldset input[type=checkbox]"):
+        label = box.evaluate("b => b.parentElement.textContent")
+        if "Atiendo este día" in label and not box.is_checked():
+            box.check()
+    page.click("text=Guardar horario")
+    page.wait_for_selector("text=Horario guardado")
+
+    # Next week always has free slots: book the first one for Ana and confirm it.
+    page.click("a[data-nav=agenda]")
+    page.wait_for_selector(".week-grid")
+    page.click("button[aria-label='Semana siguiente']")
+    page.wait_for_selector(".slot.f")
+    page.click(".slot.f >> nth=0")
+    page.select_option("#dialog select >> nth=0", "p-ana")
+    page.click("#dialog button[type=submit]")
+    page.wait_for_selector(".slot.w >> text=Ana Sintética")
+    page.click(".slot.w >> text=Ana Sintética")
+    page.get_by_role("button", name="Confirmar", exact=True).click()
+    page.wait_for_selector(".slot.c >> text=Ana Sintética")
+
+    visits = httpx.get(f"{server}/v1/agenda?days=21", headers=SERVICE).json()
+    assert [(v["patient_id"], v["status"]) for v in visits] == [("p-ana", "confirmed")]
+    assert visits[0]["kind"] == "Seguimiento · presencial"
+    assert not problems, problems
+
+
+def test_the_key_is_forgotten_on_sign_out(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app")
+    page.fill("#signin-key", key)
+    page.check("#signin-remember")
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    page.reload()
+    page.wait_for_selector("#app:not([hidden])")  # remembered on this computer
+    page.click("#signout")
+    page.wait_for_selector("#signin:not([hidden])")
+    stored = page.evaluate("() => [sessionStorage.length, localStorage.length]")
+    assert stored == [0, 0]
+    page.reload()
+    page.wait_for_selector("#signin:not([hidden])")
+    assert not problems, problems
+
+
+def _signed_in(browser: Any, server: str, key: str) -> tuple[Any, list[str]]:
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app")
+    page.fill("#signin-key", key)
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    return page, problems
+
+
+def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    body = {
+        "professional_id": "dra.demo",
+        "display_name": "Psic. Demo",
+        "pack_id": "ec-psychologist",
+        "staff_id": "dra.demo",
+    }
+    httpx.post(f"{server}/v1/admin/professionals", json=body, headers=SERVICE)
+    page, problems = _signed_in(browser, server, key)
+
+    # A new patient, from the list.
+    page.click("a[data-nav=pacientes]")
+    page.wait_for_selector("text=Aún no hay pacientes")
+    page.click("text=Nuevo paciente >> nth=-1")
+    page.fill("form input[type=text]", "Lucía Sintética")
+    page.fill("form input[type=tel]", "0991112233")
+    page.click("text=Crear paciente")
+    page.wait_for_selector("h1:has-text('Lucía Sintética')")
+    assert "0991112233" in page.inner_text("#view")
+    page.wait_for_selector("text=Borrador automático")  # the summary before a session
+
+    # A session note in the record, then a correction that keeps the original.
+    page.get_by_role("tab", name="Historia").click()
+    page.wait_for_selector("text=Nueva entrada")
+    page.fill("textarea", "Primera sesión: motivo de consulta, ansiedad sintética.")
+    page.click("text=Guardar en la historia")
+    page.wait_for_selector("article >> text=Primera sesión")
+    page.click("article >> text=Corregir")
+    page.fill("textarea", "Primera sesión: motivo de consulta, ansiedad leve sintética.")
+    page.click("text=Guardar en la historia")
+    page.wait_for_selector("article >> text=ansiedad leve")
+    assert page.locator("article").count() == 2
+    assert page.locator("article >> text=Corrección").count() == 1
+
+    # A document, uploaded and listed.
+    page.get_by_role("tab", name="Documentos").click()
+    page.wait_for_selector("text=Subir un documento")
+    page.set_input_files(
+        "input[type=file]",
+        files=[
+            {
+                "name": "consentimiento.pdf",
+                "mimeType": "application/pdf",
+                "buffer": b"%PDF-1.7 sintetico",
+            }
+        ],
+    )
+    page.fill("input[placeholder^='Ej.']", "Consentimiento firmado")
+    page.click("text=Subir documento")
+    page.wait_for_selector(".doc >> text=Consentimiento firmado")
+
+    # A test template still holds placeholder items: it cannot be sent yet.
+    httpx.post(
+        f"{server}/v1/clinical/instruments/from-template",
+        json={"template": "phq9"},
+        headers={"X-API-Key": key},
+    )
+    page.get_by_role("tab", name="Tests").click()
+    page.wait_for_selector("text=Enviar un test a su app")
+    page.select_option("form select", index=1)
+    page.click("text=Enviar a su app")
+    page.wait_for_selector("text=pega el texto oficial")
+    assert not problems, problems
+
+
+def test_a_slow_screen_never_paints_over_a_newer_one(server: str, browser: Any) -> None:
+    """Hoy's data is held back while the person moves to Pacientes: when it finally
+    arrives, it must not replace the screen she is on (found under load in CI)."""
+    key = _staff_key(server)
+    page = browser.new_page()
+    problems = _watch(page)
+    held: list[Any] = []
+    page.route("**/v1/agenda?days=1", lambda route: held.append(route))
+    page.goto(f"{server}/app")
+    page.fill("#signin-key", key)
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    page.wait_for_function("() => true")
+    assert held, "Hoy asked for today's agenda"
+    page.click("a[data-nav=pacientes]")
+    page.wait_for_selector("text=Aún no hay pacientes")
+    for route in held:
+        route.continue_()
+    page.wait_for_timeout(500)
+    assert "Aún no hay pacientes" in page.inner_text("#view")
+    assert "Citas de hoy" not in page.inner_text("#view")
+    assert not problems, problems

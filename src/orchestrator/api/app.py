@@ -30,6 +30,7 @@ from orchestrator.api import (
     patients,
     privacy,
     publications,
+    session,
     social,
 )
 from orchestrator.api import agenda as agenda_api
@@ -183,6 +184,7 @@ def create_app(
     app.include_router(patients.router)
     app.include_router(channels.router)
     app.include_router(inbox.router)
+    app.include_router(session.router)
     app.include_router(social.router)
     app.include_router(publications.router)
     app.include_router(establishment.router)
@@ -230,6 +232,11 @@ def create_app(
     @app.get("/", include_in_schema=False)
     async def console() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html", headers=UI_HEADERS)
+
+    @app.get("/app", include_in_schema=False)
+    async def staff_app() -> FileResponse:
+        """The practice's app for its staff, in Spanish (same API, same strict CSP)."""
+        return FileResponse(WEB_DIR / "consultorio.html", headers=UI_HEADERS)
 
     @app.get("/media/{name:path}", include_in_schema=False)
     async def signed_media(

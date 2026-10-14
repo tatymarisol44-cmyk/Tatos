@@ -708,6 +708,8 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/inbox"): ("/v1/inbox", None),
+        ("GET", "/v1/session"): ("/v1/session", None),
+        ("GET", "/v1/clinical/document-types"): ("/v1/clinical/document-types", None),
         ("GET", "/v1/inbox/{conversation_id}"): (f"/v1/inbox/{i['conversation']}", None),
         ("POST", "/v1/inbox/{conversation_id}/draft"): (
             f"/v1/inbox/{i['conversation']}/draft",
@@ -792,6 +794,7 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
         ),
         ("GET", "/v1/me/calendar-link"): ("/v1/me/calendar-link", None),
         ("GET", "/v1/me/tests"): ("/v1/me/tests", None),
+        ("GET", "/v1/me/practice"): ("/v1/me/practice", None),
         ("POST", "/v1/me/tests/{assignment_id}"): (
             f"/v1/me/tests/{acme.ids['assignment']}",
             {"answers": {"a": 1}},

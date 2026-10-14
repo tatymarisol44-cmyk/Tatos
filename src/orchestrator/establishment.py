@@ -134,6 +134,19 @@ class Professionals:
         async with self.db.engine.connect() as conn:
             return [_row(r) for r in await conn.execute(query)]
 
+    async def for_staff(self, tenant: str, staff_id: str) -> dict[str, Any] | None:
+        """The active professional a staff key belongs to, if any."""
+        query = select(professionals).where(
+            and_(
+                professionals.c.tenant == tenant,
+                professionals.c.staff_id == staff_id,
+                professionals.c.active.is_(True),
+            )
+        )
+        async with self.db.engine.connect() as conn:
+            row = (await conn.execute(query)).first()
+        return _row(row) if row is not None else None
+
     async def disable(self, tenant: str, professional_id: str, actor: str) -> bool:
         query = (
             update(professionals)

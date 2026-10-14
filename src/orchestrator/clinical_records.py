@@ -77,6 +77,16 @@ class ClinicalRecords:
         professional_id = found.professional_id if found else None
         return professional_id, await self.professionals.pack_for(principal.tenant, professional_id)
 
+    async def document_types(self, principal: Principal) -> list[dict[str, Any]]:
+        """What this clinician may write, from their own pack (a patient's diary entry is
+        written by the patient, so it is not offered)."""
+        _, pack = await self._author_pack(principal)
+        return [
+            {"doc_type": d.id, "title": d.title, "kind": d.kind, "access": d.access}
+            for d in pack.documents
+            if d.kind != "patient_entry"
+        ]
+
     def _visible(self, principal: Principal) -> Any:
         """Rows this principal may see: their own psychotherapy notes, and every other
         entry if they are a clinician."""

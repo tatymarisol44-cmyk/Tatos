@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consultorio</title>
+  <link rel="stylesheet" href="/static/ui.css">
+  <script src="/static/consultorio.js" defer></script>
+</head>
+<body>
+  <section id="signin" class="signin" hidden>
+    <form id="signin-form" class="card" novalidate>
+      <div class="brand"><span class="avatar" aria-hidden="true">✚</span><h1 class="title">Consultorio</h1></div>
+      <p class="sub">Entra con tu llave personal. Es la que te entregaron al crear tu cuenta; no la compartas con nadie.</p>
+      <label class="field">Tu llave personal
+        <input id="signin-key" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="check"><input id="signin-remember" type="checkbox"> Recordarme en esta computadora</label>
+      <button class="btn primary" type="submit">Entrar</button>
+      <p id="signin-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <div id="app" class="layout" hidden>
+    <nav class="nav" aria-label="Menú principal">
+      <div class="brand">
+        <span id="me-initials" class="avatar" aria-hidden="true"></span>
+        <span><strong id="me-name"></strong><br><span id="me-practice" class="muted"></span></span>
+      </div>
+      <a href="#hoy" data-nav="hoy">Hoy <span id="badge-alerts" class="count" hidden></span></a>
+      <a href="#agenda" data-nav="agenda">Agenda</a>
+      <a href="#pacientes" data-nav="pacientes">Pacientes</a>
+      <a href="#mensajes" data-nav="mensajes">Mensajes <span id="badge-unread" class="count" hidden></span></a>
+      <span class="item">Marketing <span class="soon">Fase 2</span></span>
+      <a href="#ajustes" data-nav="ajustes">Ajustes</a>
+      <div class="bottom">
+        <button id="signout" class="btn small" type="button">Salir</button>
+      </div>
+    </nav>
+    <main id="view" class="content" tabindex="-1"></main>
+  </div>
+
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+</body>
+</html>

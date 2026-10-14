@@ -127,6 +127,23 @@ class BookIn(BaseModel):
     starts_at: AwareDatetime
 
 
+@router.get("/practice")
+async def my_practice(request: Request, p: Me) -> dict[str, Any]:
+    """The practice's name and its active professionals (names only), for the patient's
+    app to show and to book with."""
+    o = orch(request)
+    team = await o.professionals.list(p.tenant)
+    return {
+        "practice": o.settings.practice_display_name,
+        "timezone": o.settings.clinic_timezone,
+        "professionals": [
+            {"professional_id": t["professional_id"], "display_name": t["display_name"]}
+            for t in team
+            if t["active"]
+        ],
+    }
+
+
 @router.get("/slots")
 async def my_slots(
     request: Request,

@@ -40,6 +40,12 @@ def service(request: Request) -> ClinicalRecords:
     return request.app.state.orchestrator.clinical  # type: ignore[no-any-return]
 
 
+@router.get("/document-types")
+async def document_types(request: Request, p: Clinician) -> list[dict[str, Any]]:
+    """The entries this clinician may write, from their own profession pack."""
+    return await service(request).document_types(p)
+
+
 @router.post("/patients/{patient_id}/documents", status_code=status.HTTP_201_CREATED)
 async def write_document(
     body: DocumentIn, patient_id: PatientId, request: Request, p: Clinician
