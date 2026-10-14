@@ -21,7 +21,7 @@ software de gestión de consultorio, y solo para estas finalidades:
    Responsable registre.
 2. Gestionar la agenda, las citas y los recordatorios a pacientes.
 3. Responder mensajes de pacientes por los canales que el Responsable conecte (WhatsApp,
-   Telegram), con las reglas descritas en el Anexo A.
+   Instagram, Facebook, Telegram), con las reglas descritas en el Anexo A.
 4. Publicar contenido de marketing **que no contiene datos de pacientes** y medir campañas solo con
    pacientes que dieron su consentimiento.
 5. Llevar el registro de auditoría de accesos.
@@ -129,7 +129,12 @@ Responsable (`registro-actividades.md`).
   fijo con ECU 911 y la línea 171 opción 6, y se alerta en paralelo al profesional de guardia.
 - El asistente no da consejo médico: un control automático descarta cualquier respuesta que
   mencione medicación, dosis, diagnóstico, técnicas terapéuticas o enlaces.
-- El texto de los mensajes de WhatsApp no se almacena.
+- Los mensajes de WhatsApp, Instagram y Facebook se guardan **cifrados** (AES-256-GCM, con una
+  clave que no está en la base de datos ni en sus copias) durante 90 días, en una bandeja que solo
+  lee el personal clínico; cada lectura se audita sin contenido.
+- La inteligencia artificial solo **sugiere** respuestas en la bandeja; nada se envía sin que una
+  persona lo apruebe. En Instagram y Facebook las respuestas automáticas son solo los textos fijos
+  (crisis, "te escribirá una persona", baja).
 - Las reservas las hace el código, nunca el modelo, y solo en horarios libres reales.
 
 ## Anexo B. Subencargados autorizados

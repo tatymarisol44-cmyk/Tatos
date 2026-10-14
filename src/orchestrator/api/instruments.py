@@ -143,3 +143,41 @@ async def get_result(result_id: ResultId, request: Request, p: PatientClinician)
         return await service(request).result(p, result_id)
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "result not found") from exc
+
+
+# --- sent to the patient, answered in their app (RF-TST-03) -------------------------------
+
+
+class AssignIn(BaseModel):
+    instrument_id: str = Field(pattern=r"^[\w-]{1,40}$")
+    due_days: int | None = Field(default=None, ge=1, le=90, description="Answer within N days")
+
+
+@router.post("/patients/{patient_id}/assignments", status_code=status.HTTP_201_CREATED)
+async def assign(
+    patient_id: PatientId, body: AssignIn, request: Request, p: PatientClinician
+) -> dict[str, Any]:
+    """Send a self-report instrument to the patient's app. The patient answers it there and
+    never sees the score; an alert answer opens a crisis alert at once."""
+    try:
+        return await service(request).assign(p, patient_id, body.instrument_id, body.due_days)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient or instrument not found") from exc
+    except InstrumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.get("/patients/{patient_id}/assignments")
+async def list_assignments(
+    patient_id: PatientId, request: Request, p: PatientClinician
+) -> list[dict[str, Any]]:
+    try:
+        return await service(request).assignments(p, patient_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
+
+
+@router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_assignment(assignment_id: ResultId, request: Request, p: PatientClinician) -> None:
+    if not await service(request).cancel_assignment(p, assignment_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no pending assignment with this id")

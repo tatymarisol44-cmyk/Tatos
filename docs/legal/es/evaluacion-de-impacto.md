@@ -17,10 +17,10 @@ legales y plazos: `registro-actividades.md`.
 
 | Principio | Cómo se cumple |
 |---|---|
-| Minimización | Los mensajes de WhatsApp no se guardan; los recordatorios no llevan contenido clínico; la base de conocimiento rechaza documentos con cédulas o tarjetas; la memoria del asistente es un vocabulario cerrado de preferencias, no texto libre |
+| Minimización | Los mensajes de WhatsApp, Instagram y Facebook se guardan cifrados 90 días y solo los lee el personal clínico; los recordatorios no llevan contenido clínico; la base de conocimiento rechaza documentos con cédulas o tarjetas; la memoria del asistente es un vocabulario cerrado de preferencias, no texto libre |
 | Limitación de la finalidad | Marketing y analítica solo con consentimiento; los datos clínicos nunca entran a campañas ni a la búsqueda semántica |
 | Exactitud | El paciente puede corregir sus datos; los pedidos de corrección se responden en 15 días |
-| Limitación de la conservación | Conversaciones no clínicas borradas a los 90 días; marketing borrado al retirar consentimiento; analítica anonimizada |
+| Limitación de la conservación | Conversaciones no clínicas y mensajes de la bandeja borrados a los 90 días; marketing borrado al retirar consentimiento; analítica anonimizada |
 | Seguridad | Anexo C del contrato de encargo |
 | Transparencia | Aviso de privacidad previo; respuestas de IA marcadas como tales |
 
@@ -40,7 +40,8 @@ Escala: probabilidad e impacto de 1 (bajo) a 3 (alto). Riesgo = probabilidad × 
 | R8 | Edición encubierta de la auditoría | 1 | 2 | Cadena de hash con anclas en almacenamiento inmutable | Bajo (1×2) |
 | R9 | Marketing invasivo o engañoso a personas vulnerables | 2 | 2 | Consentimiento expreso; aprobación humana de cada publicación; frases prohibidas por profesión; tope de contactos; STOP | Bajo (1×2), sujeto a la revisión de publicidad (L5) |
 | R10 | Reidentificación de datos "anonimizados" | 2 | 3 | Anonimización con eliminación del vínculo (no hash); prueba de reidentificación; **no se usan datos de salud anonimizados sin autorización de la SPDP** (Art. 31.3) | Bajo (1×3) |
-| R11 | Mensajes a números equivocados | 2 | 2 | Coincidencia exacta y única del número; números desconocidos pasan a una persona | Bajo (1×2) |
+| R11 | Mensajes a números equivocados | 2 | 2 | Coincidencia exacta y única del número; números desconocidos pasan a una persona; un identificador de Instagram o Facebook nunca se compara con teléfonos | Bajo (1×2) |
+| R12 | Lectura de los mensajes de la bandeja por quien no debe (copia de la base, personal no clínico) | 2 | 3 | Texto y remitente cifrados (AES-256-GCM, clave fuera de la base y de sus copias); solo el rol clínico lee; lecturas auditadas; borrado a los 90 días | Bajo (1×3) |
 
 ## 4. Medidas pendientes antes del primer paciente real
 

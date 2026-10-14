@@ -253,12 +253,32 @@ class WhatsAppAssistant:
             if offer and int(choice.group(1)) <= len(offer):
                 return await self._book(tenant, key, patient, offer[int(choice.group(1)) - 1])
         slots = await self._slots(tenant, patient["id"] if patient else None)
-        context = await self._context(tenant, text, patient, slots)
+        reply = await self._write(tenant, await self._context(tenant, text, patient, slots))
+        if reply is None:
+            return None, False  # the fixed welcome text answers instead
+        await self._save_offer(tenant, key, slots)
+        return reply, False
+
+    async def draft(self, tenant: str, text: str, phone: str | None = None) -> str | None:
+        """A suggested reply for the inbox (ADR 0023): the same model, prompt and checks,
+        but never sent by itself and offering no numbered times (only WhatsApp books by
+        number). The patient is recognised by `phone` only: an Instagram or Messenger id is
+        a number too, and its last digits must never be taken for someone's phone. None
+        when no safe suggestion came out."""
+        patient = await self.patient_for(tenant, phone) if phone else None
+        context = await self._context(
+            tenant, text, patient, [], no_slots="(los horarios los propone la profesional)"
+        )
+        return await self._write(tenant, context)
+
+    async def _write(self, tenant: str, context: str) -> str | None:
+        """The model's answer, or None when the budget is spent, the model is down or the
+        answer fails the deterministic checks (unsafe_reason)."""
         if self.spend is not None:
             try:
                 await self.spend.check(tenant)
             except BudgetExceeded:
-                return None, False  # the fixed welcome text answers instead
+                return None
         try:
             with ledger.metered() as entries:
                 result = await self.llm.complete(
@@ -273,17 +293,16 @@ class WhatsAppAssistant:
                     max_tokens=400,
                     temperature=0.4,
                 )
-        except Exception as exc:  # LLMUnavailable included: the fixed text answers instead
+        except Exception as exc:  # LLMUnavailable included
             log.warning("whatsapp assistant unavailable: %s", type(exc).__name__)
-            return None, False
+            return None
         if self.spend is not None:
             await self.spend.charge(tenant, ledger.summarize(entries))
         reply = result.text.strip()
         if reason := unsafe_reason(reply):
             log.warning("whatsapp assistant answer withheld: %s", reason)
-            return None, False
-        await self._save_offer(tenant, key, slots)
-        return reply, False
+            return None
+        return reply
 
     async def _context(
         self,
@@ -291,16 +310,14 @@ class WhatsAppAssistant:
         text: str,
         patient: dict[str, Any] | None,
         slots: list[dict[str, Any]],
+        no_slots: str = "(sin horarios libres)",
     ) -> str:
         try:
             chunks = await self.knowledge.search(tenant, text, k=3)
         except Exception:
             chunks = []
         info = "\n".join(f"- {c.title}: {c.text}" for c in chunks) or "(sin información adicional)"
-        horarios = (
-            "\n".join(f"{n}) {s['local']}" for n, s in enumerate(slots, 1))
-            or "(sin horarios libres)"
-        )
+        horarios = "\n".join(f"{n}) {s['local']}" for n, s in enumerate(slots, 1)) or no_slots
         who = "(número no registrado)"
         if patient:
             visit = await self._next_visit(tenant, patient["id"])

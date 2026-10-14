@@ -19,6 +19,7 @@ from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
+from orchestrator.briefing import Briefing
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
@@ -45,6 +46,7 @@ from orchestrator.governance import (
 from orchestrator.graph import build_graph
 from orchestrator.guardrails import redact_pii
 from orchestrator.inbound import InboundService
+from orchestrator.inbox import InboxService
 from orchestrator.insights import InsightsService
 from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
@@ -58,6 +60,7 @@ from orchestrator.publishing import PublicationService
 from orchestrator.reminders import Reminders
 from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
+from orchestrator.self_report import SelfReports
 from orchestrator.social import SocialAccounts
 from orchestrator.spend import Spend
 from orchestrator.subject_rights import SubjectRights
@@ -208,6 +211,17 @@ class Orchestrator:
         self.inbound.assistant = WhatsAppAssistant(
             self.db, self.llm, self.knowledge, self.agenda, self.crm, settings, self.spend
         )
+        # The inbox (ADR 0023): channels record into it; the assistant drafts for it.
+        self.inbox = InboxService(self.db, self.audit, settings)
+        self.inbox.inbound = self.inbound
+        self.inbox.assistant = self.inbound.assistant
+        self.inbound.inbox = self.inbox
+        self.briefing = Briefing(
+            self.followup, self.clinical, self.instruments, self.inbox, self.audit, settings
+        )
+        self.self_reports = SelfReports(
+            self.db, self.instruments, self.inbound, self.oncall, settings
+        )
         self.rights = SubjectRights(
             self,
             self.subject_threads,
@@ -219,6 +233,7 @@ class Orchestrator:
             self.instruments,
             self.clinical_files,
             self.campaigns,
+            self.inbox,
             self.reviews,
             self.audit,
         )
@@ -379,6 +394,10 @@ class Orchestrator:
             "threads": await self.purge_threads(older_than, dry_run=dry_run),
             "memory_facts": await self.memory.store.purge_expired(utcnow(), dry_run=dry_run),
             "knowledge_leftover_versions": await self.knowledge.reconcile(dry_run=dry_run),
+            # Its own period (INBOX_RETENTION_DAYS), not the threads' one.
+            "inbox_messages": await self.inbox.purge(
+                timedelta(days=self.settings.inbox_retention_days), dry_run=dry_run
+            ),
         }
 
     async def purge_threads(self, older_than: timedelta, dry_run: bool = False) -> int:

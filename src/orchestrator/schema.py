@@ -22,6 +22,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     establishment,
     governance,
     inbound,
+    inbox,
     instruments,
     knowledge,
     migrate,

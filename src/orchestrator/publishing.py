@@ -11,13 +11,19 @@ with its SHA-256 and there is no edit; to change anything, cancel and create ano
 * Without the account's secret the publication runs dry: recorded, never sent.
 * A transport error after the request may have reached the platform: `uncertain`, never
   retried automatically (as the campaign outbox does).
-* Every step is in the hash-chained audit log."""
+* Every step is in the hash-chained audit log.
+* **Calendar (SRS RF-PUB-04).** A publication may be scheduled for a date and time. The
+  worker publishes it then, only if a person approved it by then (scheduling never
+  replaces the approval); one still waiting shows as overdue in the calendar. The same
+  atomic claim keeps it to one publication on any number of replicas."""
 
 from __future__ import annotations
 
 import asyncio
+import builtins
 import tempfile
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,6 +36,7 @@ from sqlalchemy import (
     String,
     Table,
     and_,
+    func,
     insert,
     select,
     update,
@@ -37,7 +44,7 @@ from sqlalchemy import (
 
 from orchestrator import creatives
 from orchestrator.config import Settings
-from orchestrator.db import Database, metadata, utcnow
+from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.establishment import ProfessionalError
 from orchestrator.governance import AuditLog
 from orchestrator.media_store import MediaStore, object_name
@@ -79,7 +86,12 @@ publications = Table(
     Column("approved_by", String(128), nullable=True),
     Column("approved_at", DateTime(timezone=True), nullable=True),
     Column("published_at", DateTime(timezone=True), nullable=True),
+    Column("scheduled_for", DateTime(timezone=True), nullable=True, index=True),
 )
+
+SYSTEM_ACTOR = "system:calendar"
+MAX_AHEAD = timedelta(days=365)
+CALENDAR_SPAN = timedelta(days=93)
 
 
 class PublicationError(ValueError):
@@ -295,6 +307,94 @@ class PublicationService:
         if not done:
             raise PublicationError(f"cannot cancel a publication that is {current['status']}")
         return await self.get(tenant, publication_id)
+
+    # --- the calendar (RF-PUB-04) -----------------------------------------------------------
+
+    async def schedule(
+        self, tenant: str, publication_id: str, actor: str, at: datetime | None
+    ) -> dict[str, Any]:
+        """Put the publication on the calendar (`None` takes it off). It is published at
+        that time only once approved; a publication already out cannot be moved."""
+        now = utcnow()
+        if at is not None and not now < at <= now + MAX_AHEAD:
+            raise PublicationError("schedule it in the future, within a year")
+        current = await self.get(tenant, publication_id)
+        query = (
+            update(publications)
+            .where(
+                self._where(
+                    tenant,
+                    publication_id,
+                    publications.c.status.in_(("pending_approval", "approved")),
+                )
+            )
+            .values(scheduled_for=at)
+        )
+        async with self.db.engine.begin() as conn:
+            if (await conn.execute(query)).rowcount != 1:
+                raise PublicationError(f"cannot schedule a publication that is {current['status']}")
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "publication.scheduled" if at else "publication.unscheduled",
+                f"publication/{publication_id}",
+                details={"at": at.isoformat() if at else None},
+            )
+        return await self.get(tenant, publication_id)
+
+    async def calendar(
+        self, tenant: str, start: datetime, end: datetime
+    ) -> builtins.list[dict[str, Any]]:
+        """Publications scheduled or published between `start` and `end`, by date. An
+        `overdue` one reached its time without an approval: it waits for a person."""
+        if not start < end <= start + CALENDAR_SPAN:
+            raise PublicationError("ask for a period of up to three months")
+        when = func.coalesce(publications.c.published_at, publications.c.scheduled_for)
+        query = (
+            select(publications)
+            .where(
+                and_(
+                    publications.c.tenant == tenant,
+                    publications.c.status != "cancelled",
+                    when >= start,
+                    when < end,
+                )
+            )
+            .order_by(when, publications.c.publication_id)
+        )
+        now = utcnow()
+        async with self.db.engine.connect() as conn:
+            rows = [_row(r) for r in await conn.execute(query)]
+        for row in rows:
+            row["date"] = aware(row["published_at"] or row["scheduled_for"])
+            row["overdue"] = row["status"] == "pending_approval" and row["date"] <= now
+        return rows
+
+    async def publish_due(self, limit: int = 10) -> int:
+        """The worker's pass: approved publications whose time has come, every tenant. A
+        replica that loses the claim to another simply moves on."""
+        query = (
+            select(publications.c.tenant, publications.c.publication_id)
+            .where(
+                and_(
+                    publications.c.status == "approved",
+                    publications.c.scheduled_for <= utcnow(),
+                )
+            )
+            .order_by(publications.c.scheduled_for)
+            .limit(limit)
+        )
+        async with self.db.engine.connect() as conn:
+            due = list(await conn.execute(query))
+        published = 0
+        for row in due:
+            try:
+                await self.publish(row.tenant, row.publication_id, SYSTEM_ACTOR)
+                published += 1
+            except PublicationError:
+                continue  # claimed by another replica, or cancelled meanwhile
+        return published
 
     async def publish(self, tenant: str, publication_id: str, actor: str) -> dict[str, Any]:
         current = await self.get(tenant, publication_id)

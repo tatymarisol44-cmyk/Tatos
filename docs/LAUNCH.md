@@ -16,12 +16,15 @@ All of these run in CI on every commit:
 | Backpressure and the measured breaking point | `tests/test_backpressure.py`, `docs/load-test.md` |
 | SLOs, burn-rate alerts (unit-tested), runbooks | `docs/slo.md`, `deploy/monitoring/` |
 | Backup and restore drill; knowledge index rebuilt from the database | `tests/test_backup_restore.py`, `tests/test_knowledge.py` |
+| Free profile: the practice's own encrypted backup, away from Supabase, with a restore drill | `tests/test_backup.py`, `docs/runbooks/backup.md` |
 | WCAG 2.1 AA (axe), keyboard use, AI provenance on every answer | `tests/test_console_e2e.py`, `docs/accessibility.md` |
 | Architecture rules on the import graph | `tests/test_architecture.py` |
 | Supply chain: signed images, SBOM, provenance, history secret scan, pinned actions | `.github/workflows/ci.yml` |
 | Infrastructure as code, validated | `deploy/terraform/` |
 | Clinical workspace: tests designed by the psychologist, clinical files, follow-up (ADR 0019) | `tests/test_instruments.py`, `tests/test_clinical_files.py`, `tests/test_followup.py` |
 | Agenda without double booking, calendar feeds, reminders, WhatsApp assistant without medical advice (ADR 0020) | `tests/test_agenda.py`, `tests/test_reminders.py`, `tests/test_whatsapp_assistant.py` |
+| One sealed inbox for WhatsApp, Instagram and Facebook; the AI drafts, a person sends (ADR 0023) | `tests/test_inbox.py` |
+| Summary before a session, by code and never from a note's text; tests answered by the patient in the app, crisis alert on an alert answer | `tests/test_briefing.py`, `tests/test_self_report.py` |
 | Monthly model spend cap per practice | `tests/test_spend.py` |
 | One-command MVP demo in Codespaces | `scripts/demo-codespaces.sh`, `tests/test_demo.py`, `docs/DEMO.md` |
 | Clinical data is need to know: admin and service keys cannot read it | `tests/test_need_to_know.py` |
@@ -72,9 +75,10 @@ The path taken on 2026-10-12, because Oracle asks for a card: Render free web se
    - LOPDP basis and data residency;
    - the processing agreement with each clinic;
    - health advertising rules;
-   - deadlines for breach notification.
+   - deadlines for breach notification;
+   - the inbox keeps patients' messages sealed for 90 days (ADR 0023): the privacy notice and the processing agreement now say so.
 4. Contracts with the AI providers: a data processing agreement, and zero data retention where available. This is **required before real patients use WhatsApp**, because the assistant sends the message text to the model (ADR 0020).
-5. Meta approvals for the two WhatsApp templates: the appointment reminder and the staff alert.
+5. Meta approvals for the two WhatsApp templates (the appointment reminder and the staff alert), and App Review of the messaging permissions for Instagram and Messenger (`instagram_business_manage_messages`, `pages_messaging`).
 
 ## 6. Pilot (owner + one clinic)
 

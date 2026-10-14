@@ -208,7 +208,8 @@ def test_first_run_creates_the_free_service_and_prints_no_secret(
     assert env["PSEUDONYM_KEY"].get("generateValue") is True
     # The real address is written back, then that release is the one followed.
     assert ("PUT", "/v1/services/srv-1/env-vars/PUBLIC_BASE_URL", {"value": URL}) in fake.calls
-    assert fake.calls[-1][1] == "/v1/services/srv-1/deploys/dep-2"
+    followed = [path for method, path, _ in fake.calls if "/deploys/" in path]
+    assert followed[-1] == "/v1/services/srv-1/deploys/dep-2"
     out = capsys.readouterr()
     printed = out.out + out.err
     service_key = setup.read_values(tmp_path / "agency-render.env")["SERVICE_KEY"]
@@ -217,9 +218,16 @@ def test_first_run_creates_the_free_service_and_prints_no_secret(
 
 
 @pytest.mark.usefixtures("services_answer")
-def test_a_rerun_updates_and_keeps_the_generated_secrets(tmp_path: Path) -> None:
+def test_a_rerun_updates_and_keeps_the_generated_secrets(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     fake = FakeRender(existing=True)
-    assert setup.main([str(_write(tmp_path))], render=fake.client(), poll=0) == 0
+    secrets_file = _write(tmp_path)
+    assert setup.main([str(secrets_file)], render=fake.client(), poll=0) == 0
+    # The pseudonym key is copied to the private file (to read a restored backup), and
+    # never printed.
+    assert "PSEUDONYM_KEY=kept-pseudonym-key" in secrets_file.read_text(encoding="utf-8")
+    assert "kept-pseudonym-key" not in capsys.readouterr().out
     put = next(
         body for method, path, body in fake.calls if path.endswith("/env-vars") and method == "PUT"
     )

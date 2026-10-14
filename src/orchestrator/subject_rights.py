@@ -15,6 +15,7 @@ from orchestrator.clinical_files import ClinicalFiles
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.crm import CrmService
 from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, SubjectThreads
+from orchestrator.inbox import InboxService
 from orchestrator.instruments import Instruments
 from orchestrator.memory import SemanticMemory
 
@@ -42,6 +43,7 @@ class SubjectRights:
         instruments: Instruments,
         files: ClinicalFiles,
         campaigns: CampaignService,
+        inbox: InboxService,
         reviews: ReviewQueue,
         audit: AuditLog,
     ) -> None:
@@ -55,6 +57,7 @@ class SubjectRights:
         self.instruments = instruments
         self.files = files
         self.campaigns = campaigns
+        self.inbox = inbox
         self.reviews = reviews
         self.audit = audit
 
@@ -84,8 +87,10 @@ class SubjectRights:
             "crm": await self.crm.export_subject(tenant, subject_id),
             "clinical_record": await self.clinical.export_subject(tenant, subject_id),
             "instrument_results": await self.instruments.export_subject(tenant, subject_id),
+            "instrument_assignments": await self.instruments.export_assignments(tenant, subject_id),
             "clinical_files": await self.files.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
+            "inbox_conversations": await self.inbox.export_subject(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],
             "access_keys": access,
@@ -108,7 +113,8 @@ class SubjectRights:
 
     async def erase(self, tenant: str, subject_id: str, actor: str) -> dict[str, Any]:
         """Right to erasure, store by store. Conversations (including drafts waiting for a
-        review), memory, consents, marketing history, contact data and access keys go.
+        review and the inbox conversations linked to the patient), memory, consents,
+        marketing history, contact data and access keys go.
         What stays is listed in `retained` with its basis: the clinical record (restricted,
         GDPR Art. 17(3)(b)/(c), HIPAA and local retention rules) and the audit trail that
         proves the erasure happened."""
@@ -130,6 +136,7 @@ class SubjectRights:
             "memory_facts": await self.memory.erase(tenant, subject_id),
             "consents": await self.consents.erase(tenant, subject_id),
             "campaign_messages_anonymised": await self.campaigns.erase_subject(tenant, subject_id),
+            "inbox_conversations": await self.inbox.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
         }
         result["retained"] = [

@@ -13,6 +13,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "google-cloud-storage" },
     { name = "langgraph" },
@@ -57,6 +58,7 @@ load = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "alembic", specifier = ">=1.14" },
+    { name = "cryptography", specifier = ">=46" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "google-cloud-storage", specifier = ">=2.18" },
     { name = "langgraph", specifier = ">=0.2.60" },

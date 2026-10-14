@@ -37,5 +37,6 @@ clinics' crisis on-call, which reaches each practice's own professionals (ADR 00
 | [no-ready-replicas.md](no-ready-replicas.md) | ApiNoReadyReplicas, ApiPodsRestarting |
 | [retention-job.md](retention-job.md) | RetentionJobFailed, RetentionJobNotRunning |
 | [restore.md](restore.md) | restoring the database from a backup (RPO/RTO) |
+| [backup.md](backup.md) | the free profile's own encrypted backup: keys, daily task, restore |
 
 The commands assume namespace `agency` and the `gke` overlay.

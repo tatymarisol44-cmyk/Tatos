@@ -105,7 +105,9 @@ $k = 'svc_' + -join ($b | ForEach-Object { $_.ToString('x2') })
    | `PUBLIC_BASE_URL` | `https://agency-api.onrender.com` (correct it after step 3 if Render adds a suffix) |
    | `LLM_BACKEND` | `fake` (fixed texts) until Anthropic's DPA is signed |
 
-   `PSEUDONYM_KEY`, `META_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` are created by Render.
+   `PSEUDONYM_KEY`, `META_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` are created by Render. Copy `PSEUDONYM_KEY` to your private file too: the inbox messages are sealed with a key derived from it (ADR 0023), and without it they cannot be read again.
+
+   Later, when the Meta app exists: its webhook is `https://<service>.onrender.com/v1/channels/meta`, with `WHATSAPP_VERIFY_TOKEN` as the verify token, subscribed to `messages` for WhatsApp, the Page (Messenger) and Instagram. Put the app's secret in `META_APP_SECRET`.
 3. **Apply.** The first start migrates the database and indexes the catalog: a few minutes at 0.1 CPU. The service turns *Live* when `/readyz` answers.
 4. Check: open `https://<service>.onrender.com/readyz` (`"status": "ready"`), then the console at `https://<service>.onrender.com/` with the service key.
 
@@ -129,7 +131,11 @@ Each green `main` is then deployed after your approval, by digest, with its CI s
 
 To roll back: Actions → Deploy → *Run workflow* with an earlier digest.
 
-## 8. Limits of the free profile
+## 8. Your own backup (15 minutes, once)
+
+Supabase's free plan keeps backups you cannot download. Keep your own, encrypted, on your computer: [runbooks/backup.md](runbooks/backup.md).
+
+## 9. Limits of the free profile
 
 | Limit | What it means | When it matters |
 |---|---|---|
@@ -138,7 +144,7 @@ To roll back: Actions → Deploy → *Run workflow* with an earlier digest.
 | Qdrant Free pauses a cluster unused for a week, and deletes it after four | Knowledge documents and semantic memory live there. Daily use keeps it active; if it pauses, resume it in the Qdrant console. | A practice that stops using the chat. |
 | Free tiers have no SLA, and their terms change | A provider may pause or end the free plan. | Any paying customer: plan the move to a paid tier or a server. |
 
-## 9. Moving up
+## 10. Moving up
 
 The same image runs on every profile. With the first revenue:
 

@@ -142,6 +142,16 @@ async def needing_attention(request: Request, p: Clinician) -> list[dict[str, An
     return await request.app.state.orchestrator.followup.needing_attention(p.tenant)  # type: ignore[no-any-return]
 
 
+@router.get("/patients/{patient_id}/briefing")
+async def session_briefing(patient_id: PatientId, request: Request, p: Clinician) -> dict[str, Any]:
+    """The summary before a session: a draft composed by code from the follow-up, the
+    record's index and the inbox; never from the text of a note, never by a model."""
+    try:
+        return await request.app.state.orchestrator.briefing.prepare(p, patient_id)  # type: ignore[no-any-return]
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
+
+
 @router.get("/patients/{patient_id}/follow-up")
 async def patient_follow_up(
     patient_id: PatientId, request: Request, p: Clinician

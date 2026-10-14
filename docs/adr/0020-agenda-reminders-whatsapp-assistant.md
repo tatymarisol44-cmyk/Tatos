@@ -38,6 +38,6 @@ The owner asked for three things:
 
 ## Consequences
 
-- **A data processing agreement is needed first:** the WhatsApp message text goes to the model provider for that one answer and is never stored. Before real patients, the provider must be under a data processing agreement, with zero retention where offered (`docs/LAUNCH.md`, step 5).
+- **A data processing agreement is needed first:** the WhatsApp message text goes to the model provider for that one answer (we keep it only sealed in the inbox, ADR 0023). Before real patients, the provider must be under a data processing agreement, with zero retention where offered (`docs/LAUNCH.md`, step 5).
 - **Meta must approve two templates** before WhatsApp can send them outside the 24-hour window: one for reminders (`WHATSAPP_REMINDER_TEMPLATE`) and one for staff alerts (`WHATSAPP_ALERT_TEMPLATE`).
 - **No conversation memory:** the assistant does not remember earlier turns beyond the numbered options, because storing chat text would contradict the privacy design. The person rephrases instead.

@@ -191,6 +191,30 @@ class WhatsAppSender:
         return str(messages[0]["id"])
 
 
+class MessengerSender:
+    """A reply in Facebook Messenger or an Instagram Direct conversation, inside the 24-hour
+    standard messaging window the person's last message opened (read on 2026-10-14:
+    POST /<PAGE-ID>/messages with recipient.id = the page-scoped id, messaging_type
+    RESPONSE, message.text; Instagram with Instagram Login: the same body to
+    /<IG-ID>/messages on graph.instagram.com). The token travels in the Authorization
+    header, never in the URL. TO VERIFY on the first live call, as A7."""
+
+    def __init__(self, client: httpx.AsyncClient, base: str) -> None:
+        self.client = client
+        self.base = base.rstrip("/")
+
+    async def send_text(self, *, account_id: str, token: str, to: str, body: str) -> str:
+        response = await self.client.post(
+            f"{self.base}/{account_id}/messages",
+            json={"recipient": {"id": to}, "messaging_type": "RESPONSE", "message": {"text": body}},
+            headers=_auth(token),
+        )
+        message_id = _json(response, "messenger send").get("message_id")
+        if not message_id:
+            raise PublishError("messenger send: no message id")
+        return str(message_id)
+
+
 FB_MAX_IMAGE_BYTES = 4 * 1024 * 1024  # [FB-SIZE]
 
 

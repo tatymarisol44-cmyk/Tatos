@@ -16,6 +16,7 @@ from orchestrator.api.security import require_patient
 from orchestrator.auth import Principal
 from orchestrator.crm import CrmError
 from orchestrator.governance import Purpose, ThreadBusyError
+from orchestrator.instruments import InstrumentError
 from orchestrator.service import Orchestrator, PendingReviewError
 
 router = APIRouter(prefix="/v1/me", tags=["patient"])
@@ -168,3 +169,35 @@ async def my_calendar_link(request: Request, p: Me) -> dict[str, str]:
     """A private iCalendar URL for the patient's own appointments."""
     base = request.app.state.settings.public_base_url.rstrip("/")
     return {"url": base + orch(request).agenda.feed_path(p.tenant, "patient", _subject(p))}
+
+
+# --- tests sent by the professional (RF-TST-03) ----------------------------------------------
+
+
+class AnswersIn(BaseModel):
+    answers: dict[str, float | str | None] = Field(max_length=200)
+
+
+@router.get("/tests")
+async def my_tests(request: Request, p: Me) -> list[dict[str, Any]]:
+    """The tests the professional sent and the patient has not answered yet."""
+    return await orch(request).self_reports.pending(p.tenant, _subject(p))
+
+
+@router.post("/tests/{assignment_id}")
+async def answer_test(
+    assignment_id: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")],
+    body: AnswersIn,
+    request: Request,
+    p: Me,
+) -> dict[str, Any]:
+    """Send the answers. The reply is a thank-you, never the score; when an answer needs a
+    person now, it carries the emergency lines too."""
+    try:
+        return await orch(request).self_reports.submit(
+            p.tenant, _subject(p), p.id, assignment_id, body.answers
+        )
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no pending test with this id") from exc
+    except InstrumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc

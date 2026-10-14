@@ -24,6 +24,7 @@ from orchestrator.api import (
     channels,
     clinical,
     establishment,
+    inbox,
     instruments,
     oncall,
     patients,
@@ -104,6 +105,10 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
         except Exception:
             log.exception("appointment reminders pass failed")
         try:
+            await orch.publications.publish_due()
+        except Exception:
+            log.exception("scheduled publications pass failed")
+        try:
             await orch.refresh_ops_gauges()
         except Exception:
             log.exception("ops gauges not refreshed")
@@ -177,6 +182,7 @@ def create_app(
     app.include_router(business.router)
     app.include_router(patients.router)
     app.include_router(channels.router)
+    app.include_router(inbox.router)
     app.include_router(social.router)
     app.include_router(publications.router)
     app.include_router(establishment.router)

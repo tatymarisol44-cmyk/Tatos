@@ -24,7 +24,7 @@ qué derechos tienes.
 |---|---|---|---|
 | **Atenderte** (historia clínica, notas de sesión, tests que te aplique tu profesional, documentos clínicos) | Identificación, contacto, datos de salud | Prestación de asistencia sanitaria por un profesional sujeto a secreto profesional, en virtud del contrato contigo (Arts. 7.5 y 31.1 LOPDP) | El tiempo que exige la normativa sanitaria para la historia clínica: [plazo que confirme la abogada]. Las notas de psicoterapia solo las ve quien las escribió |
 | **Gestionar tus citas** (agenda, recordatorios, reprogramar por WhatsApp o en la app) | Nombre, teléfono, fechas de cita | Ejecución del contrato (Art. 7.5) | Mientras seas paciente; las conversaciones que no son clínicas se borran a los 90 días sin actividad |
-| **Responder tus mensajes de WhatsApp** con un asistente automático | Tu número y el texto del mensaje | Ejecución del contrato (Art. 7.5) | El texto **no se guarda**: se usa para responder y se descarta. El asistente nunca da consejo médico; si escribes algo que sugiera una crisis, te responde una persona y recibes las líneas de emergencia |
+| **Responder tus mensajes de WhatsApp, Instagram y Facebook** (un asistente automático en WhatsApp; en Instagram y Facebook te responde la profesional, que puede pedir a la inteligencia artificial un borrador) | Tu número o tu identificador en la red, y el texto de los mensajes | Ejecución del contrato (Art. 7.5) | **90 días**, guardados **cifrados**; solo tu profesional puede leerlos y cada lectura queda registrada. Si tu conversación se vincula a tu ficha, se borra contigo cuando pidas la eliminación. El asistente nunca da consejo médico; si escribes algo que sugiera una crisis, te responde una persona y recibes las líneas de emergencia |
 | **Enviarte novedades y promociones** del consultorio | Nombre, canal de contacto | **Tu consentimiento**, que puedes retirar cuando quieras (Arts. 8 y 16.2) | Hasta que retires el consentimiento; luego se eliminan |
 | **Medir qué contenido te resulta útil** (eventos dentro de la app) | Uso de la app, preferencias | **Tu consentimiento** (opcional) | Se anonimiza de forma irreversible cuando retiras el consentimiento o pides la eliminación |
 | **Seguridad y rendición de cuentas** (registro de quién accedió a qué) | Quién, cuándo y qué registro se consultó; nunca el contenido | Obligación legal de demostrar el cumplimiento (Arts. 7.2 y 47) | [plazo que confirme la abogada] |
@@ -44,11 +44,12 @@ Para darte el servicio usamos una plataforma tecnológica (**[nombre de la plata
 como **encargada del tratamiento**: solo trata tus datos siguiendo nuestras instrucciones, con un
 contrato firmado (Art. 34 LOPDP), y no los usa para nada más. Ella, a su vez, usa estos proveedores:
 
-- **Google Cloud** (servidores en Estados Unidos): almacena la información cifrada.
+- **Render** y **Supabase** (servidores en Estados Unidos): ejecutan la plataforma y almacenan la
+  información cifrada en tránsito y en reposo.
 - **Anthropic** y **OpenAI** (Estados Unidos): procesan el texto de un mensaje para responderlo
-  u ordenarlo. La plataforma no lo guarda, y su contrato con estos proveedores
+  u ordenarlo. Ellos no lo guardan para sí, y su contrato con estos proveedores
   [incluye / no incluye: confirmar antes de publicar] retención cero.
-- **Meta** (WhatsApp), si nos escribes por WhatsApp.
+- **Meta** (WhatsApp, Instagram, Facebook), si nos escribes por alguno de ellos.
 - **Telegram**, solo si tú decides vincularlo, y únicamente para recordatorios.
 
 Que un proveedor procese datos por cuenta nuestra **no es una transferencia** de tus datos (Art. 23,

@@ -167,6 +167,14 @@ class Settings(BaseSettings):
     # Sending (Cloud API). v25.0 is the version in Meta's guide read on 2026-10-07.
     whatsapp_graph_base: str = "https://graph.facebook.com/v25.0"
     facebook_graph_base: str = "https://graph.facebook.com/v26.0"  # Page photos [FB-PHOTOS]
+    # Facebook Messenger replies (the Send API guide read on 2026-10-14 shows v25.0);
+    # Instagram Direct replies go to meta_graph_base (Instagram API with Instagram Login).
+    messenger_graph_base: str = "https://graph.facebook.com/v25.0"
+    # Instagram and Facebook messages: the fixed crisis, person and STOP texts go out by
+    # themselves; everyday questions get an AI draft in the inbox (ADR 0023).
+    social_auto_reply: bool = True
+    # The inbox keeps sealed messages this long; `agency retention` deletes older ones.
+    inbox_retention_days: int = Field(default=90, ge=1, le=3650)
 
     # --- On-call alerts (ADR 0017) ------------------------------------------
     # An unacknowledged crisis alert goes to the next on-call level after this long.

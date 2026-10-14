@@ -77,18 +77,20 @@ def _signed(client: TestClient, body: bytes) -> int:
     return client.post("/v1/channels/whatsapp", content=body, headers=headers).status_code
 
 
-def _crisis_message() -> bytes:
+def _crisis_message(
+    text: str = "Ya no quiero vivir", sender: str = "15550002222", message_id: str = "wamid.acme-1"
+) -> bytes:
     message = {
-        "from": "15550002222",
-        "id": "wamid.acme-1",
+        "from": sender,
+        "id": message_id,
         "timestamp": "1790000000",
         "type": "text",
-        "text": {"body": "Ya no quiero vivir"},
+        "text": {"body": text},
     }
     value = {
         "messaging_product": "whatsapp",
         "metadata": {"display_phone_number": "15550000000", "phone_number_id": NUMBER_ID},
-        "contacts": [{"profile": {"name": "Synthetic"}, "wa_id": "15550002222"}],
+        "contacts": [{"profile": {"name": "Synthetic"}, "wa_id": sender}],
         "messages": [message],
     }
     doc = {
@@ -232,6 +234,38 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["instrument_result"] = result["result_id"]
+    diary = _ok(
+        c.post(
+            "/v1/clinical/instruments",
+            json={
+                "spec": {
+                    "name": "Registro semanal",
+                    "administration": "self_report",
+                    "items": [
+                        {
+                            "id": "a",
+                            "text": f"{MARKER}: ¿cómo dormiste?",
+                            "options": [
+                                {"label": "Bien", "value": 0},
+                                {"label": "Mal", "value": 1},
+                            ],
+                        }
+                    ],
+                    "licence": {"source": "own", "attestation": True},
+                }
+            },
+            headers=clinician,
+        )
+    )
+    ids["self_report"] = diary["instrument_id"]
+    sent = _ok(
+        c.post(
+            f"/v1/clinical/patients/{ids['patient']}/assignments",
+            json={"instrument_id": diary["instrument_id"]},
+            headers=clinician,
+        )
+    )
+    ids["assignment"] = sent["assignment_id"]
     uploaded = c.post(
         f"/v1/clinical/patients/{ids['patient']}/files",
         files={"file": ("consent.pdf", b"%PDF-1.7 " + MARKER.encode(), "application/pdf")},
@@ -311,6 +345,16 @@ def seed(c: TestClient) -> Acme:
     assert _signed(c, _crisis_message()) == 200
     [alert] = _ok(c.get("/v1/social/alerts", headers=ACME))
     ids["alert"] = alert["alert_id"]
+    # An everyday question lands in the inbox too; the AI drafts a reply there.
+    question = _crisis_message(
+        f"Hola, soy {MARKER}: ¿atienden el sábado?", "15550003333", "wamid.acme-2"
+    )
+    assert _signed(c, question) == 200
+    conversations = _ok(c.get("/v1/inbox", headers=clinician))
+    [everyday] = [x for x in conversations if x["attention"] is None]
+    ids["conversation"] = everyday["conversation_id"]
+    draft = _ok(c.post(f"/v1/inbox/{ids['conversation']}/draft", headers=clinician))
+    ids["draft"] = draft["message_id"]
     return acme
 
 
@@ -319,7 +363,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
     ids = acme.ids
 
     def get(path: str) -> Any:
-        headers = acme.clinician if path.startswith("/v1/clinical/") else ACME
+        headers = acme.clinician if path.startswith(("/v1/clinical/", "/v1/inbox")) else ACME
         return _ok(c.get(path, headers=headers))
 
     return {
@@ -334,6 +378,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
         "instruments": get("/v1/clinical/instruments"),
         "instrument_results": get(f"/v1/clinical/patients/{ids['patient']}/instrument-results"),
+        "assignments": get(f"/v1/clinical/patients/{ids['patient']}/assignments"),
         "files": get(f"/v1/clinical/patients/{ids['patient']}/files"),
         "agenda": get("/v1/agenda?days=14"),
         "hours": get(f"/v1/agenda/professionals/{ids['professional']}/hours"),
@@ -344,6 +389,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "on_call": get("/v1/admin/on-call"),
         "privacy_cases": get("/v1/privacy/cases"),
         "alerts": get("/v1/social/alerts"),
+        "inbox": get("/v1/inbox"),
     }
 
 
@@ -515,6 +561,11 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/social/publications"): ("/v1/social/publications", None),
+        ("GET", "/v1/social/publications/calendar"): ("/v1/social/publications/calendar", None),
+        ("PUT", "/v1/social/publications/{publication_id}/schedule"): (
+            f"/v1/social/publications/{i['publication']}/schedule",
+            {"at": "2030-01-07T14:00:00+00:00"},
+        ),
         ("POST", "/v1/social/publications"): (
             "/v1/social/publications",
             {
@@ -640,6 +691,44 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/clinical/patients/{p}/follow-up",
             None,
         ),
+        ("POST", "/v1/clinical/patients/{patient_id}/assignments"): (
+            f"/v1/clinical/patients/{p}/assignments",
+            {"instrument_id": i["self_report"]},
+        ),
+        ("GET", "/v1/clinical/patients/{patient_id}/assignments"): (
+            f"/v1/clinical/patients/{p}/assignments",
+            None,
+        ),
+        ("DELETE", "/v1/clinical/assignments/{assignment_id}"): (
+            f"/v1/clinical/assignments/{i['assignment']}",
+            None,
+        ),
+        ("GET", "/v1/clinical/patients/{patient_id}/briefing"): (
+            f"/v1/clinical/patients/{p}/briefing",
+            None,
+        ),
+        ("GET", "/v1/inbox"): ("/v1/inbox", None),
+        ("GET", "/v1/inbox/{conversation_id}"): (f"/v1/inbox/{i['conversation']}", None),
+        ("POST", "/v1/inbox/{conversation_id}/draft"): (
+            f"/v1/inbox/{i['conversation']}/draft",
+            None,
+        ),
+        ("POST", "/v1/inbox/{conversation_id}/reply"): (
+            f"/v1/inbox/{i['conversation']}/reply",
+            {"body": "hola", "draft_id": i["draft"]},
+        ),
+        ("DELETE", "/v1/inbox/{conversation_id}/drafts/{draft_id}"): (
+            f"/v1/inbox/{i['conversation']}/drafts/{i['draft']}",
+            None,
+        ),
+        ("PUT", "/v1/inbox/{conversation_id}/patient"): (
+            f"/v1/inbox/{i['conversation']}/patient",
+            {"patient_id": p},
+        ),
+        ("POST", "/v1/inbox/{conversation_id}/close"): (
+            f"/v1/inbox/{i['conversation']}/close",
+            None,
+        ),
         ("GET", "/v1/agenda"): ("/v1/agenda?days=14", None),
         ("GET", "/v1/agenda/professionals/{professional_id}/hours"): (
             f"/v1/agenda/professionals/{i['professional']}/hours",
@@ -702,6 +791,11 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
             {"professional_id": "dra-acme", "starts_at": "2030-01-07T14:00:00+00:00"},
         ),
         ("GET", "/v1/me/calendar-link"): ("/v1/me/calendar-link", None),
+        ("GET", "/v1/me/tests"): ("/v1/me/tests", None),
+        ("POST", "/v1/me/tests/{assignment_id}"): (
+            f"/v1/me/tests/{acme.ids['assignment']}",
+            {"answers": {"a": 1}},
+        ),
     }
 
 
@@ -740,6 +834,7 @@ ADDRESSED = {
         ("POST", "/v1/social/publications/{publication_id}/approve"),
         ("POST", "/v1/social/publications/{publication_id}/publish"),
         ("POST", "/v1/social/publications/{publication_id}/cancel"),
+        ("PUT", "/v1/social/publications/{publication_id}/schedule"),
         ("DELETE", "/v1/admin/professionals/{professional_id}"),
         ("GET", "/v1/clinical/patients/{patient_id}/documents"),
         ("POST", "/v1/clinical/patients/{patient_id}/documents"),
@@ -753,6 +848,17 @@ ADDRESSED = {
         ("GET", "/v1/clinical/instrument-results/{result_id}"),
         ("POST", "/v1/clinical/patients/{patient_id}/files"),
         ("GET", "/v1/clinical/patients/{patient_id}/follow-up"),
+        ("GET", "/v1/clinical/patients/{patient_id}/briefing"),
+        ("POST", "/v1/clinical/patients/{patient_id}/assignments"),
+        ("GET", "/v1/clinical/patients/{patient_id}/assignments"),
+        ("DELETE", "/v1/clinical/assignments/{assignment_id}"),
+        ("POST", "/v1/me/tests/{assignment_id}"),
+        ("GET", "/v1/inbox/{conversation_id}"),
+        ("POST", "/v1/inbox/{conversation_id}/draft"),
+        ("POST", "/v1/inbox/{conversation_id}/reply"),
+        ("DELETE", "/v1/inbox/{conversation_id}/drafts/{draft_id}"),
+        ("PUT", "/v1/inbox/{conversation_id}/patient"),
+        ("POST", "/v1/inbox/{conversation_id}/close"),
         ("GET", "/v1/agenda/professionals/{professional_id}/hours"),
         ("PUT", "/v1/agenda/professionals/{professional_id}/hours"),
         ("GET", "/v1/agenda/slots"),
@@ -849,9 +955,16 @@ def test_another_tenant_can_neither_read_nor_change_acme(
         (headers, key, path, body)
         for headers, table in (
             (GLOBEX, attacks(acme)),
-            # Clinical routes refuse admin keys by role: a globex clinician must be refused
-            # by tenant, too.
-            (globex_clinician, {k: v for k, v in attacks(acme).items() if "/clinical/" in k[1]}),
+            # Clinical routes and the inbox refuse admin keys by role: a globex clinician
+            # must be refused by tenant, too.
+            (
+                globex_clinician,
+                {
+                    k: v
+                    for k, v in attacks(acme).items()
+                    if "/clinical/" in k[1] or k[1].startswith("/v1/inbox")
+                },
+            ),
             (globex_patient, patient_attacks(acme)),
         )
         for key, (path, body) in table.items()

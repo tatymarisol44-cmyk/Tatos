@@ -3,15 +3,17 @@ owner too when a discount exceeds the pack's cap, and publishing happens once.""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from orchestrator.api.security import require_staff, requires
 from orchestrator.auth import Principal, Role
 from orchestrator.creatives import Brief, CreativeRejected, CreativeUnavailable
+from orchestrator.db import utcnow
 from orchestrator.publishing import (
     MAX_CAPTION,
     Kind,
@@ -80,6 +82,28 @@ async def list_publications(request: Request, p: Staff) -> list[dict[str, Any]]:
     return await service(request).list(p.tenant)
 
 
+@router.get("/calendar")
+async def publication_calendar(
+    request: Request,
+    p: Staff,
+    start: Annotated[AwareDatetime | None, Query(alias="from")] = None,
+    end: Annotated[AwareDatetime | None, Query(alias="to")] = None,
+) -> list[dict[str, Any]]:
+    """What is scheduled or was published in a period (default: from today, 31 days).
+    `overdue`: its time came without an approval, so it waits for a person."""
+    start = start or utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        return await service(request).calendar(p.tenant, start, end or start + timedelta(days=31))
+    except _HANDLED as exc:
+        raise _errors(exc) from exc
+
+
+class ScheduleIn(BaseModel):
+    at: AwareDatetime | None = Field(
+        description="When to publish (with its time zone); null takes it off the calendar"
+    )
+
+
 @router.get("/{publication_id}")
 async def get_publication(
     publication_id: PublicationId, request: Request, p: Staff
@@ -109,6 +133,17 @@ async def publish_publication(
 ) -> dict[str, Any]:
     try:
         return await service(request).publish(p.tenant, publication_id, p.id)
+    except _HANDLED as exc:
+        raise _errors(exc) from exc
+
+
+@router.put("/{publication_id}/schedule")
+async def schedule_publication(
+    publication_id: PublicationId, body: ScheduleIn, request: Request, p: Marketing
+) -> dict[str, Any]:
+    """Put it on the calendar. It goes out at that time only if approved by then."""
+    try:
+        return await service(request).schedule(p.tenant, publication_id, p.id, body.at)
     except _HANDLED as exc:
         raise _errors(exc) from exc
 

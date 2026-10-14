@@ -13,12 +13,19 @@ rules ("item 9 >= 1: a person must look at this now"). Two public-domain templat
 - **Data class.** Definitions hold no patient data (INTERNAL). Results are health data
   (HEALTH): clinicians only, audited, in the patient's export, never in RAG, campaigns
   or model calls (classification.py).
+- **Filled in by the patient (SRS RF-TST-03).** A clinician sends a self-report
+  instrument to a patient (an assignment, pinned to the version sent); the patient
+  answers it in their app and gets a thank-you, never the score: the band is for the
+  professional to interpret. An instrument still carrying placeholder items cannot be
+  sent. An answer that trips an alert rule (PHQ-9 item 9) opens a crisis alert at once
+  (self_report.py).
 """
 
 from __future__ import annotations
 
 import re
 import uuid
+from datetime import timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -39,7 +46,7 @@ from sqlalchemy import (
 
 from orchestrator.auth import Principal, Role
 from orchestrator.crm import patients
-from orchestrator.db import Database, metadata, utcnow
+from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.scales import PHQ9_SELF_HARM_ITEM, SCALES
 
@@ -258,6 +265,11 @@ SEVERITY = {
 }
 
 
+# The templates ship no item text (licensing, decision P7): until the professional copies the
+# official wording, an item says so, and such an instrument is never sent to a patient.
+PLACEHOLDER = "(texto oficial del formulario)"
+
+
 def _template(scale_id: Literal["phq9", "gad7"], name: str) -> InstrumentSpec:
     scale = SCALES[scale_id]
     lows = [low for low, _ in scale.bands]
@@ -280,10 +292,11 @@ def _template(scale_id: Literal["phq9", "gad7"], name: str) -> InstrumentSpec:
             "siguientes problemas? Copie el texto oficial de cada ítem del formulario "
             "publicado (decisión P7)."
         ),
+        administration="self_report",
         items=[
             Item(
                 id=f"i{n}",
-                text=f"Ítem {n} (texto oficial del formulario)",
+                text=f"Ítem {n} {PLACEHOLDER}",
                 options=[Option(label=label, value=v) for v, label in enumerate(FREQUENCY_ES)],
             )
             for n in range(1, scale.items + 1)
@@ -343,6 +356,24 @@ instrument_results = Table(
     Column("note", String(2000), nullable=True),
     Column("author_id", String(128), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+
+instrument_assignments = Table(
+    "instrument_assignments",
+    metadata,
+    Column("tenant", String(64), primary_key=True),
+    Column("assignment_id", String(32), primary_key=True),
+    Column("patient_id", String(64), nullable=False, index=True),
+    Column("instrument_id", String(40), nullable=False),
+    Column("version", Integer, nullable=False),  # the version sent is the one answered
+    Column("instrument_name", String(120), nullable=False),
+    Column("status", String(16), nullable=False),  # pending | completed | cancelled
+    Column("assigned_by", String(128), nullable=False),
+    Column("assigned_at", DateTime(timezone=True), nullable=False),
+    Column("due_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("result_id", String(32), nullable=True),
 )
 
 
@@ -503,42 +534,292 @@ class Instruments:
             raise InstrumentError("this instrument is retired")
         spec = InstrumentSpec.model_validate(definition["spec"])
         result = score(spec, answers)
-        result_id = uuid.uuid4().hex[:16]
         async with self.db.engine.begin() as conn:
-            await conn.execute(
-                insert(instrument_results).values(
-                    tenant=principal.tenant,
-                    result_id=result_id,
-                    patient_id=patient_id,
-                    instrument_id=instrument_id,
-                    version=definition["version"],
-                    instrument_name=definition["name"],
-                    answers=result["answers"],
-                    total=result["total"],
-                    subscales=result["subscales"],
-                    band=result["band"],
-                    severity=result["severity"],
-                    alerts=result["alerts"],
-                    note=note,
-                    author_id=principal.id,
-                    created_at=utcnow(),
-                )
+            result_id = await self._insert_result(
+                conn,
+                principal.tenant,
+                patient_id,
+                (instrument_id, definition["version"], definition["name"]),
+                result,
+                principal.id,
+                note,
+                "instrument.administered",
             )
-            # The audit names the event, never the answers.
+        return await self.result(principal, result_id)
+
+    async def _insert_result(
+        self,
+        conn: Any,
+        tenant: str,
+        patient_id: str,
+        instrument: tuple[str, int, str],
+        result: dict[str, Any],
+        author: str,
+        note: str | None,
+        action: str,
+    ) -> str:
+        """One scored result, audited in the same transaction. `instrument` is (id,
+        version, name)."""
+        instrument_id, version, name = instrument
+        result_id = uuid.uuid4().hex[:16]
+        await conn.execute(
+            insert(instrument_results).values(
+                tenant=tenant,
+                result_id=result_id,
+                patient_id=patient_id,
+                instrument_id=instrument_id,
+                version=version,
+                instrument_name=name,
+                answers=result["answers"],
+                total=result["total"],
+                subscales=result["subscales"],
+                band=result["band"],
+                severity=result["severity"],
+                alerts=result["alerts"],
+                note=note,
+                author_id=author,
+                created_at=utcnow(),
+            )
+        )
+        # The audit names the event, never the answers.
+        await self.audit.record_in(
+            conn,
+            tenant,
+            author,
+            action,
+            f"instrument_result/{result_id}",
+            subject_id=patient_id,
+            details={
+                "instrument": instrument_id,
+                "version": version,
+                "alerts": len(result["alerts"]),
+            },
+        )
+        return result_id
+
+    # --- sent to the patient, answered in their app (RF-TST-03) ---------------------------
+
+    async def assign(
+        self,
+        principal: Principal,
+        patient_id: str,
+        instrument_id: str,
+        due_days: int | None = None,
+    ) -> dict[str, Any]:
+        """Send a self-report instrument to a patient. Raises KeyError (unknown patient or
+        instrument) or InstrumentError (retired, not self-report, placeholder items, or
+        already waiting for an answer)."""
+        await self._require_patient(principal.tenant, patient_id)
+        definition = await self.get(principal, instrument_id)
+        if definition["status"] != "active":
+            raise InstrumentError("this instrument is retired")
+        spec = InstrumentSpec.model_validate(definition["spec"])
+        if spec.administration != "self_report":
+            raise InstrumentError("this instrument is applied by the professional")
+        if any(PLACEHOLDER in item.text for item in spec.items):
+            raise InstrumentError(
+                "copy the official text of every item before sending it to a patient"
+            )
+        now = utcnow()
+        row = {
+            "tenant": principal.tenant,
+            "assignment_id": uuid.uuid4().hex[:16],
+            "patient_id": patient_id,
+            "instrument_id": instrument_id,
+            "version": definition["version"],
+            "instrument_name": definition["name"],
+            "status": "pending",
+            "assigned_by": principal.id,
+            "assigned_at": now,
+            "due_at": now + timedelta(days=due_days) if due_days else None,
+            "completed_at": None,
+            "result_id": None,
+        }
+        waiting = select(instrument_assignments.c.assignment_id).where(
+            and_(
+                instrument_assignments.c.tenant == principal.tenant,
+                instrument_assignments.c.patient_id == patient_id,
+                instrument_assignments.c.instrument_id == instrument_id,
+                instrument_assignments.c.status == "pending",
+            )
+        )
+        async with self.db.engine.begin() as conn:
+            if (await conn.execute(waiting)).first() is not None:
+                raise InstrumentError("this instrument is already waiting for the patient")
+            await conn.execute(insert(instrument_assignments).values(**row))
             await self.audit.record_in(
                 conn,
                 principal.tenant,
                 principal.id,
-                "instrument.administered",
-                f"instrument_result/{result_id}",
+                "instrument.assigned",
+                f"instrument_assignment/{row['assignment_id']}",
                 subject_id=patient_id,
-                details={
-                    "instrument": instrument_id,
-                    "version": definition["version"],
-                    "alerts": len(result["alerts"]),
-                },
+                details={"instrument": instrument_id, "version": definition["version"]},
             )
-        return await self.result(principal, result_id)
+        return self._assignment(row)
+
+    async def assignments(self, principal: Principal, patient_id: str) -> list[dict[str, Any]]:
+        """What was sent to the patient and whether it came back (the clinician's view)."""
+        await self._require_patient(principal.tenant, patient_id)
+        return await self.export_assignments(principal.tenant, patient_id)
+
+    async def export_assignments(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:
+        query = (
+            select(instrument_assignments)
+            .where(
+                and_(
+                    instrument_assignments.c.tenant == tenant,
+                    instrument_assignments.c.patient_id == patient_id,
+                )
+            )
+            .order_by(instrument_assignments.c.assigned_at)
+        )
+        async with self.db.engine.connect() as conn:
+            return [self._assignment(r._mapping) for r in await conn.execute(query)]
+
+    async def cancel_assignment(self, principal: Principal, assignment_id: str) -> bool:
+        async with self.db.engine.begin() as conn:
+            done = await conn.execute(
+                update(instrument_assignments)
+                .where(
+                    and_(
+                        instrument_assignments.c.tenant == principal.tenant,
+                        instrument_assignments.c.assignment_id == assignment_id,
+                        instrument_assignments.c.status == "pending",
+                    )
+                )
+                .values(status="cancelled")
+            )
+            if done.rowcount:
+                await self.audit.record_in(
+                    conn,
+                    principal.tenant,
+                    principal.id,
+                    "instrument.assignment_cancelled",
+                    f"instrument_assignment/{assignment_id}",
+                )
+        return bool(done.rowcount)
+
+    @staticmethod
+    def _sent_version() -> Any:
+        """Assignments joined with the exact instrument version they were sent with."""
+        return select(instrument_assignments, instruments.c.spec).join(
+            instruments,
+            and_(
+                instruments.c.tenant == instrument_assignments.c.tenant,
+                instruments.c.instrument_id == instrument_assignments.c.instrument_id,
+                instruments.c.version == instrument_assignments.c.version,
+            ),
+        )
+
+    async def pending_for(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:
+        """The patient's view: what to answer, item by item. No scoring, bands or alert
+        rules: those are for the professional."""
+        query = (
+            self._sent_version()
+            .where(
+                and_(
+                    instrument_assignments.c.tenant == tenant,
+                    instrument_assignments.c.patient_id == patient_id,
+                    instrument_assignments.c.status == "pending",
+                )
+            )
+            .order_by(instrument_assignments.c.assigned_at)
+        )
+        async with self.db.engine.connect() as conn:
+            rows = list(await conn.execute(query))
+        out = []
+        for row in rows:
+            spec = InstrumentSpec.model_validate(row.spec)
+            out.append(
+                {
+                    "assignment_id": row.assignment_id,
+                    "name": row.instrument_name,
+                    "instructions": spec.instructions,
+                    "due_at": aware(row.due_at),
+                    "items": [
+                        {
+                            "id": item.id,
+                            "text": item.text,
+                            "type": item.type,
+                            "required": item.required,
+                            "options": [o.model_dump() for o in item.options],
+                            "min": item.min,
+                            "max": item.max,
+                        }
+                        for item in spec.items
+                    ],
+                }
+            )
+        return out
+
+    async def submit(
+        self,
+        tenant: str,
+        patient_id: str,
+        actor: str,
+        assignment_id: str,
+        answers: dict[str, Any],
+    ) -> dict[str, Any]:
+        """The patient's answers to one assignment, scored with the version sent. Returns
+        the result id and its alerts (for self_report.py; never shown to the patient).
+        Raises KeyError (not theirs, or already answered) or InstrumentError."""
+        mine = and_(
+            instrument_assignments.c.tenant == tenant,
+            instrument_assignments.c.assignment_id == assignment_id,
+            instrument_assignments.c.patient_id == patient_id,
+            instrument_assignments.c.status == "pending",
+        )
+        async with self.db.engine.connect() as conn:
+            row = (await conn.execute(self._sent_version().where(mine))).first()
+        if row is None:
+            raise KeyError(assignment_id)
+        result = score(InstrumentSpec.model_validate(row.spec), answers)
+        async with self.db.engine.begin() as conn:
+            claimed = await conn.execute(
+                update(instrument_assignments)
+                .where(mine)
+                .values(status="completed", completed_at=utcnow())
+            )
+            if claimed.rowcount != 1:
+                raise KeyError(assignment_id)  # answered twice at once: one wins
+            result_id = await self._insert_result(
+                conn,
+                tenant,
+                patient_id,
+                (row.instrument_id, row.version, row.instrument_name),
+                result,
+                actor,
+                "self-report",
+                "instrument.self_reported",
+            )
+            await conn.execute(
+                update(instrument_assignments)
+                .where(
+                    and_(
+                        instrument_assignments.c.tenant == tenant,
+                        instrument_assignments.c.assignment_id == assignment_id,
+                    )
+                )
+                .values(result_id=result_id)
+            )
+        return {"result_id": result_id, "alerts": result["alerts"]}
+
+    @staticmethod
+    def _assignment(row: Any) -> dict[str, Any]:
+        return {
+            "assignment_id": row["assignment_id"],
+            "patient_id": row["patient_id"],
+            "instrument_id": row["instrument_id"],
+            "version": row["version"],
+            "name": row["instrument_name"],
+            "status": row["status"],
+            "assigned_by": row["assigned_by"],
+            "assigned_at": aware(row["assigned_at"]),
+            "due_at": aware(row["due_at"]),
+            "completed_at": aware(row["completed_at"]),
+            "result_id": row["result_id"],
+        }
 
     async def _require_patient(self, tenant: str, patient_id: str) -> None:
         query = select(patients.c.id).where(

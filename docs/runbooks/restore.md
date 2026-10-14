@@ -1,5 +1,7 @@
 # Restoring from a backup
 
+On the free profile (Render + Supabase, ADR 0022) see [backup.md](backup.md) instead.
+
 ## Objectives (proposed; owner decision O2)
 
 | | Target | How it is met |

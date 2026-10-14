@@ -1,5 +1,6 @@
 """Inbound channel events: the Telegram bot's webhook, so a STOP reply withdraws the
-marketing consent (audit finding A11), and the WhatsApp webhook (ADR 0015 M4, below).
+marketing consent (audit finding A11), and the Meta webhook for WhatsApp, Instagram Direct
+and Facebook Messenger (ADR 0015 M4, ADR 0023, below).
 
 Telegram is told the URL `/v1/channels/telegram/{tenant}` and a secret with setWebhook;
 it then sends the secret in `X-Telegram-Bot-Api-Secret-Token` on every call. Without
@@ -74,6 +75,7 @@ def _whatsapp_configured(orch: Orchestrator) -> tuple[str, str]:
 
 
 @router.get("/whatsapp", include_in_schema=False)
+@router.get("/meta", include_in_schema=False)
 async def whatsapp_verify(
     request: Request,
     mode: Annotated[str | None, Query(alias="hub.mode")] = None,
@@ -126,11 +128,41 @@ def _text_messages(payload: Any) -> list[tuple[str, str, str, str]]:
     return found
 
 
+def _social_messages(payload: Any) -> list[tuple[str, str, str, str, str]]:
+    """(network, account id, message id, sender, text) for Facebook Messenger (object
+    "page") and Instagram Direct (object "instagram") messages: entry[].messaging[] with
+    sender.id, recipient.id (our page or professional account) and message.mid/text (read
+    on 2026-10-14). Echoes of our own sends are skipped; a message without text (a photo,
+    a sticker) is recorded with an empty text, like WhatsApp's."""
+    found: list[tuple[str, str, str, str, str]] = []
+    if not isinstance(payload, dict):
+        return found
+    network = {"page": "facebook", "instagram": "instagram"}.get(str(payload.get("object")))
+    if network is None:
+        return found
+    for entry in payload.get("entry") or []:
+        for event in (entry or {}).get("messaging") or []:
+            message = event.get("message") if isinstance(event, dict) else None
+            if not isinstance(message, dict) or message.get("is_echo") or not message.get("mid"):
+                continue
+            sender = (event.get("sender") or {}).get("id")
+            recipient = (event.get("recipient") or {}).get("id")
+            if not sender or not recipient:
+                continue
+            raw = message.get("text")
+            text = raw[:1000] if isinstance(raw, str) else ""
+            found.append((network, str(recipient), str(message["mid"]), str(sender), text))
+    return found
+
+
 @router.post("/whatsapp", include_in_schema=False)
+@router.post("/meta", include_in_schema=False)
 async def whatsapp_webhook(
     request: Request,
     signature: Annotated[str | None, Header(alias="X-Hub-Signature-256")] = None,
 ) -> dict[str, Any]:
+    """WhatsApp, Instagram and Facebook notifications: Meta signs all three with the App
+    Secret, so one endpoint (either path) serves the three products."""
     orch: Orchestrator = request.app.state.orchestrator
     _, secret = _whatsapp_configured(orch)
     body = await request.body()
@@ -140,12 +172,13 @@ async def whatsapp_webhook(
         payload = json.loads(body)
     except ValueError:
         return {"ok": True}
+    messages = [("whatsapp", *m) for m in _text_messages(payload)] + _social_messages(payload)
     outcomes = [
-        await orch.inbound.handle_message("whatsapp", number_id, message_id, sender, text)
-        for number_id, message_id, sender, text in _text_messages(payload)
+        await orch.inbound.handle_message(network, account, message_id, sender, text)
+        for network, account, message_id, sender, text in messages
     ]
     if outcomes:
-        log.info("whatsapp inbound: %s", sorted(set(outcomes)))
+        log.info("meta inbound: %s", sorted(set(outcomes)))
     if {"crisis", "human"} & set(outcomes):
         # Tell the on-call person now, not at the next worker pass (ADR 0017). A failure
         # here leaves the step due, and the worker on any replica retries it.

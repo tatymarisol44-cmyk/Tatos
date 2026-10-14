@@ -123,8 +123,9 @@ Every legal reference in a pack carries the status it really has (read, secondar
 | **Scales** | PHQ-9 and GAD-7 scoring with the original severity bands (never a diagnosis); PHQ-9 item 9 is always flagged for a person. |
 | **Accounts and platform rules** | Each professional connects their own WhatsApp, Instagram, TikTok, Facebook or Telegram account. Tokens never touch the database (the account names a secret). Platform rules are data with their official source, and every publication passes pre-flight checks (Instagram JPEG + public URL + 100/day; TikTok private until audited; Facebook refused until its rules are read). |
 | **Creatives by code** | `agency creative infographic` or `video`: JPEG infographics (Pillow) and MP4/H.264 slideshow videos (ffmpeg), after the copy passes the pack's rules. Ships Atkinson Hyperlegible (OFL) so Spanish accents render. |
-| **Publishing** | Approval by a person (and the owner above the discount cap), published once, `uncertain` and never retried after a transport error, dry run without a credential. Media go to Google Cloud Storage with V4 signed URLs that expire. |
-| **Incoming WhatsApp** | Meta verification and signature check, deduplication, STOP opt-outs (pseudonymous), and alerts for staff on crisis wording or "I want to talk to a person". Message text is never stored; the AI never answers a crisis; staff reply inside the 24-hour window. |
+| **Publishing** | A calendar: schedule a publication and the worker publishes it at its time if approved. Approval by a person (and the owner above the discount cap), published once, `uncertain` and never retried after a transport error, dry run without a credential. Media go to Google Cloud Storage with V4 signed URLs that expire. |
+| **Incoming messages** | WhatsApp, Instagram Direct and Facebook Messenger through one signed Meta webhook (`/v1/channels/meta`): deduplication, STOP opt-outs (pseudonymous), and alerts for staff on crisis wording or "I want to talk to a person". The AI never answers a crisis; staff reply inside the 24-hour window. |
+| **Inbox** | The three networks in one place for the clinician (`/v1/inbox`, ADR 0023). Messages are sealed at rest (AES-256-GCM), every read is audited, and they are deleted after 90 days. The AI suggests a reply; a person sends it. |
 
 ```bash
 uv run agency pack validate --strict

@@ -1,13 +1,14 @@
 """`agency` command line: index, route, ask (single or --team), eval, eval-answers,
-eval-judge, retention (alias purge-threads), serve, mcp."""
+eval-judge, retention (alias purge-threads), backup, serve, mcp."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import os
 import sys
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -168,6 +169,50 @@ async def _retention(days: int, dry_run: bool) -> None:
         _print(await orch.retention(timedelta(days=days), dry_run=dry_run))
     finally:
         await orch.close()
+
+
+def _backup_cmd(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """`agency backup` (docs/runbooks/backup.md). Keys and files are named on the
+    command line; the private key is read from a file, never from an argument."""
+    from orchestrator import backup
+
+    try:
+        if args.backup_cmd == "keygen":
+            if args.private_key_file.exists():
+                parser.error(f"{args.private_key_file} exists: it may open older backups")
+            public, private = backup.keygen()
+            args.private_key_file.write_text(f"{private}\n", encoding="ascii")
+            print(public)
+            return 0
+        if args.backup_cmd == "create":
+            if not args.recipient:
+                parser.error("--recipient (or BACKUP_PUBLIC_KEY) is required")
+            partial = args.out.with_name(args.out.name + ".partial")
+            with partial.open("wb") as out:
+                summary = _run(_with_engine(lambda e: backup.create(e, out, args.recipient)))
+            partial.replace(args.out)  # only a complete backup carries the final name
+            _print(summary.to_dict())
+            return 0
+        identity = args.private_key_file.read_text(encoding="ascii")
+        with args.source.open("rb") as source:
+            if args.check:
+                _print(backup.check(source, identity).to_dict())
+            else:
+                _print(_run(_with_engine(lambda e: backup.restore(e, source, identity))).to_dict())
+        return 0
+    except backup.BackupError as exc:
+        print(f"backup: {exc}", file=sys.stderr)
+        return 1
+
+
+async def _with_engine[T](work: Callable[[Any], Awaitable[T]]) -> T:
+    from orchestrator.db import Database
+
+    db = Database(get_settings())
+    try:
+        return await work(db.engine)
+    finally:
+        await db.close()
 
 
 async def _audit_anchor() -> None:
@@ -390,6 +435,25 @@ def main(argv: list[str] | None = None) -> int:
             "--older-than-days", type=int, default=None, help="Default: THREAD_RETENTION_DAYS"
         )
         p_purge.add_argument("--dry-run", action="store_true", help="Only count")
+    p_backup = sub.add_parser(
+        "backup", help="Encrypted backup of the database, kept away from its provider"
+    )
+    backup_sub = p_backup.add_subparsers(dest="backup_cmd", required=True)
+    p_keygen = backup_sub.add_parser("keygen", help="Make the key pair, once")
+    p_keygen.add_argument(
+        "--private-key-file", type=Path, required=True, help="Where to write the private key"
+    )
+    p_create = backup_sub.add_parser("create", help="Write an encrypted backup")
+    p_create.add_argument("--out", type=Path, required=True)
+    p_create.add_argument(
+        "--recipient", default=os.environ.get("BACKUP_PUBLIC_KEY"), help="The public key"
+    )
+    p_restore = backup_sub.add_parser("restore", help="Load a backup into an empty database")
+    p_restore.add_argument("--in", dest="source", type=Path, required=True)
+    p_restore.add_argument("--private-key-file", type=Path, required=True)
+    p_restore.add_argument(
+        "--check", action="store_true", help="Only decrypt and count; touch no database"
+    )
     sub.add_parser("audit-anchor", help="Print each tenant's audit-chain head (JSON lines)")
     p_verify = sub.add_parser(
         "audit-verify", help="Verify audit chains, optionally against anchors"
@@ -469,6 +533,8 @@ def main(argv: list[str] | None = None) -> int:
         _run(_retention(days, args.dry_run))
     elif args.cmd == "db":
         return _run(_db(args.action, args.revision, args.message))
+    elif args.cmd == "backup":
+        return _backup_cmd(args, parser)
     elif args.cmd == "audit-anchor":
         _run(_audit_anchor())
     elif args.cmd == "audit-verify":
