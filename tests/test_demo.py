@@ -37,11 +37,14 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
         "patients",
         "agenda",
         "clinical record",
+        "document manager",
+        "tests by the psychologist",
         "knowledge base",
         "assistant",
         "patient app (API)",
         "engagement campaign",
         "social media",
+        "inbox",
         "crisis alert",
         "follow-up",
         "privacy",
@@ -65,7 +68,18 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
     publications = steps["social media"]["publications"]
     assert publications["instagram"].startswith("dry run")
     assert publications["facebook"].startswith("dry run")  # photo rules verified (FB-PHOTOS)
-    assert steps["crisis alert"]["open_alerts"] == 1
+    # Instagram, Facebook and WhatsApp in one inbox; the crisis on Instagram opened an
+    # alert; the AI drafted, the psychologist sent (a dry run: no credentials here).
+    assert steps["inbox"]["conversations"] == {"instagram": 2, "facebook": 1, "whatsapp": 0}
+    assert steps["inbox"]["instagram_crisis_alert"] is True
+    assert steps["inbox"]["reply"] == "dry_run"
+    assert steps["crisis alert"]["open_alerts"] == 3  # Instagram crisis, Facebook person, WhatsApp
+    docs = steps["document manager"]
+    assert docs["files"] == 3 and docs["private_to_author"] == 1 and docs["download_intact"]
+    assert docs["reception"] == "refused (403)"
+    tests = steps["tests by the psychologist"]
+    assert tests["template_without_texts"] == "refused (422)"
+    assert tests["sent_to_app"].startswith("PHQ-9") and tests["patient_saw_score"] is False
     assert steps["agenda"]["double_booking"] == "refused (409)"
     assert steps["follow-up"]["needing_attention"] >= 1  # PHQ-9 item 9 alert at least
     assert steps["privacy"]["audit_chain"]["ok"] is True

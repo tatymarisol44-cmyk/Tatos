@@ -11,6 +11,10 @@ What it does, in order (each step is a line of the report):
  3. the clinical record: session notes, a psychotherapy note (author only), a custom
     instrument designed by the psychologist, PHQ-9/GAD-7 results (one raises an alert),
     a signed-consent PDF attached;
+    the document manager: a report and a private note added, listed, one downloaded
+    and checked against its SHA-256;
+    tests by the psychologist: a template refused until its items carry text, then the
+    PHQ-9 sent to a patient's app and answered there (the score never shown to her);
  4. the company knowledge base (FAQ, prices, cancellation policy);
  5. the assistant: an everyday question, and a clinical one held for review, edited and
     approved by the psychologist;
@@ -20,7 +24,9 @@ What it does, in order (each step is a line of the report):
  8. social media: accounts on every network, a generated infographic approved and
     published (for real where credentials exist, otherwise a dry run that shows the
     exact request);
- 9. a crisis message on WhatsApp opens an alert for the on-call professional;
+ 9. the inbox: Instagram, Facebook and WhatsApp messages in one place, a crisis on
+    Instagram answered with the fixed text and an alert, an AI draft used for a reply;
+    a crisis message on WhatsApp opens an alert for the on-call professional;
 10. data-subject rights (export, erasure) and the audit chain verified.
 """
 
@@ -195,6 +201,8 @@ class Demo:
         # id): with the matching SOCIAL_SECRET_* the publications and replies go live.
         self.accounts = {k: v for k, v in (accounts or {}).items() if v}
         self.rng = random.Random(seed)  # noqa: S311 - synthetic data, not security
+        self.instruments: dict[str, str] = {}
+        self.social_ids: dict[str, str] = {}
         self.keys: dict[str, str] = {}
         self.report: list[dict[str, Any]] = []
         self.suffix = datetime.now(UTC).strftime("%H%M%S")
@@ -396,6 +404,7 @@ class Demo:
         phq9 = self.call(
             "POST", "/v1/clinical/instruments/from-template", "dra.vera", json={"template": "phq9"}
         )
+        self.instruments["phq9"] = phq9["instrument_id"]
         flagged = self.call(
             "POST",
             f"/v1/clinical/patients/{patient}/instrument-results",
@@ -408,6 +417,7 @@ class Demo:
         gad7 = self.call(
             "POST", "/v1/clinical/instruments/from-template", "dra.vera", json={"template": "gad7"}
         )
+        self.instruments["gad7"] = gad7["instrument_id"]
         self.call(
             "POST",
             f"/v1/clinical/patients/{patient}/instrument-results",
@@ -432,6 +442,151 @@ class Demo:
             phq9_alerts=[a["message"] for a in flagged["alerts"]],
             file_sha256=attached["sha256"][:16] + "…",
         )
+
+    def documents(self, patient: str) -> None:
+        """The document manager: files added, listed, and one downloaded intact."""
+        report = b"%PDF-1.4\n% Informe psicologico (sintetico de demostracion)\n%%EOF\n"
+        added = self.call(
+            "POST",
+            f"/v1/clinical/patients/{patient}/files",
+            "dra.vera",
+            files={"file": ("informe-psicologico.pdf", report, "application/pdf")},
+            data={"label": "Informe psicológico (sintético)"},
+        )
+        self.call(
+            "POST",
+            f"/v1/clinical/patients/{patient}/files",
+            "dra.vera",
+            files={"file": ("notas-privadas.txt", b"Hipotesis (sintetico).", "text/plain")},
+            data={"label": "Notas privadas", "access": "author_only"},
+        )
+        listed = self.call("GET", f"/v1/clinical/patients/{patient}/files", "dra.vera")
+        response = self.c.get(
+            f"/v1/clinical/files/{added['file_id']}", headers={"X-API-Key": self.keys["dra.vera"]}
+        )
+        intact = hashlib.sha256(response.content).hexdigest() == added["sha256"]
+        refused = self.c.get(
+            f"/v1/clinical/patients/{patient}/files",
+            headers={"X-API-Key": self.keys["recepcion"]},
+        )
+        self.step(
+            "document manager",
+            files=len(listed),
+            private_to_author=sum(1 for f in listed if f["access"] == "author_only"),
+            download_intact=intact,
+            reception=f"refused ({refused.status_code})",
+        )
+
+    def tests_by_psychologist(self) -> None:
+        """The psychologist completes the PHQ-9 template and sends it to a patient's app;
+        the patient answers it there."""
+        patient = self.call("GET", "/v1/me", "paciente2")["profile"]["id"]
+        placeholder = self.c.post(
+            f"/v1/clinical/patients/{patient}/assignments",
+            headers={"X-API-Key": self.keys["dra.vera"]},
+            json={"instrument_id": self.instruments["gad7"]},
+        )
+        phq9 = self.call("GET", f"/v1/clinical/instruments/{self.instruments['phq9']}", "dra.vera")
+        spec = phq9["spec"]
+        for n, item in enumerate(spec["items"], 1):
+            item["text"] = f"Pregunta {n} del PHQ-9 (texto sintético de demostración)"
+        self.call(
+            "PUT",
+            f"/v1/clinical/instruments/{self.instruments['phq9']}",
+            "dra.vera",
+            json={"spec": spec},
+        )
+        self.call(
+            "POST",
+            f"/v1/clinical/patients/{patient}/assignments",
+            "dra.vera",
+            json={"instrument_id": self.instruments["phq9"], "due_days": 7},
+        )
+        [pending] = self.call("GET", "/v1/me/tests", "paciente2")
+        answers = {item["id"]: 1 for item in pending["items"]} | {"i9": 0}
+        reply = self.call(
+            "POST",
+            f"/v1/me/tests/{pending['assignment_id']}",
+            "paciente2",
+            json={"answers": answers},
+        )
+        results = self.call(
+            "GET", f"/v1/clinical/patients/{patient}/instrument-results", "dra.vera"
+        )
+        self.step(
+            "tests by the psychologist",
+            template_without_texts=f"refused ({placeholder.status_code})",
+            sent_to_app=pending["name"],
+            patient_saw_score="total" in reply or "band" in reply,
+            result_for_psychologist=f"{results[-1]['total']} ({results[-1]['band']})",
+        )
+
+    def inbox(self, patient: str) -> None:
+        """Instagram, Facebook and WhatsApp in one inbox (ADR 0023)."""
+        if not self.meta_app_secret:
+            self.step("inbox", skipped="start the server with META_APP_SECRET to rehearse it")
+            return
+        if {"instagram", "facebook"} & set(self.accounts):
+            # Live accounts: the fixed replies would reach whoever owns invented ids.
+            self.step("inbox", live="write to your Instagram or Facebook page from your phone")
+            return
+        ig, fb = self.social_ids["instagram"], self.social_ids["facebook"]
+        self._social_message(
+            "instagram", ig, "990000000000101", "Hola, ¿atienden ansiedad? ¿Cuánto cuesta?"
+        )
+        self._social_message(
+            "instagram", ig, "990000000000102", "Ya no aguanto más, quiero hacerme daño"
+        )
+        self._social_message("page", fb, "990000000000103", "Quiero hablar con una persona")
+        conversations = self.call("GET", "/v1/inbox", "dra.vera")
+        question = next(
+            c for c in conversations if c["network"] == "instagram" and c["attention"] is None
+        )
+        cid = question["conversation_id"]
+        draft = self.call("POST", f"/v1/inbox/{cid}/draft", "dra.vera")
+        sent = self.call(
+            "POST",
+            f"/v1/inbox/{cid}/reply",
+            "dra.vera",
+            json={"body": draft["text"], "draft_id": draft["message_id"]},
+        )
+        self.call("PUT", f"/v1/inbox/{cid}/patient", "dra.vera", json={"patient_id": patient})
+        alerts = self.call("GET", "/v1/social/alerts", "dra.vera")
+        self.step(
+            "inbox",
+            conversations={
+                n: sum(1 for c in conversations if c["network"] == n)
+                for n in ("instagram", "facebook", "whatsapp")
+            },
+            instagram_crisis_alert=any(
+                a["network"] == "instagram" and a["kind"] == "crisis" for a in alerts
+            ),
+            ai_draft="suggested, used by the psychologist",
+            reply=sent["status"],
+        )
+
+    def _social_message(self, obj: str, account: str, sender: str, text: str) -> None:
+        """A Messenger ("page") or Instagram notification, signed as Meta signs it."""
+        event = {
+            "sender": {"id": sender},
+            "recipient": {"id": account},
+            "timestamp": int(datetime.now(UTC).timestamp() * 1000),
+            "message": {"mid": f"m.{sender}.{self.suffix}", "text": text},
+        }
+        body = json.dumps(
+            {"object": obj, "entry": [{"id": account, "time": 0, "messaging": [event]}]}
+        ).encode()
+        assert self.meta_app_secret is not None
+        signature = (
+            "sha256=" + hmac.new(self.meta_app_secret.encode(), body, hashlib.sha256).hexdigest()
+        )
+        response = self.c.post(
+            "/v1/channels/meta",
+            content=body,
+            headers={"X-Hub-Signature-256": signature, "Content-Type": "application/json"},
+        )
+        if response.status_code != 200:
+            raise DemoError(f"inbox webhook: {response.status_code} {response.text[:200]}")
 
     def knowledge(self) -> None:
         for title, text in KNOWLEDGE:
@@ -543,6 +698,7 @@ class Demo:
             )
             if made:
                 ids[network] = made.get("account_id")
+                self.social_ids[network] = external
         published = {}
         for network in ("instagram", "facebook", "tiktok"):
             if not ids.get(network):
@@ -677,11 +833,14 @@ class Demo:
         ids = self.patients()
         self.agenda(ids)
         self.clinical(ids[0])
+        self.documents(ids[0])
+        self.tests_by_psychologist()
         self.knowledge()
         self.assistant(ids[0])
         self.patient_view(ids[0])
         self.campaign()
         self.social()
+        self.inbox(ids[3])
         self.crisis()
         self.follow_up(ids[0])
         self.rights(keep=ids[0], erase=ids[19])

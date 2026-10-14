@@ -149,6 +149,16 @@ legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
 .slot.x { background: #F3F4F6; border-color: var(--line-2); color: var(--muted); text-decoration: line-through; }
 .slot.f { background: #fff; border: 1px dashed #A9B4BE; color: #3E4954; }
 
+/* --- weekly hours ---------------------------------------------------------------------- */
+.hours { display: flex; flex-direction: column; gap: 6px; }
+.hours-row {
+  display: grid; grid-template-columns: 150px 1fr 56px 1fr; gap: 10px; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid #EEF1F3;
+}
+.hours-span { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.hours-span input { min-width: 0; }
+@media (max-width: 720px) { .hours-row { grid-template-columns: 1fr 1fr; } }
+
 /* --- dialogs ------------------------------------------------------------------------- */
 dialog { border: 0; border-radius: 16px; padding: 0; width: 440px; max-width: calc(100vw - 32px); }
 dialog::backdrop { background: rgba(23, 33, 43, .45); }

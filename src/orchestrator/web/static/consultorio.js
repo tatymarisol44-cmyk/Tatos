@@ -180,6 +180,12 @@ const FLAGS = {
   "test alert": "Alerta en un test",
 };
 function flagText(flag) { return FLAGS[flag] || (flag.startsWith("no visit") ? "Más de 30 días sin cita y ninguna agendada" : flag); }
+// The scales' bands (scales.py) in the words the professional uses.
+const BANDS = {
+  minimal: "mínima", mild: "leve", moderate: "moderada",
+  moderately_severe: "moderadamente grave", severe: "grave",
+};
+const bandName = (band) => BANDS[band] || band;
 const NETWORKS = { whatsapp: ["WhatsApp", "wa"], instagram: ["Instagram", "ig"], facebook: ["Facebook", "fb"], app: ["App", "app"] };
 
 function chip(status) {
@@ -375,7 +381,9 @@ function alertBox(alert) {
       el("span", { text: crisis
         ? "Se le envió la contención automática con el ECU 911 y la línea 171 (opción 6). Falta que la contactes."
         : "Se le avisó que una persona del equipo le escribirá." }),
-      alert.address ? el("span", { text: ` Número para devolver la llamada: ${alert.address}.` }) : null,
+      alert.address && (alert.network === "whatsapp" || alert.network === "app")
+        ? el("span", { text: ` Número para devolver la llamada: ${alert.address}.` })
+        : el("span", { text: alert.network === "app" ? "" : " Respóndele desde Mensajes." }),
       status),
     el("div", { class: "row tight" }, go, done));
 }
@@ -716,21 +724,25 @@ async function hoursCard(prof) {
     const on = el("input", { type: "checkbox", checked: Boolean(first) });
     const split = el("input", { type: "checkbox", checked: Boolean(second) });
     const inputs = [s1, e1, s2, e2].map((v) => el("input", { type: "time", value: v, step: "300" }));
-    return { day, on, split, inputs, node: el("fieldset", { class: "card" },
-      el("legend", { text: DAY_NAMES[i] }),
-      el("label", { class: "check" }, on, "Atiendo este día"),
-      el("div", { class: "fields" },
-        el("label", { class: "field" }, "Desde", inputs[0]), el("label", { class: "field" }, "Hasta", inputs[1])),
-      el("label", { class: "check" }, split, "Tengo un segundo horario (por ejemplo, después del almuerzo)"),
-      el("div", { class: "fields" },
-        el("label", { class: "field" }, "Desde", inputs[2]), el("label", { class: "field" }, "Hasta", inputs[3]))) };
+    for (const [n, input] of inputs.entries()) {
+      input.setAttribute("aria-label", `${DAY_NAMES[i]}: ${["desde", "hasta", "segundo horario desde", "segundo horario hasta"][n]}`);
+    }
+    on.setAttribute("aria-label", `Atiendo el ${DAY_NAMES[i].toLowerCase()}`);
+    split.setAttribute("aria-label", `Segundo horario el ${DAY_NAMES[i].toLowerCase()}`);
+    return { day, on, split, inputs, node: el("div", { class: "hours-row" },
+      el("label", { class: "check" }, on, el("strong", { text: DAY_NAMES[i] })),
+      el("span", { class: "hours-span" }, inputs[0], "a", inputs[1]),
+      el("label", { class: "check" }, split, "y"),
+      el("span", { class: "hours-span" }, inputs[2], "a", inputs[3])) };
   });
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const save = el("button", { class: "btn primary", type: "submit", text: "Guardar horario" });
   const form = el("form", { class: "stack", novalidate: true },
     el("p", { class: "muted", text: `${prof.display_name}. Las pacientes solo pueden reservar dentro de este horario.` }),
     el("label", { class: "field" }, "Duración de cada sesión (minutos)", minutes),
-    ...rows.map((r) => r.node), save, status);
+    el("div", { class: "hours" }, ...rows.map((r) => r.node)),
+    el("p", { class: "muted", text: "Marca los días que atiendes. Si tienes un segundo horario (por ejemplo, después del almuerzo), marca «y» y escríbelo." }),
+    save, status);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const hours = [];
@@ -842,10 +854,10 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
       return b;
     }));
   const body = el("div", { class: "stack", role: "tabpanel" }, el("p", { class: "muted", text: "Cargando…" }));
-  main.replaceChildren(
+  main.replaceChildren(...[
     page(patient.display_name, contact, patient.restricted ? null : access, visit),
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
-    tabs, body);
+    tabs, body].filter(Boolean));
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
   body.replaceChildren(...await render(patient));
 };
@@ -982,7 +994,7 @@ async function tabTests(patient) {
   const done = [...results].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => el("article", { class: "card" },
     el("div", { class: "head" },
       el("div", {}, el("strong", { text: r.instrument_name }), el("p", { class: "muted", text: `${longDate(r.created_at.slice(0, 10))}${r.note === "self-report" ? " · respondido en su app" : ""}` })),
-      el("span", { class: `chip ${r.severity === "high" ? "bad" : r.severity === "moderate" ? "wait" : "ok"}`, text: r.band ? `${r.total} · ${r.band}` : String(r.total ?? "—") })),
+      el("span", { class: `chip ${r.severity === "high" ? "bad" : r.severity === "moderate" ? "wait" : "ok"}`, text: r.band ? `${r.total} · ${bandName(r.band)}` : String(r.total ?? "—") })),
     ...r.alerts.map((a) => el("p", { class: "status error", text: `⚠ ${a.message}` }))));
   return [
     card("Enviar un test a su app", "", form),
@@ -1072,6 +1084,9 @@ VIEWS.mensajes = async (main, conversationId) => {
     main.replaceChildren(page("Mensajes", ""), empty("Los mensajes de pacientes son solo para el rol de psicóloga."));
     return;
   }
+  await knownPatients();
+  // The open conversation first: reading it marks it read, so the list below agrees.
+  const right = conversationId ? await conversationCard(conversationId) : null;
   const list = await api(`/v1/inbox${inboxFilter ? `?network=${inboxFilter}` : ""}`);
   const filters = el("div", { class: "filters", role: "group", "aria-label": "Filtrar por red" },
     ...[["", "Todos"], ["whatsapp", "WhatsApp"], ["instagram", "Instagram"], ["facebook", "Facebook"]].map(([value, label]) => {
@@ -1088,14 +1103,12 @@ VIEWS.mensajes = async (main, conversationId) => {
         c.attention === "crisis" ? el("span", { class: "chip bad", text: "Crisis" }) : null,
         c.attention === "human" ? el("span", { class: "chip wait", text: "Pide una persona" }) : null,
         c.unread ? el("span", { class: "count", text: String(c.unread), "aria-label": `${c.unread} sin leer` }) : null),
-      el("span", { class: "muted", text: c.preview || "" }));
+      el("span", { class: "muted", text: c.preview && c.preview.length >= 80 ? `${c.preview}…` : c.preview || "" }));
   });
-  await knownPatients();
   const left = el("section", { class: "card grow-1", "aria-label": "Conversaciones" }, filters,
     ...(threads.length ? threads : [empty("No hay conversaciones todavía. Cuando alguien escriba por WhatsApp, Instagram o Facebook, aparecerá aquí.")]));
-  const right = conversationId ? await conversationCard(conversationId) : card("Conversación", "grow-2", empty("Elige una conversación de la lista."));
   main.replaceChildren(page("Mensajes", "WhatsApp, Instagram y Facebook en un solo lugar. La IA solo sugiere: tú decides qué se envía."),
-    el("div", { class: "row" }, left, right));
+    el("div", { class: "row" }, left, right || card("Conversación", "grow-2", empty("Elige una conversación de la lista."))));
 };
 
 let patientNames = {};

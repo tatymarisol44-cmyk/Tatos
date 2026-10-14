@@ -135,9 +135,8 @@ def test_sign_in_profile_hours_and_a_booking(server: str, browser: Any) -> None:
     page.click("text=Guardar mi perfil")
     page.wait_for_selector("text=Guardar horario")
     assert page.inner_text("#me-name") == "Psic. Demo Sintética"
-    for box in page.query_selector_all("fieldset input[type=checkbox]"):
-        label = box.evaluate("b => b.parentElement.textContent")
-        if "Atiendo este día" in label and not box.is_checked():
+    for box in page.query_selector_all(".hours-row > label:first-child input[type=checkbox]"):
+        if not box.is_checked():
             box.check()
     page.click("text=Guardar horario")
     page.wait_for_selector("text=Horario guardado")
@@ -212,6 +211,7 @@ def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) 
     page.wait_for_selector("h1:has-text('Lucía Sintética')")
     assert "0991112233" in page.inner_text("#view")
     page.wait_for_selector("text=Borrador automático")  # the summary before a session
+    assert "null" not in page.inner_text("#view")  # an absent element prints nothing
 
     # A session note in the record, then a correction that keeps the original.
     page.get_by_role("tab", name="Historia").click()

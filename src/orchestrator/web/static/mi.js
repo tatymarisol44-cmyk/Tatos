@@ -326,10 +326,10 @@ function answerTest(main, test) {
       refreshTestsBadge();
     } catch (err) { say(status, humanError(err), "error"); send.disabled = false; }
   });
-  box.append(el("h1", { class: "title", text: test.name }),
+  box.append(...[el("h1", { class: "title", text: test.name }),
     test.instructions ? el("p", { class: "muted", text: test.instructions }) : null,
     ...questions, send, status,
-    el("p", { class: "muted", text: "No hay respuestas buenas ni malas. Tu psicóloga revisará los resultados contigo." }));
+    el("p", { class: "muted", text: "No hay respuestas buenas ni malas. Tu psicóloga revisará los resultados contigo." })].filter(Boolean));
 }
 
 // --- PERFIL ------------------------------------------------------------------------------------------

@@ -99,7 +99,7 @@ def test_the_lines_come_from_the_figures_only() -> None:
     assert "01/10/2026 10:00 (hace 13 días)" in text  # Guayaquil time, UTC-5
     assert "Asistencia: 3 de 4 citas (75 %)" in text
     assert "Riesgo de inasistencia medio: no tiene cita de seguimiento agendada." in text
-    assert "GAD-7: 16 (severe), antes 7 (mild): empeoró [2 aplicaciones]." in text
+    assert "GAD-7: 16 (grave), antes 7 (leve): empeoró [2 aplicaciones]." in text
     assert "Historia: 1 entradas (1 session_note)" in text
     assert "Mensajes en Instagram: 2 sin leer, pidió hablar con una persona." in text
     assert "no un diagnóstico" in lines[-1]

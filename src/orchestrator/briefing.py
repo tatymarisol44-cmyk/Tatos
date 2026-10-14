@@ -29,6 +29,20 @@ from orchestrator.instruments import Instruments
 RISK = {"high": "alto", "medium": "medio", "low": "bajo"}
 DIRECTION = {"worse": "empeoró", "better": "mejoró", "same": "sin cambio de banda"}
 NETWORK = {"whatsapp": "WhatsApp", "instagram": "Instagram", "facebook": "Facebook"}
+# The scales' bands (scales.py), in the words the professional uses.
+BANDS = {
+    "minimal": "mínima",
+    "mild": "leve",
+    "moderate": "moderada",
+    "moderately_severe": "moderadamente grave",
+    "severe": "grave",
+}
+
+
+def band_es(band: str | None) -> str:
+    return BANDS.get(band or "", band or "sin banda")
+
+
 # followup.no_show_risk explains itself in English for the API; here, in Spanish.
 REASONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^missed (\d+) of (\d+) visits$"), "faltó a {0} de {1} citas"),
@@ -85,11 +99,11 @@ def compose(
         lines.append(f"Riesgo de inasistencia {RISK[risk['level']]}: {reasons}.")
     for test in facts["tests"]:
         last = test["last"]
-        line = f"{test['instrument']}: {last['total']} ({last['band'] or 'sin banda'})"
+        line = f"{test['instrument']}: {last['total']} ({band_es(last['band'])})"
         if test["applied"] > 1:
             first = test["first"]
             line += (
-                f", antes {first['total']} ({first['band'] or 'sin banda'}): "
+                f", antes {first['total']} ({band_es(first['band'])}): "
                 f"{DIRECTION[test['direction']]}"
             )
         lines.append(line + f" [{test['applied']} aplicaciones].")
