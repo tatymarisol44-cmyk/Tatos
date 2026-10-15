@@ -10,16 +10,58 @@
 </head>
 <body>
   <section id="signin" class="signin" hidden>
-    <form id="signin-form" class="card" novalidate>
+    <div class="card">
       <div class="brand"><span class="avatar" aria-hidden="true">✚</span><h1 class="title">Consultorio</h1></div>
-      <p class="sub">Entra con tu llave personal. Es la que te entregaron al crear tu cuenta; no la compartas con nadie.</p>
-      <label class="field">Tu llave personal
-        <input id="signin-key" type="password" autocomplete="current-password" required>
-      </label>
-      <label class="check"><input id="signin-remember" type="checkbox"> Recordarme en esta computadora</label>
-      <button class="btn primary" type="submit">Entrar</button>
+
+      <form id="email-form" class="stack" novalidate hidden>
+        <p class="sub">Entra con tu correo y tu contraseña. Después te enviaremos un código a tu correo.</p>
+        <label class="field">Correo
+          <input id="signin-email" type="email" autocomplete="username" inputmode="email" spellcheck="false" required>
+        </label>
+        <label class="field">Contraseña
+          <input id="signin-password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn primary" type="submit">Continuar</button>
+        <button id="forgot" class="linkish" type="button">Olvidé mi contraseña</button>
+      </form>
+
+      <form id="code-form" class="stack" novalidate hidden>
+        <p id="code-sent" class="sub"></p>
+        <label class="field">Código de 6 números
+          <input id="signin-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+        </label>
+        <label class="check"><input id="code-remember" type="checkbox"> Recordarme en esta computadora (30 días)</label>
+        <button class="btn primary" type="submit">Entrar</button>
+        <div class="row tight">
+          <button id="resend" class="linkish" type="button">Enviar otro código</button>
+          <button id="code-back" class="linkish" type="button">Volver</button>
+        </div>
+      </form>
+
+      <form id="password-form" class="stack" novalidate hidden>
+        <p class="sub">Crea tu contraseña: al menos 10 caracteres. Una frase corta que recuerdes es una buena opción, por ejemplo «Mi gato duerme al sol».</p>
+        <label class="field">Contraseña nueva
+          <input id="new-password" type="password" autocomplete="new-password" required>
+        </label>
+        <label class="field">Repítela
+          <input id="new-password-2" type="password" autocomplete="new-password" required>
+        </label>
+        <button class="btn primary" type="submit">Guardar contraseña</button>
+      </form>
+
+      <form id="signin-form" class="stack" novalidate>
+        <p class="sub">Entra con tu llave personal. Es la que te entregaron al crear tu cuenta; no la compartas con nadie.</p>
+        <label class="field">Tu llave personal
+          <input id="signin-key" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="check"><input id="signin-remember" type="checkbox"> Recordarme en esta computadora</label>
+        <button class="btn primary" type="submit">Entrar</button>
+      </form>
+
+      <button id="use-key" class="linkish" type="button" hidden>Entrar con llave de emergencia</button>
+      <button id="use-email" class="linkish" type="button" hidden>Entrar con mi correo</button>
       <p id="signin-status" class="status" role="status" aria-live="polite"></p>
-    </form>
+    </div>
   </section>
 
   <div id="app" class="layout" hidden>

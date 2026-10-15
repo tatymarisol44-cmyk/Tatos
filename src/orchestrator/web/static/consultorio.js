@@ -78,7 +78,7 @@ async function request(path, { method = "GET", body } = {}) {
     throw new ApiError(0, "");
   }
   if (resp.status === 401 && state.session) {
-    signOut("Tu sesión terminó. Vuelve a entrar con tu llave.");
+    signOut("Tu sesión terminó. Vuelve a entrar.");
     throw new ApiError(401, "");
   }
   if (!resp.ok) {
@@ -228,6 +228,121 @@ function firstName() {
 }
 
 // --- sign in and out -------------------------------------------------------------------------
+// With e-mail (ADR 0024): e-mail and password, then a 6-digit code from the e-mail. The
+// personal key stays as break-glass access. A link "#clave=..." from an invitation or a
+// reset opens the step to choose a password; its token never stays in the address bar.
+const auth = { email: false, challenge: null, token: null };
+const STEPS = { email: "#email-form", code: "#code-form", password: "#password-form", key: "#signin-form" };
+
+function showStep(step) {
+  for (const [name, sel] of Object.entries(STEPS)) $(sel).hidden = name !== step;
+  $("#use-key").hidden = !(auth.email && step === "email");
+  $("#use-email").hidden = !(auth.email && step === "key");
+  $(STEPS[step]).querySelector("input")?.focus();
+}
+
+async function emailStep(event) {
+  event.preventDefault();
+  const status = $("#signin-status");
+  const email = $("#signin-email").value.trim();
+  const password = $("#signin-password").value;
+  if (!email || !password) return say(status, "Escribe tu correo y tu contraseña.", "error");
+  say(status, "Revisando…");
+  try {
+    const started = await api("/v1/auth/sign-in", { method: "POST", body: { email, password } });
+    auth.challenge = started.challenge;
+    $("#signin-password").value = "";
+    $("#code-sent").textContent = `Te enviamos un código de 6 números a ${started.sent_to}. Vence en 10 minutos. Si no lo ves, revisa la carpeta de spam.`;
+    say(status, "");
+    showStep("code");
+  } catch (err) {
+    say(status, err.status === 401 ? "Correo o contraseña incorrectos."
+      : err.status === 429 ? "Demasiados intentos seguidos. Espera un minuto."
+        : err.status === 503 ? "No pudimos enviar el código por correo. Inténtalo más tarde o entra con tu llave de emergencia."
+          : humanError(err), "error");
+  }
+}
+
+async function codeStep(event) {
+  event.preventDefault();
+  const status = $("#signin-status");
+  const code = $("#signin-code").value.replace(/\D/g, "");
+  if (code.length !== 6) return say(status, "Escribe los 6 números del código.", "error");
+  const remember = $("#code-remember").checked;
+  say(status, "Entrando…");
+  try {
+    const session = await api("/v1/auth/code", { method: "POST", body: { challenge: auth.challenge, code, remember } });
+    keyStore.set(session.key, remember);
+    $("#signin-code").value = "";
+    await start();
+    say(status, "");
+  } catch (err) {
+    say(status, err.status === 401 ? "El código no es correcto o ya venció. Revisa el último correo o pide otro código."
+      : humanError(err), "error");
+  }
+}
+
+async function resendCode() {
+  const status = $("#signin-status");
+  try {
+    await api("/v1/auth/resend", { method: "POST", body: { challenge: auth.challenge } });
+    say(status, "Te enviamos otro código. Usa el más reciente.", "done");
+  } catch (err) {
+    say(status, err.status === 429 ? "Espera un minuto antes de pedir otro código."
+      : err.status === 401 ? "Este intento venció. Vuelve a escribir tu correo y tu contraseña."
+        : humanError(err), "error");
+  }
+}
+
+async function forgotPassword() {
+  const status = $("#signin-status");
+  const email = $("#signin-email").value.trim();
+  if (!email) {
+    $("#signin-email").focus();
+    return say(status, "Escribe tu correo arriba y vuelve a tocar «Olvidé mi contraseña».", "error");
+  }
+  try {
+    await api("/v1/auth/forgot", { method: "POST", body: { email } });
+    say(status, "Si ese correo está registrado, te enviamos un enlace para crear una contraseña nueva. Vence en 30 minutos.", "done");
+  } catch (err) { say(status, humanError(err), "error"); }
+}
+
+async function passwordStep(event) {
+  event.preventDefault();
+  const status = $("#signin-status");
+  const password = $("#new-password").value;
+  if (password.length < 10) return say(status, "La contraseña necesita al menos 10 caracteres.", "error");
+  if (password !== $("#new-password-2").value) return say(status, "Las dos contraseñas no son iguales.", "error");
+  say(status, "Guardando…");
+  try {
+    await api("/v1/auth/password", { method: "POST", body: { token: auth.token, password } });
+    auth.token = null;
+    $("#new-password").value = "";
+    $("#new-password-2").value = "";
+    showStep("email");
+    say(status, "Listo, tu contraseña quedó guardada. Ahora entra con tu correo y tu contraseña.", "done");
+  } catch (err) {
+    say(status, err.status === 410 ? "Este enlace ya se usó o venció. Pide uno nuevo con «Olvidé mi contraseña»."
+      : err.status === 422 && err.detail ? err.detail : humanError(err), "error");
+  }
+}
+
+/** A link from an invitation or a reset: keep its token in memory, out of the address bar. */
+function takeLinkToken() {
+  const found = /^#clave=([\w-]{20,100})$/.exec(location.hash);
+  if (!found) return false;
+  auth.token = found[1];
+  history.replaceState(null, "", location.pathname);
+  here = "";
+  keyStore.clear();
+  state.session = null;
+  $("#app").hidden = true;
+  $("#signin").hidden = false;
+  say($("#signin-status"), "");
+  showStep("password");
+  return true;
+}
+
 async function signIn(event) {
   event.preventDefault();
   const status = $("#signin-status");
@@ -238,6 +353,7 @@ async function signIn(event) {
   try {
     await start();
     $("#signin-key").value = "";
+    say(status, "");
   } catch (err) {
     keyStore.clear();
     say(status, err instanceof ApiError && (err.status === 401 || err.status === 403)
@@ -247,12 +363,17 @@ async function signIn(event) {
 }
 
 function signOut(message = "") {
+  const key = keyStore.get() || memoryKey;
+  if (key && key.startsWith("ss_")) {
+    // End the e-mail session on the server too; the page forgets it either way.
+    fetch("/v1/auth/sign-out", { method: "POST", headers: { "X-API-Key": key } }).catch(() => {});
+  }
   keyStore.clear();
   state.session = null;
   $("#app").hidden = true;
   $("#signin").hidden = false;
+  showStep(auth.email ? "email" : "key");
   say($("#signin-status"), message, message ? "error" : "");
-  $("#signin-key").focus();
 }
 
 async function start() {
@@ -595,11 +716,136 @@ VIEWS.ajustes = async (main, section, which) => {
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
   parts.push(await onCallCard());
-  parts.push(card("Tu cuenta", "",
-    el("p", { text: `Entraste como ${s.id}.` }),
-    el("p", { class: "muted", text: `Permisos: ${s.roles.map((r) => ({ admin: "administración", owner: "dueña", reviewer: "psicóloga (datos clínicos)", reception: "recepción", marketing: "marketing", privacy: "protección de datos" })[r] || r).join(", ")}.` })));
+  if (isAdmin()) parts.push(await teamCard());
+  parts.push(accountCard());
   main.replaceChildren(...parts);
 };
+
+const ROLE_NAMES = {
+  admin: "administración", owner: "dueña", reviewer: "psicóloga (datos clínicos)", reception: "recepción",
+  marketing: "marketing", privacy: "protección de datos",
+};
+const roleList = (roles) => roles.map((r) => ROLE_NAMES[r] || r).join(", ");
+// What each profile opens, in the words of the team (see the manual's "Quién ve qué").
+const ROLE_CHOICES = [
+  ["reviewer", "Psicóloga", "historias clínicas, tests y mensajes de pacientes"],
+  ["reception", "Recepción", "agenda, datos de contacto y enlaces de la app"],
+  ["owner", "Dueña", "informe del mes, talleres y aprobaciones"],
+  ["marketing", "Marketing", "campañas y publicaciones"],
+  ["admin", "Administración", "configura el consultorio y el equipo; no ve historias clínicas"],
+  ["privacy", "Privacidad", "pedidos de las pacientes sobre sus datos"],
+];
+
+function accountCard() {
+  const s = state.session;
+  const parts = [
+    el("p", { text: `Entraste como ${s.id}.` }),
+    el("p", { class: "muted", text: `Permisos: ${roleList(s.roles)}.` }),
+  ];
+  if (s.kind !== "staff" || !auth.email) return card("Tu cuenta", "", ...parts);
+  const login = s.email_login;
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  if (login && login.active) {
+    parts.push(el("p", { text: `Entras con tu correo ${login.email}, tu contraseña y un código que te llega al correo.` }));
+    return card("Tu cuenta", "", ...parts);
+  }
+  const email = el("input", { type: "email", maxlength: "254", autocomplete: "email", spellcheck: "false", value: login ? login.email : "" });
+  const send = el("button", { class: "btn", type: "submit", text: login ? "Enviarme la invitación otra vez" : "Enviarme la invitación" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("p", { text: login
+      ? `Te enviamos una invitación a ${login.email}. Ábrela para crear tu contraseña.`
+      : "Puedes entrar con tu correo y una contraseña en vez de la llave. Escribe tu correo y te enviaremos un enlace para crear tu contraseña." }),
+    el("label", { class: "field" }, "Tu correo", email), send, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!email.value.trim()) return say(status, "Escribe tu correo.", "error");
+    send.disabled = true;
+    try {
+      await api("/v1/session/email", { method: "POST", body: { email: email.value.trim() } });
+      state.session = await api("/v1/session");
+      say(status, `Listo: revisa ${email.value.trim()} y abre el enlace para crear tu contraseña.`, "done");
+    } catch (err) {
+      say(status, err.status === 409 ? "Ese correo ya lo usa otra persona del equipo."
+        : err.status === 422 ? "Ese correo no parece válido. Revísalo."
+          : err.status === 503 ? "El envío de correos todavía no está configurado." : humanError(err), "error");
+    } finally { send.disabled = false; }
+  });
+  return card("Tu cuenta", "", ...parts, form);
+}
+
+const MEMBER_STATES = {
+  active: ["Activa", "ok"], invited: ["Invitación enviada", "wait"], key_only: ["Entra con llave", "neutral"],
+};
+
+async function teamCard() {
+  const members = (await api("/v1/admin/team")).filter((m) => m.status !== "revoked");
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const rows = members.map((m) => {
+    const [label, cls] = MEMBER_STATES[m.status] || [m.status, "neutral"];
+    const actions = [];
+    if (m.status === "invited") {
+      const again = el("button", { class: "btn small", type: "button", text: "Reenviar invitación" });
+      again.addEventListener("click", async () => {
+        again.disabled = true;
+        try {
+          await api(`/v1/admin/team/${encodeURIComponent(m.id)}/invite`, { method: "POST" });
+          say(status, `Invitación enviada otra vez a ${m.email}.`, "done");
+        } catch (err) { say(status, err.status === 503 ? "No pudimos enviar el correo. Inténtalo más tarde." : humanError(err), "error"); }
+        finally { again.disabled = false; }
+      });
+      actions.push(again);
+    }
+    if (m.id !== state.session.id) {
+      const drop = el("button", { class: "btn small", type: "button", text: "Quitar acceso" });
+      drop.addEventListener("click", async () => {
+        if (!sure(drop, "Sí, quitar acceso")) return;
+        drop.disabled = true;
+        try { await api(`/v1/admin/team/${encodeURIComponent(m.id)}`, { method: "DELETE" }); route(); }
+        catch (err) { say(status, humanError(err), "error"); drop.disabled = false; }
+      });
+      actions.push(drop);
+    }
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: m.name }), el("br"),
+        el("span", { class: "muted", text: `${m.email || "sin correo"} · ${roleList(m.roles)}` })),
+      el("span", { class: `chip ${cls}`, text: label }), ...actions);
+  });
+
+  const name = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: Ana Pérez" });
+  const email = el("input", { type: "email", maxlength: "254", required: true, autocomplete: "off", spellcheck: "false" });
+  const boxes = ROLE_CHOICES.map(([value, title, what]) => {
+    const box = el("input", { type: "checkbox", value });
+    return [box, el("label", { class: "check" }, box, el("span", {}, el("strong", { text: title }), ` — ${what}`))];
+  });
+  const invite = el("button", { class: "btn primary", type: "submit", text: "Invitar" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Nombre", name), el("label", { class: "field" }, "Correo", email)),
+    el("fieldset", { class: "roles" }, el("legend", { text: "Qué puede hacer (solo lo que su trabajo necesita)" }), ...boxes.map(([, label]) => label)),
+    invite);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const roles = boxes.filter(([box]) => box.checked).map(([box]) => box.value);
+    if (!name.value.trim() || !email.value.trim()) return say(status, "Escribe el nombre y el correo.", "error");
+    if (!roles.length) return say(status, "Marca al menos un permiso.", "error");
+    invite.disabled = true;
+    try {
+      const made = await api("/v1/admin/team", { method: "POST", body: { name: name.value.trim(), email: email.value.trim(), roles } });
+      say(status, made.invited
+        ? `Listo: le enviamos a ${made.email} un enlace para crear su contraseña. Vence en 72 horas.`
+        : "La persona quedó registrada, pero no pudimos enviar el correo. Usa «Reenviar invitación» más tarde.", made.invited ? "done" : "error");
+      setTimeout(route, 1500);
+    } catch (err) {
+      say(status, err.status === 409 ? "Ese correo ya lo usa otra persona del equipo."
+        : err.status === 422 ? "Ese correo no parece válido. Revísalo." : humanError(err), "error");
+      invite.disabled = false;
+    }
+  });
+  return card("Equipo", "",
+    el("p", { class: "muted", text: "Cada persona entra con su correo, su contraseña y un código que le llega al correo. Cuando alguien deja el consultorio, quítale el acceso ese mismo día." }),
+    ...(rows.length ? rows : [empty("Todavía no hay nadie más en el equipo.")]),
+    el("details", {}, el("summary", { text: "Agregar a una persona" }), form),
+    status);
+}
 
 // Tests: start from a public-domain template, paste the official wording of each item.
 const PLACEHOLDER = "(texto oficial del formulario)";
@@ -1682,10 +1928,19 @@ async function conversationCard(id) {
 }
 
 // --- start -------------------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   $("#signin-form").addEventListener("submit", signIn);
+  $("#email-form").addEventListener("submit", emailStep);
+  $("#code-form").addEventListener("submit", codeStep);
+  $("#password-form").addEventListener("submit", passwordStep);
+  $("#resend").addEventListener("click", resendCode);
+  $("#forgot").addEventListener("click", forgotPassword);
+  $("#code-back").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
+  $("#use-key").addEventListener("click", () => { say($("#signin-status"), ""); showStep("key"); });
+  $("#use-email").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
   $("#signout").addEventListener("click", () => signOut());
   window.addEventListener("hashchange", () => {
+    if (takeLinkToken()) return;
     if (unsavedText() && !confirm("Tienes texto sin guardar en esta pantalla. ¿Salir y perderlo?")) {
       history.replaceState(null, "", here); // stay; replaceState does not fire hashchange
       return;
@@ -1696,8 +1951,10 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("beforeunload", (event) => { if (unsavedText()) event.preventDefault(); });
   document.addEventListener("input", (event) => { if (event.target.matches("textarea")) event.target.dataset.dirty = "1"; });
   $("#skip").addEventListener("click", (event) => { event.preventDefault(); $("#view").focus(); });
+  try { auth.email = Boolean((await api("/v1/auth/options")).email); } catch { auth.email = false; }
+  if (takeLinkToken()) return;
   if (keyStore.get()) {
-    start().catch(() => signOut("Vuelve a entrar con tu llave personal."));
+    start().catch(() => signOut("Tu sesión terminó. Vuelve a entrar."));
   } else {
     signOut();
   }

@@ -194,6 +194,16 @@ class Settings(BaseSettings):
     smtp_password: SecretStr | None = None
     smtp_from: str | None = None
     smtp_timeout_seconds: float = Field(default=10.0, ge=1, le=60)
+    # Outside prod and without SMTP_HOST, e-mails are written here as text files: the local
+    # practice reads its sign-in codes there. Ignored in prod.
+    dev_outbox_dir: str | None = None
+
+    # --- Staff sign-in with e-mail, password and an e-mailed code (ADR 0024) -----------
+    staff_session_hours: float = Field(default=12, gt=0, le=24)
+    # "Remember me on this computer": the session lasts this long instead.
+    staff_session_remember_days: int = Field(default=30, ge=1, le=90)
+    # Sign-in requests per minute from one client address (on top of the per-login limits).
+    auth_rate_per_minute: int = Field(default=10, ge=1, le=1000)
 
     # --- Guardrails --------------------------------------------------------
     max_input_chars: int = 8000

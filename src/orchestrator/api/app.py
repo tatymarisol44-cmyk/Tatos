@@ -38,6 +38,7 @@ from orchestrator.api import (
     publications,
     session,
     social,
+    staff_login,
     workshops,
 )
 from orchestrator.api import agenda as agenda_api
@@ -54,7 +55,13 @@ from orchestrator.api.schemas import (
     KnowledgeSearchRequest,
     RouteRequest,
 )
-from orchestrator.api.security import build_limiter, require_staff, require_tenant, requires
+from orchestrator.api.security import (
+    RateLimiter,
+    build_limiter,
+    require_staff,
+    require_tenant,
+    requires,
+)
 from orchestrator.api.views import staff_view, stream_event
 from orchestrator.auth import Principal, Role
 from orchestrator.config import Settings, get_settings
@@ -162,6 +169,8 @@ def create_app(
     )
     app.state.settings = settings
     app.state.limiter = build_limiter(settings)
+    # Sign-in attempts per client address; one instance serves this deployment (ADR 0024).
+    app.state.auth_limiter = RateLimiter(settings.auth_rate_per_minute)
     app.add_middleware(
         BodySizeLimit,
         max_bytes=settings.max_body_bytes,
@@ -192,6 +201,7 @@ def create_app(
     app.include_router(channels.router)
     app.include_router(inbox.router)
     app.include_router(session.router)
+    app.include_router(staff_login.router)
     app.include_router(workshops.router)
     app.include_router(social.router)
     app.include_router(publications.router)

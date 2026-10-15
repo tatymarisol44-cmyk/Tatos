@@ -124,6 +124,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "instruments": DataClass.INTERNAL,  # definitions: items, scoring, no patient data
     "knowledge_documents": DataClass.INTERNAL,
     "knowledge_versions": DataClass.INTERNAL,
+    "login_challenges": DataClass.CREDENTIAL,  # hashed sign-in codes and password links
     "marketing_goals": DataClass.INTERNAL,  # a metric, a target, a month: no patient
     "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
@@ -135,6 +136,9 @@ TABLE_CLASS: dict[str, DataClass] = {
     "professional_hours": DataClass.INTERNAL,  # working hours, no patient
     "publications": DataClass.PUBLIC,
     "reviews": DataClass.HEALTH,  # a held answer may contain clinical advice
+    # A staff member's e-mail and password hash (ADR 0024): staff, never patients.
+    "staff_logins": DataClass.CREDENTIAL,
+    "staff_sessions": DataClass.CREDENTIAL,  # hashed session keys
     "subject_threads": DataClass.HEALTH,
     "thread_leases": DataClass.INTERNAL,
     "whatsapp_offers": DataClass.PERSONAL,  # pseudonymous number + offered times, no text

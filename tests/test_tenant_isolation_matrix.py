@@ -57,6 +57,13 @@ UNSCOPED = {
     ("GET", "/v1/social/rules"),
     ("POST", "/v1/route"),
     ("GET", "/v1/clinical/instrument-templates"),
+    # Signing in names no practice; answers never say whether an e-mail exists (ADR 0024).
+    ("GET", "/v1/auth/options"),
+    ("POST", "/v1/auth/sign-in"),
+    ("POST", "/v1/auth/code"),
+    ("POST", "/v1/auth/resend"),
+    ("POST", "/v1/auth/forgot"),
+    ("POST", "/v1/auth/password"),
 }
 
 
@@ -174,6 +181,15 @@ def seed(c: TestClient) -> Acme:
         c.post("/v1/admin/staff", json={"name": "dra.acme", "roles": ["reviewer"]}, headers=ACME)
     )
     ids["principal"] = staff["id"]
+    ids["member_email"] = "recepcion.acme@example.test"
+    member = _ok(
+        c.post(
+            "/v1/admin/team",
+            json={"name": "Recepción Acme", "email": ids["member_email"], "roles": ["reception"]},
+            headers=ACME,
+        )
+    )
+    ids["member"] = member["id"]
     clinician = {"X-API-Key": staff["key"]}
     acme.clinician = clinician
     _ok(
@@ -404,6 +420,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "campaign": get(f"/v1/campaigns/{ids['campaign']}"),
         "docs": get("/v1/knowledge/documents"),
         "principals": get("/v1/admin/principals"),
+        "team": get("/v1/admin/team"),
         "professionals": get("/v1/admin/professionals"),
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
         "instruments": get("/v1/clinical/instruments"),
@@ -485,6 +502,30 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
         ("GET", "/v1/audit/verify"): ("/v1/audit/verify", None),
         ("POST", "/v1/admin/staff"): ("/v1/admin/staff", {"name": "intruso", "roles": ["admin"]}),
         ("GET", "/v1/admin/principals"): ("/v1/admin/principals", None),
+        ("GET", "/v1/admin/team"): ("/v1/admin/team", None),
+        ("POST", "/v1/admin/team"): (
+            "/v1/admin/team",
+            {"name": "Intrusa", "email": i["member_email"], "roles": ["admin"]},
+        ),
+        ("POST", "/v1/admin/team/{principal_id}/invite"): (
+            f"/v1/admin/team/{i['member']}/invite",
+            None,
+        ),
+        ("DELETE", "/v1/admin/team/{principal_id}"): (f"/v1/admin/team/{i['member']}", None),
+        ("POST", "/v1/session/email"): ("/v1/session/email", {"email": i["member_email"]}),
+        ("GET", "/v1/auth/options"): ("/v1/auth/options", None),
+        ("POST", "/v1/auth/sign-in"): (
+            "/v1/auth/sign-in",
+            {"email": i["member_email"], "password": "adivinanza-123"},
+        ),
+        ("POST", "/v1/auth/code"): ("/v1/auth/code", {"challenge": "0" * 32, "code": "123456"}),
+        ("POST", "/v1/auth/resend"): ("/v1/auth/resend", {"challenge": "0" * 32}),
+        ("POST", "/v1/auth/forgot"): ("/v1/auth/forgot", {"email": i["member_email"]}),
+        ("POST", "/v1/auth/password"): (
+            "/v1/auth/password",
+            {"token": "x" * 43, "password": "Cuaderno-Azul-2026"},
+        ),
+        ("POST", "/v1/auth/sign-out"): ("/v1/auth/sign-out", None),
         ("DELETE", "/v1/admin/principals/{principal_id}"): (
             f"/v1/admin/principals/{i['principal']}",
             None,
@@ -892,6 +933,8 @@ ADDRESSED = {
         ("POST", "/v1/reviews/{thread_id}"),
         ("DELETE", "/v1/admin/principals/{principal_id}"),
         ("POST", "/v1/admin/principals/{principal_id}/sign-out"),
+        ("POST", "/v1/admin/team/{principal_id}/invite"),
+        ("DELETE", "/v1/admin/team/{principal_id}"),
         ("POST", "/v1/crm/patients/{patient_id}/access"),
         ("GET", "/v1/crm/patients/{patient_id}"),
         ("PATCH", "/v1/crm/patients/{patient_id}"),
@@ -1118,6 +1161,11 @@ GLOBAL_KEYS = {
     # Meta message ids are globally unique: deduplication must be global, or the same
     # delivery could be counted once per tenant that claims the number.
     "inbound_events": None,
+    # Found by a secret before the tenant is known, like principals.key_hash: a session key's
+    # hash, and a sign-in code's random id (ADR 0024). Every row carries its tenant, and
+    # the principal is then read with it.
+    "staff_sessions": None,
+    "login_challenges": None,
 }
 
 

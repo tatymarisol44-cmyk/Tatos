@@ -14,6 +14,10 @@ Three kinds of principal:
 Keys are random (`secrets.token_urlsafe`), shown once at creation and stored as SHA-256
 hashes: a database leak does not leak usable keys. Keys can expire and be revoked.
 
+A staff member who signs in with e-mail, password and an e-mailed code (staff_login.py,
+ADR 0024) gets a session key `ss_...`: same header, same principal, but it expires on
+its own and ends when the principal is revoked or signed out everywhere.
+
 Closes audit finding A01: approving, publishing or exporting requires a role carried by
 an authenticated key, and the actor cannot be declared by the caller."""
 
@@ -63,6 +67,19 @@ principals = Table(
     # "Sign out everywhere" for single sign-on: tokens issued before this are refused.
     Column("not_before", DateTime(timezone=True), nullable=True),
 )
+
+# Sessions of staff who signed in with e-mail (staff_login.py): the key's hash only.
+staff_sessions = Table(
+    "staff_sessions",
+    metadata,
+    Column("key_hash", String(64), primary_key=True),
+    Column("tenant", String(64), nullable=False),
+    Column("principal_id", String(128), nullable=False, index=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True), nullable=True),
+)
+SESSION_PREFIX = "ss_"
 
 
 @dataclass(frozen=True)
@@ -174,6 +191,8 @@ class PrincipalStore:
         return await self._create(tenant, pid, PATIENT, [], subject_id, created_by, expires, "pk")
 
     async def resolve(self, key: str) -> Principal | None:
+        if key.startswith(SESSION_PREFIX):
+            return await self._resolve_session(key)
         query = select(principals).where(principals.c.key_hash == _hash(key))
         async with self.db.engine.connect() as conn:
             row = (await conn.execute(query)).mappings().first()
@@ -185,6 +204,82 @@ class PrincipalStore:
         return Principal(
             row["tenant"], row["id"], row["kind"], frozenset(row["roles"]), row["subject_id"]
         )
+
+    async def _resolve_session(self, key: str) -> Principal | None:
+        query = (
+            select(principals, staff_sessions.c.created_at.label("session_created"))
+            .select_from(
+                staff_sessions.join(
+                    principals,
+                    and_(
+                        principals.c.tenant == staff_sessions.c.tenant,
+                        principals.c.id == staff_sessions.c.principal_id,
+                    ),
+                )
+            )
+            .where(
+                and_(
+                    staff_sessions.c.key_hash == _hash(key),
+                    staff_sessions.c.revoked_at.is_(None),
+                    staff_sessions.c.expires_at > utcnow(),
+                )
+            )
+        )
+        async with self.db.engine.connect() as conn:
+            row = (await conn.execute(query)).mappings().first()
+        if row is None or row["revoked_at"] is not None or row["kind"] != STAFF:
+            return None
+        not_before = aware(row["not_before"])
+        started = aware(row["session_created"])
+        if not_before is not None and started is not None and started < not_before:
+            return None  # signed out everywhere after this session began
+        return Principal(row["tenant"], row["id"], STAFF, frozenset(row["roles"]))
+
+    async def open_session(
+        self, tenant: str, pid: str, lifetime: timedelta
+    ) -> tuple[str, datetime]:
+        """A new session key for a staff member who just proved who they are."""
+        key = f"{SESSION_PREFIX}{secrets.token_urlsafe(32)}"
+        expires = utcnow() + lifetime
+        async with self.db.engine.begin() as conn:
+            await conn.execute(
+                insert(staff_sessions).values(
+                    key_hash=_hash(key),
+                    tenant=tenant,
+                    principal_id=pid,
+                    created_at=utcnow(),
+                    expires_at=expires,
+                )
+            )
+            await self.audit.record_in(conn, tenant, pid, "auth.session.opened", f"principal/{pid}")
+        return key, expires
+
+    async def end_session(self, key: str) -> bool:
+        query = (
+            update(staff_sessions)
+            .where(
+                and_(staff_sessions.c.key_hash == _hash(key), staff_sessions.c.revoked_at.is_(None))
+            )
+            .values(revoked_at=utcnow())
+        )
+        async with self.db.engine.begin() as conn:
+            return (await conn.execute(query)).rowcount == 1
+
+    async def end_sessions(self, tenant: str, pid: str) -> int:
+        """Every open session of this person ends (new password, access removed)."""
+        query = (
+            update(staff_sessions)
+            .where(
+                and_(
+                    staff_sessions.c.tenant == tenant,
+                    staff_sessions.c.principal_id == pid,
+                    staff_sessions.c.revoked_at.is_(None),
+                )
+            )
+            .values(revoked_at=utcnow())
+        )
+        async with self.db.engine.begin() as conn:
+            return int((await conn.execute(query)).rowcount)
 
     async def from_identity(self, identity: Any) -> Principal | None:
         """The staff principal of a verified single-sign-on identity (oidc.Identity),

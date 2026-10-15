@@ -54,6 +54,7 @@ from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.loyalty import Loyalty
+from orchestrator.mailer import Mailer
 from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.monthly_report import MonthlyReport
@@ -67,6 +68,7 @@ from orchestrator.router import Router, RoutingDecision
 from orchestrator.self_report import SelfReports
 from orchestrator.social import SocialAccounts
 from orchestrator.spend import Spend
+from orchestrator.staff_login import StaffLogins
 from orchestrator.subject_rights import SubjectRights
 from orchestrator.telemetry import OPS
 from orchestrator.whatsapp_assistant import WhatsAppAssistant
@@ -177,6 +179,8 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
+        self.mailer = Mailer(settings)
+        self.staff_logins = StaffLogins(self.db, self.audit, self.principals, self.mailer, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
@@ -408,6 +412,7 @@ class Orchestrator:
             "inbox_messages": await self.inbox.purge(
                 timedelta(days=self.settings.inbox_retention_days), dry_run=dry_run
             ),
+            "sign_in_leftovers": await self.staff_logins.purge(dry_run=dry_run),
         }
 
     async def purge_threads(self, older_than: timedelta, dry_run: bool = False) -> int:

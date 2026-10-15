@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import re
 import socket
 import sys
 import threading
@@ -93,6 +94,13 @@ def _staff_key(base: str) -> str:
     return str(resp.json()["key"])
 
 
+def _use_key(page: Any) -> None:
+    """E-mail sign-in is the default screen (ADR 0024); the key is behind its link."""
+    page.wait_for_selector("#use-key:not([hidden])")
+    page.click("#use-key")
+    page.wait_for_selector("#signin-form:not([hidden])")
+
+
 def _watch(page: Any) -> list[str]:
     """Script errors and console errors (a policy violation is one). The browser also logs
     every refused request ("Failed to load resource"): the app handles those on purpose."""
@@ -119,6 +127,7 @@ def test_sign_in_profile_hours_and_a_booking(server: str, browser: Any) -> None:
     page.goto(f"{server}/app")
 
     # A wrong key is refused in Spanish; the right one opens the app.
+    _use_key(page)
     page.fill("#signin-key", "sk_not-a-real-key")
     page.click("#signin-form button[type=submit]")
     page.wait_for_selector("#signin-status.error")
@@ -166,6 +175,7 @@ def test_the_key_is_forgotten_on_sign_out(server: str, browser: Any) -> None:
     page = browser.new_page()
     problems = _watch(page)
     page.goto(f"{server}/app")
+    _use_key(page)
     page.fill("#signin-key", key)
     page.check("#signin-remember")
     page.click("#signin-form button[type=submit]")
@@ -181,10 +191,86 @@ def test_the_key_is_forgotten_on_sign_out(server: str, browser: Any) -> None:
     assert not problems, problems
 
 
+def _latest_mail(folder: Any, to: str) -> str:
+    """The newest e-mail to `to` in the dev outbox (no SMTP in tests)."""
+    name = to.replace("@", "_")  # the outbox names files after the address, @ replaced
+    mails = sorted(folder.glob(f"*{name}*.txt"), key=lambda f: f.stat().st_mtime_ns)
+    assert mails, f"no e-mail to {to}"
+    return str(mails[-1].read_text(encoding="utf-8"))
+
+
+def test_e_mail_sign_in_from_invitation_to_the_team_card(
+    server: str, browser: Any, settings: Settings, tmp_path: Any
+) -> None:
+    outbox = tmp_path / "correos"
+    settings.dev_outbox_dir = str(outbox)
+    made = httpx.post(
+        f"{server}/v1/admin/team",
+        json={"name": "Ana Recepción", "email": "ana@example.test", "roles": ["reception"]},
+        headers=SERVICE,
+    )
+    assert made.status_code == 201, made.text
+    token = re.search(r"#clave=([\w-]+)", _latest_mail(outbox, "ana@example.test"))
+    assert token
+    page = browser.new_page()
+    problems = _watch(page)
+
+    # The invitation link opens "choose a password"; its token leaves the address bar.
+    page.goto(f"{server}/app#clave={token.group(1)}")
+    page.wait_for_selector("#password-form:not([hidden])")
+    assert "clave" not in page.url
+    page.fill("#new-password", "Mi gato duerme al sol")
+    page.fill("#new-password-2", "Mi gato duerme al so")
+    page.click("#password-form button[type=submit]")
+    assert "no son iguales" in page.inner_text("#signin-status")
+    page.fill("#new-password-2", "Mi gato duerme al sol")
+    page.click("#password-form button[type=submit]")
+    page.wait_for_selector("text=tu contraseña quedó guardada")
+
+    # E-mail and password, then the code from the e-mail.
+    page.fill("#signin-email", "ana@example.test")
+    page.fill("#signin-password", "Mi gato duerme al sol")
+    page.click("#email-form button[type=submit]")
+    page.wait_for_selector("#code-form:not([hidden])")
+    assert "a***@example.test" in page.inner_text("#code-sent")
+    code = re.search(r"\b(\d{6})\b", _latest_mail(outbox, "ana@example.test"))
+    assert code
+    page.fill("#signin-code", "000000" if code.group(1) != "000000" else "111111")
+    page.click("#code-form button[type=submit]")
+    page.wait_for_selector("text=El código no es correcto")
+    page.fill("#signin-code", code.group(1))
+    page.click("#code-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    page.click("a[data-nav=ajustes]")
+    page.wait_for_selector("text=Entras con tu correo ana@example.test")
+    assert page.locator("text=Agregar a una persona").count() == 0  # reception: no team card
+    page.click("#signout")
+    page.wait_for_selector("#email-form:not([hidden])")
+    assert page.evaluate("() => [sessionStorage.length, localStorage.length]") == [0, 0]
+
+    # The administration sees her as active, invites someone else and removes Ana.
+    admin, _ = _signed_in(browser, server, _staff_key(server))
+    admin.click("a[data-nav=ajustes]")
+    admin.wait_for_selector(".doc:has-text('ana@example.test') >> text=Activa")
+    admin.click("text=Agregar a una persona")
+    admin.fill("input[placeholder='Ej.: Ana Pérez']", "Luis Marketing")
+    admin.fill("details input[type=email]", "luis@example.test")
+    admin.check("details input[value=marketing]")
+    admin.click("text=Invitar")
+    admin.wait_for_selector("text=le enviamos a luis@example.test")
+    admin.wait_for_selector(".doc:has-text('luis@example.test') >> text=Invitación enviada")
+    row = ".doc:has-text('ana@example.test')"
+    admin.click(f"{row} >> text=Quitar acceso")
+    admin.click(f"{row} >> text=Sí, quitar acceso")
+    admin.wait_for_selector(row, state="detached")
+    assert not problems, problems
+
+
 def _signed_in(browser: Any, server: str, key: str) -> tuple[Any, list[str]]:
     page = browser.new_page()
     problems = _watch(page)
     page.goto(f"{server}/app")
+    _use_key(page)
     page.fill("#signin-key", key)
     page.click("#signin-form button[type=submit]")
     page.wait_for_selector("#app:not([hidden])")
@@ -206,8 +292,8 @@ def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) 
     page.click("a[data-nav=pacientes]")
     page.wait_for_selector("text=Aún no hay pacientes")
     page.click("text=Nuevo paciente >> nth=-1")
-    page.fill("form input[type=text]", "Lucía Sintética")
-    page.fill("form input[type=tel]", "0991112233")
+    page.fill("#view form input[type=text]", "Lucía Sintética")
+    page.fill("#view form input[type=tel]", "0991112233")
     page.click("text=Crear paciente")
     page.wait_for_selector("h1:has-text('Lucía Sintética')")
     assert "0991112233" in page.inner_text("#view")
@@ -263,7 +349,7 @@ def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) 
     )
     page.get_by_role("tab", name="Tests").click()
     page.wait_for_selector("text=Enviar un test a su app")
-    page.select_option("form select", index=1)
+    page.select_option("#view form select", index=1)
     page.click("text=Enviar a su app")
     page.wait_for_selector("text=pega el texto oficial")
     assert not problems, problems
@@ -278,6 +364,7 @@ def test_a_slow_screen_never_paints_over_a_newer_one(server: str, browser: Any) 
     held: list[Any] = []
     page.route("**/v1/agenda?days=1", lambda route: held.append(route))
     page.goto(f"{server}/app")
+    _use_key(page)
     page.fill("#signin-key", key)
     page.click("#signin-form button[type=submit]")
     page.wait_for_selector("#app:not([hidden])")
@@ -339,7 +426,7 @@ def test_the_inbox_draft_reply_link_and_close(server: str, browser: Any) -> None
     page.wait_for_selector(".bubble.draft")
     page.click("text=Usar este borrador")
     assert "Gracias por escribirnos" in page.input_value("textarea")
-    page.click("form >> text=Enviar")
+    page.click("#view form >> text=Enviar")
     page.wait_for_selector("text=Guardado sin enviar")  # no credential here: a dry run
 
     # Linked to Sol's record, then marked as handled.
@@ -370,7 +457,7 @@ def test_tests_with_official_texts_and_the_on_call_list(server: str, browser: An
     page.wait_for_selector("text=Guardar textos")
     page.click("text=Guardar textos")
     page.wait_for_selector("text=Faltan 9 preguntas")
-    for n, area in enumerate(page.query_selector_all("form textarea")[1:], start=1):
+    for n, area in enumerate(page.query_selector_all("#view form textarea")[1:], start=1):
         area.fill(f"Pregunta sintética número {n}")
     page.click("text=Guardar textos")
     page.wait_for_selector("text=Textos guardados")
@@ -380,7 +467,7 @@ def test_tests_with_official_texts_and_the_on_call_list(server: str, browser: An
     # Now it can be sent to a patient's app.
     page.goto(f"{server}/app#paciente/p-mar/tests")
     page.wait_for_selector("text=Enviar un test a su app")
-    page.select_option("form select", index=1)
+    page.select_option("#view form select", index=1)
     page.click("text=Enviar a su app")
     page.wait_for_selector("text=Esperando respuesta >> nth=1")
 

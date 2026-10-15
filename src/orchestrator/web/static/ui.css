@@ -148,6 +148,20 @@ legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
 /* --- sign in ------------------------------------------------------------------------- */
 .signin { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
 .signin .card { width: 420px; max-width: 100%; gap: 16px; padding: 28px; }
+.signin .stack { gap: 14px; }
+/* A secondary action that reads as a link but is a button (it changes the step). */
+.linkish {
+  align-self: flex-start; min-height: 40px; padding: 0; border: 0; background: none;
+  color: var(--accent-dark); font-size: 14px; font-weight: 600; text-decoration: underline;
+}
+.roles { display: flex; flex-direction: column; gap: 2px; }
+.roles .check { align-items: flex-start; min-height: 32px; }
+.roles .check input { margin-top: 3px; }
+.card details > summary {
+  cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center;
+  color: var(--accent-dark);
+}
+.card details[open] > summary { margin-bottom: 8px; }
 
 /* --- agenda -------------------------------------------------------------------------- */
 .week { overflow-x: auto; }

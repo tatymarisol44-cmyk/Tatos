@@ -39,6 +39,7 @@ def test_a_clinician_sees_their_name_roles_and_professional(client: TestClient) 
         "practice": "Consultorio Demo",
         "timezone": "America/Guayaquil",
         "professional": None,
+        "email_login": None,
     }
     body = {
         "professional_id": "vera",
