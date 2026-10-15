@@ -89,6 +89,7 @@ async function request(path, { method = "GET", body } = {}) {
     } catch { /* no body */ }
     throw new ApiError(resp.status, detail);
   }
+  if (method !== "GET") for (const t of document.querySelectorAll("textarea[data-dirty]")) delete t.dataset.dirty;
   return resp;
 }
 
@@ -118,6 +119,27 @@ function humanError(err) {
 function say(node, text, kind = "") {
   node.textContent = text;
   node.className = `status ${kind}`.trim();
+}
+
+// A step that cannot be undone asks once more on the same button: the first press only
+// arms it (it turns red and says what will happen), a second press within 6 seconds does it.
+function sure(button, question) {
+  if (button.dataset.armed) {
+    clearTimeout(Number(button.dataset.armed));
+    delete button.dataset.armed;
+    button.textContent = button.dataset.label;
+    button.classList.remove("danger");
+    return true;
+  }
+  button.dataset.label = button.textContent;
+  button.textContent = question;
+  button.classList.add("danger");
+  button.dataset.armed = String(setTimeout(() => {
+    delete button.dataset.armed;
+    button.textContent = button.dataset.label;
+    button.classList.remove("danger");
+  }, 6000));
+  return false;
 }
 
 // --- dates in the practice's time zone -------------------------------------------------------
@@ -264,6 +286,9 @@ function setBadge(sel, n, label) {
 
 // --- routing ---------------------------------------------------------------------------------
 const VIEWS = {};
+// Text typed into a note or a reply and not saved yet (a successful save clears the mark).
+const unsavedText = () => [...document.querySelectorAll("textarea[data-dirty]")].some((t) => t.value.trim());
+let here = location.hash;
 let turn = 0; // the latest screen asked for: a slower, older one never paints over it
 
 function route() {
@@ -400,7 +425,8 @@ VIEWS.agenda = async (main, arg) => {
     prof ? freeSlotsUntil(weekEnd) : [],
   ]);
   const nav = (delta, label, text) => {
-    const b = el("button", { class: "btn", type: "button", "aria-label": label, text });
+    // A symbol gets a spoken name; a word speaks for itself (the name must contain it).
+    const b = el("button", { class: "btn", type: "button", "aria-label": label || null, text });
     b.addEventListener("click", () => {
       state.weekStart = delta ? addDays(state.weekStart, delta) : mondayOf(todayISO());
       route();
@@ -411,7 +437,7 @@ VIEWS.agenda = async (main, arg) => {
   const [, m2, d2] = weekEnd.split("-").map(Number);
   const range = m1 === m2 ? `${d1} al ${d2} de ${MONTHS[m1 - 1]}` : `${d1} de ${MONTHS[m1 - 1]} al ${d2} de ${MONTHS[m2 - 1]}`;
   const head = page("Agenda", `Semana del ${range} de ${y1}`,
-    nav(-7, "Semana anterior", "‹"), nav(0, "Ir a esta semana", "Hoy"), nav(7, "Semana siguiente", "›"),
+    nav(-7, "Semana anterior", "‹"), nav(0, "", "Hoy"), nav(7, "Semana siguiente", "›"),
     newVisitButton());
   const columns = [];
   for (let i = 0; i < 7; i++) {
@@ -461,8 +487,9 @@ function visitButton(visit) {
 }
 
 function slotButton(slot) {
-  const b = el("button", { class: "slot f", type: "button", "aria-label": `Agendar a las ${slot.local.slice(11)}` },
-    el("b", { text: slot.local.slice(11) }), el("span", { text: "Libre" }));
+  const b = el("button", { class: "slot f", type: "button" },
+    el("b", { text: slot.local.slice(11) }), " ", el("span", { text: "Libre" }),
+    el("span", { class: "sr", text: ": agendar a esta hora" }));
   b.addEventListener("click", () => openVisitDialog({ date: slot.local.slice(0, 10), time: slot.local.slice(11), minutes: slot.minutes }));
   return b;
 }
@@ -540,6 +567,7 @@ function openVisitActions(visit) {
   for (const [value, label] of next) {
     const b = el("button", { class: `btn${value === "cancelled" ? "" : " primary"}`, type: "button", text: label });
     b.addEventListener("click", async () => {
+      if (value === "cancelled" && !sure(b, "Sí, cancelar la cita")) return;
       for (const x of actions) x.disabled = true;
       try {
         await api(`/v1/crm/appointments/${encodeURIComponent(visit.id)}/status`, { method: "POST", body: { status: value } });
@@ -648,6 +676,7 @@ async function onCallCard() {
   const rows = contacts.sort((a, b) => a.level - b.level).map((c) => {
     const drop = el("button", { class: "btn small", type: "button", text: "Quitar" });
     drop.addEventListener("click", async () => {
+      if (!sure(drop, "Sí, quitar")) return;
       drop.disabled = true;
       try { await api(`/v1/admin/on-call/${encodeURIComponent(c.contact_id)}`, { method: "DELETE" }); route(); } catch (err) { say(status, humanError(err), "error"); drop.disabled = false; }
     });
@@ -820,26 +849,7 @@ function newPatientView(main) {
 }
 
 // --- FICHA: the patient's record ----------------------------------------------------------------
-const DOC_NAMES = {
-  session_note: "Nota de sesión",
-  psychotherapy_note: "Nota de psicoterapia (privada)",
-  consent_therapy: "Consentimiento informado para la terapia",
-  consent_guardian: "Consentimiento del representante (menor de edad)",
-  consent_diary: "Consentimiento para el diario emocional",
-  consent_online: "Consentimiento para sesiones en línea",
-  consent_voluntary_internment: "Consentimiento de internamiento voluntario",
-  referral: "Derivación",
-  internment_report: "Informe de internamiento",
-  defensoria_notice: "Aviso a la Defensoría",
-  attendance_certificate: "Certificado de asistencia",
-  psychological_report: "Informe psicológico",
-  scale_result: "Resultado de escala",
-  prescription: "Receta",
-  controlled_worksheet: "Hoja para receta especial (ACESS)",
-  medical_certificate: "Certificado médico",
-  medication_followup: "Seguimiento de medicación",
-};
-const docName = (type) => DOC_NAMES[type] || type;
+// Entry names come from the server (clinical_records.LABELS_ES): one source for every screen.
 const TABS = [["resumen", "Resumen"], ["historia", "Historia"], ["tests", "Tests"], ["documentos", "Documentos"], ["citas", "Citas"], ["mensajes", "Mensajes"]];
 
 VIEWS.paciente = async (main, id, tab = "resumen") => {
@@ -865,7 +875,12 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
     tabs, body].filter(Boolean));
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
-  body.replaceChildren(...await render(patient));
+  try {
+    body.replaceChildren(...await render(patient));
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 403) throw err;
+    body.replaceChildren(empty(ROLE_NOTES.clinical));
+  }
 };
 
 /** The patient's personal link to their app: shown once, sent by the professional. */
@@ -936,7 +951,7 @@ async function tabHistoria(patient) {
     api(`/v1/clinical/patients/${pid}/documents`),
     api("/v1/clinical/document-types"),
   ]);
-  const kind = el("select", {}, ...types.map((t) => el("option", { value: t.doc_type, text: docName(t.doc_type) })));
+  const kind = el("select", {}, ...types.map((t) => el("option", { value: t.doc_type, text: t.label })));
   if (types.some((t) => t.doc_type === "session_note")) kind.value = "session_note";
   const text = el("textarea", { required: true, maxlength: "20000", rows: "8" });
   let amends = null;
@@ -969,8 +984,8 @@ async function tabHistoria(patient) {
     return el("article", { class: "card" },
       el("div", { class: "head" },
         el("div", {},
-          el("strong", { text: docName(d.doc_type) }),
-          d.access === "author_only" ? el("span", { class: "chip neutral", text: " Solo tú la ves" }) : null,
+          el("strong", { text: d.label || d.doc_type }),
+          d.access === "author_only" ? el("span", { class: "chip neutral tag", text: "Solo tú la ves" }) : null,
           d.amends ? el("span", { class: "chip wait", text: " Corrección" }) : null,
           el("p", { class: "muted", text: `${longDate(d.created_at.slice(0, 10))} · ${d.author_id}` })),
         fix),
@@ -1012,6 +1027,7 @@ async function tabTests(patient) {
   const pending = sent.filter((a) => a.status === "pending").map((a) => {
     const cancel = el("button", { class: "btn small", type: "button", text: "Cancelar envío" });
     cancel.addEventListener("click", async () => {
+      if (!sure(cancel, "Sí, cancelar el envío")) return;
       cancel.disabled = true;
       try { await api(`/v1/clinical/assignments/${encodeURIComponent(a.assignment_id)}`, { method: "DELETE" }); route(); } catch { cancel.disabled = false; }
     });
@@ -1095,6 +1111,16 @@ async function tabMensajes(patient) {
   return [card("Conversaciones vinculadas", "", ...(rows.length ? rows : [empty("No hay conversaciones vinculadas a esta paciente. Puedes vincularlas desde Mensajes.")]))];
 }
 
+// What each role opens, said plainly when a section is not for this account.
+const ROLE_NOTES = {
+  clinical: "Esta parte de la ficha es solo para el rol de psicóloga: por ley, ni la administración del consultorio la ve.",
+  informe: "El informe del mes es para la dueña del consultorio. Pide a la administración el rol «dueña» si lo necesitas.",
+  campanas: "Las campañas son para el rol de marketing o la dueña del consultorio.",
+  publicaciones: "Las publicaciones son para el rol de marketing o la dueña del consultorio.",
+  talleres: "Los talleres los organiza marketing o la dueña; recepción y psicólogas ven los inscritos.",
+  marketing: "Esta sección es para el rol de marketing o la dueña del consultorio.",
+};
+
 // --- MARKETING: workshops first (RF-MKT-05); campaigns, calendar and report follow -----------
 const MKT_TABS = [["informe", "Informe del mes"], ["talleres", "Talleres"], ["campanas", "Campañas"], ["publicaciones", "Publicaciones"]];
 
@@ -1105,7 +1131,13 @@ VIEWS.marketing = async (main, tab = "informe", arg = "") => {
       b.addEventListener("click", () => { location.hash = `#marketing/${key}`; });
       return b;
     }));
-  const body = await ({ talleres: workshopsTab, informe: reportTab, campanas: campaignsTab, publicaciones: publicationsTab }[tab] || reportTab)(arg);
+  let body;
+  try {
+    body = await ({ talleres: workshopsTab, informe: reportTab, campanas: campaignsTab, publicaciones: publicationsTab }[tab] || reportTab)(arg);
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 403) throw err;
+    body = [empty(ROLE_NOTES[tab] || ROLE_NOTES.marketing)];
+  }
   main.replaceChildren(
     page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú."),
     tabs, ...body);
@@ -1123,11 +1155,11 @@ async function reportTab(month) {
   const cells = Object.entries(r.labels).map(([key, label]) => {
     const now = r.metrics[key];
     const before = r.before[key];
-    const shown = now == null ? "—" : key === "tasa_asistencia" ? `${now} %` : String(now);
+    const shown = now == null ? "—" : key === "tasa_asistencia" ? `${now}\u00a0%` : String(now);
     let trend = "";
     if (now != null && before != null && now !== before) {
       const better = (now > before) !== (key === "inasistencias");
-      trend = `${now > before ? "▲" : "▼"} ${before}${key === "tasa_asistencia" ? " %" : ""} el mes anterior`;
+      trend = `${now > before ? "▲" : "▼"} mes anterior: ${before}${key === "tasa_asistencia" ? "\u00a0%" : ""}`;
       return el("div", { class: "stat" }, el("b", { text: shown }), el("span", { class: "sub", text: label }),
         el("span", { class: `chip ${better ? "ok" : "wait"}`, text: trend }));
     }
@@ -1139,6 +1171,7 @@ async function reportTab(month) {
   const goals = r.goals.map((g) => {
     const drop = el("button", { class: "btn small", type: "button", text: "Quitar" });
     drop.addEventListener("click", async () => {
+      if (!sure(drop, "Sí, quitar")) return;
       drop.disabled = true;
       try { await api(`/v1/insights/goals/${encodeURIComponent(g.goal_id)}`, { method: "DELETE" }); route(); } catch { drop.disabled = false; }
     });
@@ -1148,7 +1181,7 @@ async function reportTab(month) {
         el("strong", { text: `${g.label}: ${g.metric === "inasistencias" ? "como máximo" : "llegar a"} ${g.target}${g.metric === "tasa_asistencia" ? " %" : ""}` }),
         el("br"), el("span", { class: "muted", text: g.note }), el("br"), bar,
         el("span", { class: "muted", text: ` Va en ${g.value ?? "—"}` })),
-      el("span", { class: `chip ${g.met ? "ok" : "wait"}`, text: g.met ? "Cumplida" : `${g.progress ?? 0} %` }),
+      el("span", { class: `chip ${g.met ? "ok" : "wait"}`, text: g.met ? "Cumplida" : `${g.progress ?? 0}\u00a0%` }),
       drop);
   });
   const engagement = await api("/v1/insights/engagement").catch(() => null);
@@ -1225,6 +1258,7 @@ async function campaignsTab() {
     const act = (text, path, primary = false) => {
       const b = el("button", { class: `btn small${primary ? " primary" : ""}`, type: "button", text });
       b.addEventListener("click", async () => {
+        if (path === "cancel" && !sure(b, "Sí, cancelar")) return;
         b.disabled = true;
         try { await api(`/v1/campaigns/${encodeURIComponent(c.id)}/${path}`, { method: "POST", body: {} }); route(); }
         catch (err) { say(status, humanError(err), "error"); b.disabled = false; }
@@ -1242,7 +1276,7 @@ async function campaignsTab() {
     return el("article", { class: "card" },
       el("div", { class: "head" },
         el("div", {}, el("strong", { text: c.name }),
-          el("p", { class: "muted", text: `${KIND_NAMES[c.kind] || c.kind} · ${SEGMENT_NAMES[c.segment] || c.segment} · grupo de control ${c.holdout_pct} %${c.mode === "simulation" ? " · PRUEBA (no envía nada)" : ""}` })),
+          el("p", { class: "muted", text: `${KIND_NAMES[c.kind] || c.kind} · ${SEGMENT_NAMES[c.segment] || c.segment} · grupo de control ${c.holdout_pct}\u00a0%${c.mode === "simulation" ? " · PRUEBA (no envía nada)" : ""}` })),
         el("span", { class: `chip ${cls}`, text: label })),
       el("p", { class: "pre muted", text: c.template }),
       actions.length ? el("div", { class: "row tight" }, ...actions) : null, status);
@@ -1295,8 +1329,8 @@ async function openResults(c) {
   else lines.push("Resultado final de la ventana de medición.");
   const arms = r.itt?.arms;
   if (arms) {
-    lines.push(`Recibieron el mensaje: ${arms.treatment.converted} de ${arms.treatment.n} agendaron (${Math.round(100 * arms.treatment.rate)} %).`);
-    lines.push(`Grupo de control: ${arms.control.converted} de ${arms.control.n} agendaron (${Math.round(100 * arms.control.rate)} %).`);
+    lines.push(`Recibieron el mensaje: ${arms.treatment.converted} de ${arms.treatment.n} agendaron (${Math.round(100 * arms.treatment.rate)}\u00a0%).`);
+    lines.push(`Grupo de control: ${arms.control.converted} de ${arms.control.n} agendaron (${Math.round(100 * arms.control.rate)}\u00a0%).`);
   }
   const itt = r.itt || {};
   if (r.status === "final" && /too small/.test(r.conclusion || "")) {
@@ -1324,6 +1358,7 @@ async function publicationsTab() {
     const post = (text, path, primary = false) => {
       const b = el("button", { class: `btn small${primary ? " primary" : ""}`, type: "button", text });
       b.addEventListener("click", async () => {
+        if (path === "cancel" && !sure(b, "Sí, cancelar")) return;
         b.disabled = true;
         try { await api(`/v1/social/publications/${encodeURIComponent(p.publication_id)}/${path}`, { method: "POST" }); route(); }
         catch (err) { say(status, humanError(err), "error"); b.disabled = false; }
@@ -1492,6 +1527,7 @@ async function openWorkshop(w) {
   });
   const cancel = el("button", { class: "btn", type: "button", text: "Cancelar el taller" });
   cancel.addEventListener("click", async () => {
+    if (!sure(cancel, "Sí, cancelar el taller")) return;
     cancel.disabled = true;
     try { await api(`/v1/workshops/${encodeURIComponent(w.workshop_id)}/cancel`, { method: "POST" }); $("#dialog").close(); route(); }
     catch (err) { say(status, humanError(err), "error"); cancel.disabled = false; }
@@ -1569,8 +1605,9 @@ async function conversationCard(id) {
       use.addEventListener("click", () => { text.value = m.text; draftId = m.message_id; text.focus(); });
       const drop = el("button", { class: "btn small", type: "button", text: "Descartar" });
       drop.addEventListener("click", async () => {
+        if (!sure(drop, "Sí, descartar")) return;
         drop.disabled = true;
-        try { await api(`/v1/inbox/${encodeURIComponent(id)}/drafts/${encodeURIComponent(m.message_id)}`, { method: "DELETE" }); route(); } catch (err) { say(status, humanError(err), "error"); }
+        try { await api(`/v1/inbox/${encodeURIComponent(id)}/drafts/${encodeURIComponent(m.message_id)}`, { method: "DELETE" }); route(); } catch (err) { say(status, humanError(err), "error"); drop.disabled = false; }
       });
       return el("div", { class: "bubble draft" }, el("strong", { text: "Borrador de la IA (no enviado)" }), el("br"), m.text,
         el("small", { text: stamp }), el("span", { class: "row tight" }, use, drop));
@@ -1648,7 +1685,17 @@ async function conversationCard(id) {
 document.addEventListener("DOMContentLoaded", () => {
   $("#signin-form").addEventListener("submit", signIn);
   $("#signout").addEventListener("click", () => signOut());
-  window.addEventListener("hashchange", route);
+  window.addEventListener("hashchange", () => {
+    if (unsavedText() && !confirm("Tienes texto sin guardar en esta pantalla. ¿Salir y perderlo?")) {
+      history.replaceState(null, "", here); // stay; replaceState does not fire hashchange
+      return;
+    }
+    here = location.hash;
+    route();
+  });
+  window.addEventListener("beforeunload", (event) => { if (unsavedText()) event.preventDefault(); });
+  document.addEventListener("input", (event) => { if (event.target.matches("textarea")) event.target.dataset.dirty = "1"; });
+  $("#skip").addEventListener("click", (event) => { event.preventDefault(); $("#view").focus(); });
   if (keyStore.get()) {
     start().catch(() => signOut("Vuelve a entrar con tu llave personal."));
   } else {

@@ -27,7 +27,9 @@ What it does, in order (each step is a line of the report):
  9. the inbox: Instagram, Facebook and WhatsApp messages in one place, a crisis on
     Instagram answered with the fixed text and an alert, an AI draft used for a reply;
     a crisis message on WhatsApp opens an alert for the on-call professional;
-10. data-subject rights (export, erasure) and the audit chain verified.
+10. data-subject rights (export, erasure) and the audit chain verified;
+11. marketing: a workshop two patients signed up for (one with a companion) and two
+    SMART goals for the month, so the Marketing section shows its report.
 """
 
 from __future__ import annotations
@@ -296,7 +298,7 @@ class Demo:
                 json={
                     "patient_id": pid,
                     "starts_at": (now - timedelta(days=days_ago)).isoformat(),
-                    "kind": "sesion",
+                    "kind": "Seguimiento · presencial",
                     "price": 30,
                 },
             )
@@ -312,7 +314,7 @@ class Demo:
                     json={
                         "patient_id": pid,
                         "starts_at": (now + timedelta(days=3 + n)).isoformat(),
-                        "kind": "sesion",
+                        "kind": "Seguimiento · presencial",
                         "price": 30,
                     },
                 )
@@ -588,6 +590,45 @@ class Demo:
         if response.status_code != 200:
             raise DemoError(f"inbox webhook: {response.status_code} {response.text[:200]}")
 
+    def marketing(self) -> None:
+        """A workshop with sign-ups and the month's goals (RF-MKT-05, RF-MKT-06)."""
+        talk = self.call(
+            "POST",
+            "/v1/workshops",
+            json={
+                "title": "Taller: dormir mejor y manejar el estrés",
+                "description": "Hábitos de sueño, respiración y pausas activas. Sintético.",
+                "starts_at": (datetime.now(UTC) + timedelta(days=9)).isoformat(),
+                "duration_min": 90,
+                "place": "En el consultorio",
+                "capacity": 12,
+            },
+        )
+        for who, companions in (("paciente", 1), ("paciente2", 0)):
+            self.call(
+                "POST",
+                f"/v1/me/workshops/{talk['workshop_id']}",
+                who,
+                json={"companions": companions},
+            )
+        month = self.call("GET", "/v1/insights/report", "direccion")["month"]
+        for metric, target, note in (
+            ("citas_atendidas", 40, "Sostener la agenda del consultorio"),
+            ("talleres", 1, "Un taller al mes para la comunidad"),
+        ):
+            self.call(
+                "POST",
+                "/v1/insights/goals",
+                "direccion",
+                json={"month": month, "metric": metric, "target": target, "note": note},
+            )
+        report = self.call("GET", f"/v1/insights/report?month={month}", "direccion")
+        self.step(
+            "marketing",
+            workshop_seats_left=self.call("GET", "/v1/workshops")[0]["seats_left"],
+            goals=[f"{g['label']}: {g['progress']} %" for g in report["goals"]],
+        )
+
     def knowledge(self) -> None:
         for title, text in KNOWLEDGE:
             self.call("POST", "/v1/knowledge/documents", json={"title": title, "text": text})
@@ -844,4 +885,5 @@ class Demo:
         self.crisis()
         self.follow_up(ids[0])
         self.rights(keep=ids[0], erase=ids[19])
+        self.marketing()
         return {"keys": self.keys, "report": self.report}

@@ -24,3 +24,7 @@ docs/private/
 
 # local demo state (generated keys, media, logs)
 .demo/
+
+# playwright-cli (design review): page snapshots and saved sessions can hold patient data or keys
+.playwright-cli/
+auth.json

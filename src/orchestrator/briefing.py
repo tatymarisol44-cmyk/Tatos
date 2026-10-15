@@ -19,7 +19,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from orchestrator.auth import Principal
-from orchestrator.clinical_records import ClinicalRecords
+from orchestrator.clinical_records import ClinicalRecords, label_es
 from orchestrator.config import Settings
 from orchestrator.followup import FollowUp
 from orchestrator.governance import AuditLog
@@ -57,6 +57,11 @@ def reason_es(reason: str) -> str:
         if match := pattern.match(reason):
             return template.format(*match.groups())
     return reason  # a reason added later shows as written rather than disappearing
+
+
+def _lower(name: str) -> str:
+    """ "Nota de sesión" reads as "nota de sesión" inside a sentence."""
+    return name[:1].lower() + name[1:]
 
 
 def compose(
@@ -115,12 +120,13 @@ def compose(
                 f"Test enviado sin responder: {sent['name']} (desde {when(sent['assigned_at'])})."
             )
     if documents:
-        kinds = Counter(d["doc_type"] for d in documents)
+        kinds = Counter(_lower(label_es(d["doc_type"])) for d in documents)
         listed = ", ".join(f"{n} {kind}" for kind, n in sorted(kinds.items()))
         latest = max(documents, key=lambda d: d["created_at"])
+        entries = "1 entrada" if len(documents) == 1 else f"{len(documents)} entradas"
         lines.append(
-            f"Historia: {len(documents)} entradas ({listed}); la última, "
-            f"{latest['doc_type']} del {when(latest['created_at'])}."
+            f"Historia: {entries} ({listed}); la última, "
+            f"{_lower(label_es(latest['doc_type']))} del {when(latest['created_at'])}."
         )
     else:
         lines.append("Historia: sin entradas todavía.")

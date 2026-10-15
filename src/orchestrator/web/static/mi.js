@@ -33,6 +33,27 @@ function button(text, onclick, cls = "btn") {
 }
 function say(node, text, kind = "") { node.textContent = text; node.className = `status ${kind}`.trim(); }
 
+// A step that cannot be undone asks once more on the same button: the first press only
+// arms it (it turns red and says what will happen), a second press within 6 seconds does it.
+function sure(button, question) {
+  if (button.dataset.armed) {
+    clearTimeout(Number(button.dataset.armed));
+    delete button.dataset.armed;
+    button.textContent = button.dataset.label;
+    button.classList.remove("danger");
+    return true;
+  }
+  button.dataset.label = button.textContent;
+  button.textContent = question;
+  button.classList.add("danger");
+  button.dataset.armed = String(setTimeout(() => {
+    delete button.dataset.armed;
+    button.textContent = button.dataset.label;
+    button.classList.remove("danger");
+  }, 6000));
+  return false;
+}
+
 class ApiError extends Error {
   constructor(status, detail) { super(detail || String(status)); this.status = status; this.detail = detail; }
 }
@@ -368,6 +389,7 @@ function workshopCard(w) {
     }
   }, "btn primary");
   const leave = w.registered ? button("Ya no puedo ir", async () => {
+    if (!sure(leave, "Sí, ya no puedo ir")) return;
     leave.disabled = true;
     try { await api(`/v1/me/workshops/${encodeURIComponent(w.workshop_id)}`, { method: "DELETE" }); route(); }
     catch (err) { say(status, humanError(err), "error"); leave.disabled = false; }
@@ -415,7 +437,11 @@ VIEWS.perfil = async (main) => {
       flip);
   });
   main.append(el("section", { class: "card" }, el("h2", { text: "Lo que aceptas" }), ...rows, status, el("p", { class: "muted", text: prompt.footer })));
-  main.append(button("Salir de este celular", () => { store.clear(); state.me = null; noAccess("Saliste. Para volver, abre de nuevo el enlace que te envió el consultorio."); }));
+  const out = button("Salir de este celular", () => {
+    if (!sure(out, "Sí, salir de este celular")) return;
+    store.clear(); state.me = null; noAccess("Saliste. Para volver, abre de nuevo el enlace que te envió el consultorio.");
+  });
+  main.append(out);
 };
 
 // --- start ---------------------------------------------------------------------------------------------

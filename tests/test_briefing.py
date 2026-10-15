@@ -100,7 +100,7 @@ def test_the_lines_come_from_the_figures_only() -> None:
     assert "Asistencia: 3 de 4 citas (75 %)" in text
     assert "Riesgo de inasistencia medio: no tiene cita de seguimiento agendada." in text
     assert "GAD-7: 16 (grave), antes 7 (leve): empeoró [2 aplicaciones]." in text
-    assert "Historia: 1 entradas (1 session_note)" in text
+    assert "Historia: 1 entrada (1 nota de sesión)" in text
     assert "Mensajes en Instagram: 2 sin leer, pidió hablar con una persona." in text
     assert "no un diagnóstico" in lines[-1]
 
@@ -126,7 +126,7 @@ def test_the_briefing_for_the_professional(app: tuple[TestClient, Orchestrator])
     assert briefing["draft"] is True and briefing["prepared_by"] == "system"
     text = briefing["text"]
     assert "Ana" in text and "Próxima cita:" in text and "Asistencia: 2 de 3 citas" in text
-    assert "1 psychotherapy_note" in text  # its author sees it counted
+    assert "1 nota privada de psicoterapia" in text  # its author sees it counted
     for secret in ("insomnio", "figura paterna"):
         assert secret not in text  # the index, never the text
     assert "briefing.prepared" in client.get("/v1/audit", headers=ADMIN).text
@@ -134,7 +134,7 @@ def test_the_briefing_for_the_professional(app: tuple[TestClient, Orchestrator])
     # Another clinician does not see the psychotherapy note, not even counted.
     other = clinician(client, "dr.luis")
     theirs = client.get("/v1/clinical/patients/p-1/briefing", headers=other).json()
-    assert "psychotherapy_note" not in theirs["text"] and "(1 session_note)" in theirs["text"]
+    assert "psicoterapia" not in theirs["text"] and "(1 nota de sesión)" in theirs["text"]
 
 
 def test_clinicians_only_and_known_patients_only(app: tuple[TestClient, Orchestrator]) -> None:

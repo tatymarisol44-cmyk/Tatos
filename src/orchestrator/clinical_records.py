@@ -53,8 +53,38 @@ class ClinicalError(ValueError):
     """Unknown patient, a type the author's pack does not have, or a bad amendment."""
 
 
+# What each kind of entry is called in the practice's language: one place for the app,
+# the summary before a session and any export a person reads.
+LABELS_ES = {
+    "session_note": "Nota de sesión",
+    "psychotherapy_note": "Nota privada de psicoterapia",
+    "consent_therapy": "Consentimiento informado para la terapia",
+    "consent_guardian": "Consentimiento del representante (menor de edad)",
+    "consent_diary": "Consentimiento para el diario emocional",
+    "consent_online": "Consentimiento para sesiones en línea",
+    "consent_voluntary_internment": "Consentimiento de internamiento voluntario",
+    "diary_entry": "Entrada del diario emocional",
+    "referral": "Derivación",
+    "internment_report": "Informe de internamiento",
+    "defensoria_notice": "Aviso a la Defensoría",
+    "attendance_certificate": "Certificado de asistencia",
+    "psychological_report": "Informe psicológico",
+    "scale_result": "Resultado de escala",
+    "prescription": "Receta",
+    "controlled_worksheet": "Hoja para receta especial (ACESS)",
+    "medical_certificate": "Certificado médico",
+    "medication_followup": "Seguimiento de medicación",
+}
+
+
+def label_es(doc_type: str) -> str:
+    return LABELS_ES.get(doc_type, doc_type.replace("_", " ").capitalize())
+
+
 def _public(row: Any) -> dict[str, Any]:
-    return {c.name: getattr(row, c.name) for c in clinical_documents.c if c.name != "tenant"}
+    out = {c.name: getattr(row, c.name) for c in clinical_documents.c if c.name != "tenant"}
+    out["label"] = label_es(out["doc_type"])
+    return out
 
 
 class ClinicalRecords:
@@ -82,7 +112,13 @@ class ClinicalRecords:
         written by the patient, so it is not offered)."""
         _, pack = await self._author_pack(principal)
         return [
-            {"doc_type": d.id, "title": d.title, "kind": d.kind, "access": d.access}
+            {
+                "doc_type": d.id,
+                "label": label_es(d.id),
+                "title": d.title,
+                "kind": d.kind,
+                "access": d.access,
+            }
             for d in pack.documents
             if d.kind != "patient_entry"
         ]

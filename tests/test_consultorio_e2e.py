@@ -228,7 +228,17 @@ def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) 
     assert page.locator("article").count() == 2
     assert page.locator("article >> text=Corrección").count() == 1
 
-    # A document, uploaded and listed.
+    # A note typed and not saved: leaving the screen asks first, and "no" keeps the text.
+    page.fill("textarea", "Nota a medio escribir")
+    asked: list[str] = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.dismiss()))
+    page.get_by_role("tab", name="Documentos").click()
+    page.wait_for_timeout(300)
+    assert asked and "sin guardar" in asked[0]
+    assert page.input_value("textarea") == "Nota a medio escribir"
+
+    # A document, uploaded and listed (this time leaving the unsaved note on purpose).
+    page.once("dialog", lambda d: d.accept())
     page.get_by_role("tab", name="Documentos").click()
     page.wait_for_selector("text=Subir un documento")
     page.set_input_files(
@@ -416,7 +426,15 @@ def test_the_monthly_report_and_a_smart_goal(server: str, browser: Any) -> None:
     page.fill("input[placeholder^='Por qué importa']", "Que más personas conozcan el consultorio")
     page.click("text=Agregar objetivo")
     page.wait_for_selector(".doc >> text=Pacientes nuevos: llegar a 2")
-    assert "50 %" in page.inner_text(".doc:has-text('Pacientes nuevos: llegar a 2')")
+    goal = ".doc:has-text('Pacientes nuevos: llegar a 2')"
+    assert "50\u00a0%" in page.inner_text(goal)  # the number and its % never split
+
+    # Removing it asks once more on the same button.
+    page.click(f"{goal} >> text=Quitar")
+    page.wait_for_selector(f"{goal} >> text=Sí, quitar")
+    page.click(f"{goal} >> text=Sí, quitar")
+    page.wait_for_selector("text=Aún no hay objetivos para este mes")
+    assert page.locator(goal).count() == 0
     page.click("text=Mes anterior")
     page.wait_for_selector("text=Aún no hay objetivos para este mes")
     assert not problems, problems

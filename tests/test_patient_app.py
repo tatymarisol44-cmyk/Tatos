@@ -217,7 +217,9 @@ def test_the_whole_path_on_a_phone(server: str, browser: Any) -> None:
     assert page.locator("text=No aceptado").count() == 3
     assert "Bienvenida" in page.inner_text("#view")  # her tier and its real benefits
     assert "nunca de cuántas sesiones" in page.inner_text("#view")
-    page.click("text=Salir de este celular")
+    page.click("text=Salir de este celular")  # leaving asks once more on the same button
+    assert page.locator("text=Saliste").count() == 0
+    page.click("text=Sí, salir de este celular")
     page.wait_for_selector("text=Saliste")
     assert page.evaluate("() => localStorage.length") == 0
     assert not problems, problems

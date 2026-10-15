@@ -48,6 +48,7 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
         "crisis alert",
         "follow-up",
         "privacy",
+        "marketing",
     ]
     assert set(out["keys"]) >= {"dra.vera", "recepcion", "marketing", "direccion", "paciente"}
     assert steps["clinical record"]["phq9_alerts"]  # item 9 > 0 reaches a person
@@ -84,6 +85,8 @@ def test_the_whole_demo_runs_end_to_end(client: TestClient) -> None:
     assert steps["follow-up"]["needing_attention"] >= 1  # PHQ-9 item 9 alert at least
     assert steps["privacy"]["audit_chain"]["ok"] is True
     assert "clinical_record" in steps["privacy"]["erasure_retained"]
+    assert steps["marketing"]["workshop_seats_left"] == 9  # two sign-ups, one companion
+    assert len(steps["marketing"]["goals"]) == 2
 
 
 def test_live_mode_writes_only_to_the_owners_own_chat(client: TestClient) -> None:
