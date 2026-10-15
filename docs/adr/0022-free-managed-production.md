@@ -32,7 +32,11 @@ Measured on the owner's computer: the API started with 190 MB and stayed at 195 
    - the image runs with 512 MB, no swap, 0.1 CPU and the Blueprint's environment;
    - stand-ins for the managed services are reached the way production reaches them: Postgres over TLS, Redis over verified TLS with a password, Qdrant with an API key;
    - every demo flow runs from another container;
-   - memory budget: the API's peak plus LiteLLM must stay under 460 MB.
+   - memory budget: the API's peak plus LiteLLM must stay under 470 MB. It was 460 MB until
+     2026-10-15, when a release measured 461 MB (333 MB peak + 128 MB LiteLLM, all demo flows
+     passing). The owner chose to raise it while production runs `LLM_BACKEND=fake`, where
+     LiteLLM is never loaded and the real peak is about 335 MB; before the real model client is
+     switched on, the API is to be slimmed back under 460 MB.
 7. **Deploys by digest** (`deploy/render/deploy.sh`, job `production-render`, `DEPLOY_TARGET=render`):
    - the CI signature is verified first, with the identity of `deploy/single-node/deploy.sh`;
    - Render's API deploys the digest, and the deploy is followed until `live`;

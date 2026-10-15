@@ -1117,7 +1117,7 @@ const ROLE_NOTES = {
   informe: "El informe del mes es para la dueña del consultorio. Pide a la administración el rol «dueña» si lo necesitas.",
   campanas: "Las campañas son para el rol de marketing o la dueña del consultorio.",
   publicaciones: "Las publicaciones son para el rol de marketing o la dueña del consultorio.",
-  talleres: "Los talleres los organiza marketing o la dueña; recepción y psicólogas ven los inscritos.",
+  talleres: "Los talleres son para la dueña y para quien atiende pacientes: la lista de inscritos dice quién es paciente del consultorio.",
   marketing: "Esta sección es para el rol de marketing o la dueña del consultorio.",
 };
 
@@ -1178,7 +1178,7 @@ async function reportTab(month) {
     const bar = el("progress", { max: "100", value: String(g.progress ?? 0), "aria-label": `Progreso de ${g.label}` });
     return el("div", { class: "doc" },
       el("span", { class: "what" },
-        el("strong", { text: `${g.label}: ${g.metric === "inasistencias" ? "como máximo" : "llegar a"} ${g.target}${g.metric === "tasa_asistencia" ? " %" : ""}` }),
+        el("strong", { text: `${g.label}: ${g.metric === "inasistencias" ? "como máximo" : "llegar a"} ${g.target}${g.metric === "tasa_asistencia" ? "\u00a0%" : ""}` }),
         el("br"), el("span", { class: "muted", text: g.note }), el("br"), bar,
         el("span", { class: "muted", text: ` Va en ${g.value ?? "—"}` })),
       el("span", { class: `chip ${g.met ? "ok" : "wait"}`, text: g.met ? "Cumplida" : `${g.progress ?? 0}\u00a0%` }),

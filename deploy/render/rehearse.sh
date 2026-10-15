@@ -19,7 +19,10 @@ image="${1:?usage: rehearse.sh <registry/repo@sha256:...>}"
 here="$(cd "$(dirname "$0")" && pwd)"
 blueprint="$here/render.yaml"
 compose="$here/../single-node/compose.yaml"
-BUDGET_MB="${BUDGET_MB:-460}" # of 512: room for the allocator and request bursts
+# Of 512: room for the allocator and request bursts. Raised from 460 on 2026-10-15 (owner's
+# decision) while production runs LLM_BACKEND=fake; slim the API back under 460 before the
+# real model client is switched on (ADR 0022, item 6).
+BUDGET_MB="${BUDGET_MB:-470}"
 READY_TIMEOUT="${READY_TIMEOUT:-600}"
 net=agency-render
 work="$(mktemp -d)"
