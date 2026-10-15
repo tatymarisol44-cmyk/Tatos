@@ -34,9 +34,10 @@ NUMBER_ID = "106540352242922"
 
 
 @pytest.fixture
-def server(settings: Settings, catalog: Catalog) -> Iterator[str]:
+def server(settings: Settings, catalog: Catalog, tmp_path: Any) -> Iterator[str]:
     import uvicorn
 
+    settings.media_dir = tmp_path / "media"  # rendered creatives stay out of the repository
     settings.tenant_packs = {"acme": "ec-psychologist"}
     settings.practice_display_name = "Consultorio Demo"
     settings.meta_app_secret = SecretStr(APP_SECRET)
@@ -210,6 +211,7 @@ def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) 
     page.click("text=Crear paciente")
     page.wait_for_selector("h1:has-text('Lucía Sintética')")
     assert "0991112233" in page.inner_text("#view")
+    assert "Nivel Bienvenida" in page.inner_text("#view")
     page.wait_for_selector("text=Borrador automático")  # the summary before a session
     assert "null" not in page.inner_text("#view")  # an absent element prints nothing
 
@@ -381,4 +383,87 @@ def test_tests_with_official_texts_and_the_on_call_list(server: str, browser: An
     page.wait_for_selector("text=Psic. Demo de guardia")
     shown = page.inner_text(".doc:has-text('Psic. Demo de guardia')")
     assert "De guardia" in shown and "WhatsApp" in shown and "0000" in shown
+    assert not problems, problems
+
+
+def test_a_workshop_published_from_marketing(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    page, problems = _signed_in(browser, server, key)
+    page.click("a[data-nav=marketing]")
+    page.get_by_role("tab", name="Talleres").click()
+    page.wait_for_selector("text=Nuevo taller o charla")
+    page.fill("input[placeholder^='Ej.: Taller']", "Taller para dormir mejor")
+    page.fill("textarea", "Hábitos de sueño y manejo del estrés (sintético).")
+    page.click("text=Publicar en la app de las pacientes")
+    page.wait_for_selector(".doc >> text=Taller para dormir mejor")
+    assert "0 de 12 cupos" in page.inner_text("#view")
+    page.click(".doc:has-text('Taller para dormir mejor') >> text=Inscritos")
+    page.wait_for_selector("#dialog >> text=Todavía nadie se inscribió")
+    assert not problems, problems
+
+
+def test_the_monthly_report_and_a_smart_goal(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    httpx.post(
+        f"{server}/v1/crm/patients", json={"id": "p-r", "display_name": "Rosa"}, headers=SERVICE
+    )
+    page, problems = _signed_in(browser, server, key)
+    page.click("a[data-nav=marketing]")
+    page.wait_for_selector("text=Objetivos SMART del mes")
+    assert "Pacientes nuevos" in page.inner_text("#view")
+    page.select_option("select[aria-label='Qué medir']", "nuevos_pacientes")
+    page.fill("input[aria-label=Meta]", "2")
+    page.fill("input[placeholder^='Por qué importa']", "Que más personas conozcan el consultorio")
+    page.click("text=Agregar objetivo")
+    page.wait_for_selector(".doc >> text=Pacientes nuevos: llegar a 2")
+    assert "50 %" in page.inner_text(".doc:has-text('Pacientes nuevos: llegar a 2')")
+    page.click("text=Mes anterior")
+    page.wait_for_selector("text=Aún no hay objetivos para este mes")
+    assert not problems, problems
+
+
+def test_a_campaign_rehearsed_and_a_publication_scheduled(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    account = {
+        "network": "instagram",
+        "external_id": "ig-178414",
+        "handle": "@consultorio.demo",
+        "secret_ref": "IG_DEMO",
+    }
+    assert (
+        httpx.post(f"{server}/v1/social/accounts", json=account, headers=SERVICE).status_code == 201
+    )
+    page, problems = _signed_in(browser, server, key)
+
+    # A campaign in rehearsal: approved by a person, sent, nothing delivered.
+    page.goto(f"{server}/app#marketing/campanas")
+    page.wait_for_selector("text=Nueva campaña")
+    page.fill("input[placeholder^='Ej.: Invitación']", "Invitación sintética al taller")
+    page.click("text=Crear campaña")
+    page.wait_for_selector("article >> text=Invitación sintética al taller")
+    assert "PRUEBA (no envía nada)" in page.inner_text("article")
+    page.get_by_role("button", name="Aprobar", exact=True).click()
+    page.wait_for_selector("article >> text=Aprobada")
+    page.get_by_role("button", name="Enviar", exact=True).click()
+    page.wait_for_selector("article >> text=Resultados")
+    page.click("article >> text=Resultados")
+    page.wait_for_selector("#dialog >> text=Fue una prueba")
+
+    # A publication: the image made by code, scheduled for tomorrow, then approved.
+    page.goto(f"{server}/app#marketing/publicaciones")
+    page.wait_for_selector("text=Nueva publicación")
+    page.fill("input[placeholder^='Ej.: Dormir']", "Dormir bien también es salud mental")
+    page.fill("textarea[placeholder^='Una idea']", "Horario regular\nPantallas fuera de la cama")
+    page.fill(
+        "form:has-text('Texto de la publicación') textarea >> nth=1",
+        "Tres hábitos para esta semana.",
+    )
+    page.click("text=Crear la imagen")
+    page.wait_for_selector("article >> text=Por aprobar")
+    page.get_by_role("button", name="Programar", exact=True).click()
+    page.wait_for_selector("article >> text=Por aprobar")
+    page.get_by_role("button", name="Aprobar", exact=True).click()
+    page.wait_for_selector("article >> text=Aprobada")
+    [publication] = httpx.get(f"{server}/v1/social/publications", headers=SERVICE).json()
+    assert publication["status"] == "approved" and publication["scheduled_for"]
     assert not problems, problems

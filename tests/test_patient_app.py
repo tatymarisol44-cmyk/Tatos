@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -214,6 +215,8 @@ def test_the_whole_path_on_a_phone(server: str, browser: Any) -> None:
     page.click("a[data-nav=perfil]")
     page.wait_for_selector("text=Lo que aceptas")
     assert page.locator("text=No aceptado").count() == 3
+    assert "Bienvenida" in page.inner_text("#view")  # her tier and its real benefits
+    assert "nunca de cuántas sesiones" in page.inner_text("#view")
     page.click("text=Salir de este celular")
     page.wait_for_selector("text=Saliste")
     assert page.evaluate("() => localStorage.length") == 0
@@ -227,3 +230,38 @@ def test_without_a_link_or_with_a_revoked_one(server: str, browser: Any) -> None
     page.goto(f"{server}/mi/#k=pk_not-a-real-key")
     page.wait_for_selector("text=Tu enlace venció o fue reemplazado")
     assert page.evaluate("() => localStorage.length") == 0
+
+
+def test_signing_up_for_a_workshop_with_a_companion(server: str, browser: Any) -> None:
+    key = _practice(server)
+    made = httpx.post(
+        f"{server}/v1/workshops",
+        json={
+            "title": "Charla: manejar la ansiedad",
+            "description": "Herramientas prácticas (sintético).",
+            "starts_at": (datetime.now(UTC) + timedelta(days=10)).isoformat(),
+            "place": "En el consultorio",
+            "capacity": 8,
+        },
+        headers=SERVICE,
+    ).json()
+    page = browser.new_page(viewport={"width": 390, "height": 844})
+    problems: list[str] = []
+    page.on("pageerror", lambda exc: problems.append(str(exc)))
+    page.goto(f"{server}/mi/#k={key}")
+    for _ in range(3):
+        page.wait_for_selector("text=Antes de empezar")
+        page.click(".choice .answer >> nth=1")
+    page.wait_for_selector("text=Próximo taller")
+    page.click("a[data-nav=talleres]")
+    page.wait_for_selector("text=Charla: manejar la ansiedad")
+    page.select_option("select[aria-label=Acompañantes]", "1")
+    page.click("text=Inscribirme")
+    page.wait_for_selector("text=Estás inscrita o inscrito")
+    signed = httpx.get(
+        f"{server}/v1/workshops/{made['workshop_id']}/registrations", headers=SERVICE
+    ).json()
+    assert [(r["patient_id"], r["companions"]) for r in signed] == [("p-sol", 1)]
+    page.wait_for_selector("text=Inscrita/o")
+    assert "Quedan" not in page.inner_text(".card:has-text('manejar la ansiedad')")
+    assert not problems, problems

@@ -38,6 +38,7 @@ from orchestrator.api import (
     publications,
     session,
     social,
+    workshops,
 )
 from orchestrator.api import agenda as agenda_api
 from orchestrator.api.backpressure import ModelConcurrencyLimit
@@ -191,6 +192,7 @@ def create_app(
     app.include_router(channels.router)
     app.include_router(inbox.router)
     app.include_router(session.router)
+    app.include_router(workshops.router)
     app.include_router(social.router)
     app.include_router(publications.router)
     app.include_router(establishment.router)

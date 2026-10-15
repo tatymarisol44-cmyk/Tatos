@@ -20,7 +20,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, BaseModel, Field
 
 from orchestrator.api.schemas import (
     SUBJECT_ID,
@@ -45,6 +45,7 @@ from orchestrator.campaigns import CampaignError
 from orchestrator.crm import CrmError, NotFoundError
 from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.insights import QuestionBlockedError
+from orchestrator.monthly_report import ReportError
 from orchestrator.service import Orchestrator, ReviewNotFoundError
 
 router = APIRouter()
@@ -283,6 +284,30 @@ async def get_patient(
         raise _not_found("patient") from exc
 
 
+@router.get("/v1/crm/patients/{patient_id}/loyalty", tags=["crm"])
+async def patient_loyalty(
+    request: Request, patient_id: Annotated[str, subject_path()], p: CareReader
+) -> dict[str, Any]:
+    """The patient's loyalty tier and why (time in care, workshops), never sessions."""
+    try:
+        await orch(request).crm.get_patient(p.tenant, patient_id, actor=None)
+    except NotFoundError as exc:
+        raise _not_found("patient") from exc
+    return await orch(request).loyalty.for_patient(p.tenant, patient_id)
+
+
+@router.get("/v1/crm/patients/{patient_id}/engagement", tags=["crm"])
+async def patient_engagement(
+    request: Request, patient_id: Annotated[str, subject_path()], p: CareReader
+) -> dict[str, Any]:
+    """The patient's engagement index, only with their analytics consent (RF-MKT-01)."""
+    try:
+        await orch(request).crm.get_patient(p.tenant, patient_id, actor=None)
+    except NotFoundError as exc:
+        raise _not_found("patient") from exc
+    return await orch(request).engagement.for_patient(p.tenant, patient_id)
+
+
 @router.patch("/v1/crm/patients/{patient_id}", tags=["crm"])
 async def update_patient(
     body: PatientPatch, request: Request, patient_id: Annotated[str, subject_path()], p: Reception
@@ -390,6 +415,53 @@ async def crm_alerts(request: Request, p: CareReader) -> list[dict[str, Any]]:
 
 
 # --- insights --------------------------------------------------------------------
+class GoalIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    metric: str = Field(max_length=32)
+    target: float = Field(gt=0, le=1_000_000)
+    note: str = Field(min_length=1, max_length=300, description="Why it matters to the practice")
+
+
+@router.get("/v1/insights/report", tags=["insights"])
+async def monthly_report(
+    request: Request,
+    p: Owner,
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+) -> dict[str, Any]:
+    """One month against the one before, what stands out, and the month's SMART goals
+    with their progress (RF-MKT-06). Totals only, never a patient."""
+    report = orch(request).monthly_report
+    try:
+        return await report.report(p.tenant, month or report.this_month(), p.id)
+    except ReportError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.post("/v1/insights/goals", status_code=status.HTTP_201_CREATED, tags=["insights"])
+async def set_goal(body: GoalIn, request: Request, p: Owner) -> dict[str, Any]:
+    try:
+        return await orch(request).monthly_report.add_goal(p.tenant, p.id, **body.model_dump())
+    except ReportError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.delete("/v1/insights/goals/{goal_id}", status_code=204, tags=["insights"])
+async def remove_goal(
+    request: Request,
+    goal_id: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")],
+    p: Owner,
+) -> None:
+    if not await orch(request).monthly_report.remove_goal(p.tenant, goal_id, p.id):
+        raise _not_found("goal")
+
+
+@router.get("/v1/insights/engagement", tags=["insights"])
+async def engagement_summary(request: Request, p: Owner) -> dict[str, Any]:
+    """The engagement index across the practice (RF-MKT-01): patients with the analytics
+    consent only, by level, with the average of each dimension."""
+    return await orch(request).engagement.summary(p.tenant)
+
+
 @router.get("/v1/insights/summary", tags=["insights"])
 async def insights_summary(request: Request, p: Owner) -> dict[str, Any]:
     return await orch(request).insights.summary(p.tenant)

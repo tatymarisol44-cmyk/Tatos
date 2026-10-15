@@ -266,6 +266,36 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["assignment"] = sent["assignment_id"]
+    talk = _ok(
+        c.post(
+            "/v1/workshops",
+            json={
+                "title": "Taller Acme",
+                "description": f"{MARKER}: taller sintético.",
+                "starts_at": (utcnow() + timedelta(days=20)).isoformat(),
+                "place": "En el consultorio",
+                "capacity": 10,
+            },
+            headers=ACME,
+        )
+    )
+    ids["workshop"] = talk["workshop_id"]
+    goal = _ok(
+        c.post(
+            "/v1/insights/goals",
+            json={"month": "2030-01", "metric": "talleres", "target": 2, "note": MARKER},
+            headers=ACME,
+        )
+    )
+    ids["goal"] = goal["goal_id"]
+    acme_patient = _ok(c.post(f"/v1/crm/patients/{ids['patient']}/access", headers=ACME))
+    _ok(
+        c.post(
+            f"/v1/me/workshops/{ids['workshop']}",
+            json={"companions": 1},
+            headers={"X-API-Key": acme_patient["key"]},
+        )
+    )
     uploaded = c.post(
         f"/v1/clinical/patients/{ids['patient']}/files",
         files={"file": ("consent.pdf", b"%PDF-1.7 " + MARKER.encode(), "application/pdf")},
@@ -390,6 +420,9 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "privacy_cases": get("/v1/privacy/cases"),
         "alerts": get("/v1/social/alerts"),
         "inbox": get("/v1/inbox"),
+        "workshops": get("/v1/workshops"),
+        "goals": get("/v1/insights/report?month=2030-01")["goals"],
+        "workshop_registrations": get(f"/v1/workshops/{ids['workshop']}/registrations"),
     }
 
 
@@ -709,6 +742,44 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
         ),
         ("GET", "/v1/inbox"): ("/v1/inbox", None),
         ("GET", "/v1/session"): ("/v1/session", None),
+        ("POST", "/v1/workshops"): (
+            "/v1/workshops",
+            {
+                "title": "Taller Globex",
+                "description": "Sintético.",
+                "starts_at": "2030-01-07T14:00:00+00:00",
+                "place": "En línea",
+                "capacity": 5,
+            },
+        ),
+        ("GET", "/v1/workshops"): ("/v1/workshops", None),
+        ("GET", "/v1/crm/patients/{patient_id}/loyalty"): (
+            f"/v1/crm/patients/{p}/loyalty",
+            None,
+        ),
+        ("GET", "/v1/crm/patients/{patient_id}/engagement"): (
+            f"/v1/crm/patients/{p}/engagement",
+            None,
+        ),
+        ("GET", "/v1/insights/engagement"): ("/v1/insights/engagement", None),
+        ("GET", "/v1/insights/report"): ("/v1/insights/report", None),
+        ("POST", "/v1/insights/goals"): (
+            "/v1/insights/goals",
+            {"month": "2030-01", "metric": "citas_atendidas", "target": 10, "note": "Globex"},
+        ),
+        ("DELETE", "/v1/insights/goals/{goal_id}"): (f"/v1/insights/goals/{i['goal']}", None),
+        ("GET", "/v1/workshops/{workshop_id}/registrations"): (
+            f"/v1/workshops/{i['workshop']}/registrations",
+            None,
+        ),
+        ("POST", "/v1/workshops/{workshop_id}/cancel"): (
+            f"/v1/workshops/{i['workshop']}/cancel",
+            None,
+        ),
+        ("POST", "/v1/workshops/{workshop_id}/attendance"): (
+            f"/v1/workshops/{i['workshop']}/attendance",
+            {"patient_id": p, "attended": True},
+        ),
         ("GET", "/v1/clinical/document-types"): ("/v1/clinical/document-types", None),
         ("GET", "/v1/inbox/{conversation_id}"): (f"/v1/inbox/{i['conversation']}", None),
         ("POST", "/v1/inbox/{conversation_id}/draft"): (
@@ -795,6 +866,15 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
         ("GET", "/v1/me/calendar-link"): ("/v1/me/calendar-link", None),
         ("GET", "/v1/me/tests"): ("/v1/me/tests", None),
         ("GET", "/v1/me/practice"): ("/v1/me/practice", None),
+        ("GET", "/v1/me/workshops"): ("/v1/me/workshops", None),
+        ("POST", "/v1/me/workshops/{workshop_id}"): (
+            f"/v1/me/workshops/{acme.ids['workshop']}",
+            {"companions": 0},
+        ),
+        ("DELETE", "/v1/me/workshops/{workshop_id}"): (
+            f"/v1/me/workshops/{acme.ids['workshop']}",
+            None,
+        ),
         ("POST", "/v1/me/tests/{assignment_id}"): (
             f"/v1/me/tests/{acme.ids['assignment']}",
             {"answers": {"a": 1}},
@@ -856,6 +936,14 @@ ADDRESSED = {
         ("GET", "/v1/clinical/patients/{patient_id}/assignments"),
         ("DELETE", "/v1/clinical/assignments/{assignment_id}"),
         ("POST", "/v1/me/tests/{assignment_id}"),
+        ("GET", "/v1/workshops/{workshop_id}/registrations"),
+        ("GET", "/v1/crm/patients/{patient_id}/loyalty"),
+        ("GET", "/v1/crm/patients/{patient_id}/engagement"),
+        ("DELETE", "/v1/insights/goals/{goal_id}"),
+        ("POST", "/v1/workshops/{workshop_id}/cancel"),
+        ("POST", "/v1/workshops/{workshop_id}/attendance"),
+        ("POST", "/v1/me/workshops/{workshop_id}"),
+        ("DELETE", "/v1/me/workshops/{workshop_id}"),
         ("GET", "/v1/inbox/{conversation_id}"),
         ("POST", "/v1/inbox/{conversation_id}/draft"),
         ("POST", "/v1/inbox/{conversation_id}/reply"),

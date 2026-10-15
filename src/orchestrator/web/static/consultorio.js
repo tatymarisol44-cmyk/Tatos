@@ -269,6 +269,8 @@ let turn = 0; // the latest screen asked for: a slower, older one never paints o
 function route() {
   if (!state.session) return;
   const mine = ++turn;
+  const open = $("#dialog");
+  if (open.open) open.close(); // a window from the screen left behind must not block this one
   const [name, ...rest] = (location.hash.slice(1) || "hoy").split("/");
   const view = VIEWS[name] || VIEWS.hoy;
   for (const link of document.querySelectorAll("[data-nav]")) {
@@ -841,8 +843,12 @@ const docName = (type) => DOC_NAMES[type] || type;
 const TABS = [["resumen", "Resumen"], ["historia", "Historia"], ["tests", "Tests"], ["documentos", "Documentos"], ["citas", "Citas"], ["mensajes", "Mensajes"]];
 
 VIEWS.paciente = async (main, id, tab = "resumen") => {
-  const patient = await api(`/v1/crm/patients/${encodeURIComponent(id)}`);
+  const [patient, loyalty] = await Promise.all([
+    api(`/v1/crm/patients/${encodeURIComponent(id)}`),
+    api(`/v1/crm/patients/${encodeURIComponent(id)}/loyalty`).catch(() => null),
+  ]);
   const contact = [patient.phone, patient.email].filter(Boolean).join(" · ") || "Sin datos de contacto";
+  const tierChip = loyalty ? el("span", { class: "chip ok", title: "Nivel de fidelización: tiempo en acompañamiento y talleres, nunca sesiones", text: `Nivel ${loyalty.name}` }) : null;
   const visit = el("button", { class: "btn primary", type: "button", text: "Nueva cita" });
   visit.addEventListener("click", () => openVisitDialog({ patientId: patient.id }));
   const access = el("button", { class: "btn", type: "button", text: "Acceso a su app" });
@@ -855,7 +861,7 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
     }));
   const body = el("div", { class: "stack", role: "tabpanel" }, el("p", { class: "muted", text: "Cargando…" }));
   main.replaceChildren(...[
-    page(patient.display_name, contact, patient.restricted ? null : access, visit),
+    page(patient.display_name, contact, tierChip, patient.restricted ? null : access, visit),
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
     tabs, body].filter(Boolean));
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
@@ -895,13 +901,33 @@ async function openAccessDialog(patient) {
 
 async function tabResumen(patient) {
   if (!state.session.clinician) return [empty("El resumen clínico es solo para el rol de psicóloga.")];
-  const briefing = await api(`/v1/clinical/patients/${encodeURIComponent(patient.id)}/briefing`);
+  const [briefing, engagement] = await Promise.all([
+    api(`/v1/clinical/patients/${encodeURIComponent(patient.id)}/briefing`),
+    api(`/v1/crm/patients/${encodeURIComponent(patient.id)}/engagement`).catch(() => null),
+  ]);
   const [title, ...lines] = briefing.lines;
   return [card("Resumen antes de la sesión", "",
     el("p", {}, el("span", { class: "chip wait", text: "Borrador automático" })),
     el("p", { class: "muted", text: title }),
     el("ul", {}, ...lines.map((line) => el("li", { text: line }))),
-    el("p", { class: "muted", text: "Se arma con fechas y números de la ficha. No lee tus notas ni usa inteligencia artificial." }))];
+    el("p", { class: "muted", text: "Se arma con fechas y números de la ficha. No lee tus notas ni usa inteligencia artificial." })),
+    engagementCard(engagement)].filter(Boolean);
+}
+
+function engagementCard(e) {
+  if (!e) return null;
+  if (!e.available) {
+    return card("Compromiso", "", el("p", { class: "muted", text: "No se calcula: la paciente no dio su consentimiento de analítica." }));
+  }
+  const d = e.dimensions;
+  const show = (v) => (v == null ? "sin datos" : `${v}/100`);
+  return card("Compromiso (últimos 6 meses)", "",
+    el("p", {}, el("span", { class: `chip ${e.level === "alto" ? "ok" : e.level === "medio" ? "wait" : "bad"}`, text: e.level ? `Nivel ${e.level}` : "Sin datos suficientes" })),
+    el("ul", {},
+      el("li", { text: `Atención (abre los mensajes del consultorio): ${show(d.atencion)} — ${e.basis.messages_opened}` }),
+      el("li", { text: `Participación (asiste, responde tests): ${show(d.participacion)} — citas ${e.basis.visits_attended}, tests ${e.basis.tests_answered}` }),
+      el("li", { text: `Conexión social (talleres): ${show(d.conexion)} — ${e.basis.workshops_attended} asistidos` })),
+    el("p", { class: "muted", text: "Indicador para ti, no para publicidad. Una dimensión sin datos no cuenta como cero." }));
 }
 
 async function tabHistoria(patient) {
@@ -1067,6 +1093,415 @@ async function tabMensajes(patient) {
       el("span", { text: c.preview || "" }));
   });
   return [card("Conversaciones vinculadas", "", ...(rows.length ? rows : [empty("No hay conversaciones vinculadas a esta paciente. Puedes vincularlas desde Mensajes.")]))];
+}
+
+// --- MARKETING: workshops first (RF-MKT-05); campaigns, calendar and report follow -----------
+const MKT_TABS = [["informe", "Informe del mes"], ["talleres", "Talleres"], ["campanas", "Campañas"], ["publicaciones", "Publicaciones"]];
+
+VIEWS.marketing = async (main, tab = "informe", arg = "") => {
+  const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Secciones de marketing" },
+    ...MKT_TABS.map(([key, label]) => {
+      const b = el("button", { type: "button", role: "tab", "aria-selected": String(key === tab), text: label });
+      b.addEventListener("click", () => { location.hash = `#marketing/${key}`; });
+      return b;
+    }));
+  const body = await ({ talleres: workshopsTab, informe: reportTab, campanas: campaignsTab, publicaciones: publicationsTab }[tab] || reportTab)(arg);
+  main.replaceChildren(
+    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú."),
+    tabs, ...body);
+};
+
+// The monthly report (RF-MKT-06): evaluate, analyse, set SMART goals, monitor, report.
+async function reportTab(month) {
+  const r = await api(`/v1/insights/report${month ? `?month=${month}` : ""}`);
+  const [y, m] = r.month.split("-").map(Number);
+  const title = `${MONTHS[m - 1][0].toUpperCase()}${MONTHS[m - 1].slice(1)} de ${y}`;
+  const go = (delta) => {
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    return `#marketing/informe/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+  const cells = Object.entries(r.labels).map(([key, label]) => {
+    const now = r.metrics[key];
+    const before = r.before[key];
+    const shown = now == null ? "—" : key === "tasa_asistencia" ? `${now} %` : String(now);
+    let trend = "";
+    if (now != null && before != null && now !== before) {
+      const better = (now > before) !== (key === "inasistencias");
+      trend = `${now > before ? "▲" : "▼"} ${before}${key === "tasa_asistencia" ? " %" : ""} el mes anterior`;
+      return el("div", { class: "stat" }, el("b", { text: shown }), el("span", { class: "sub", text: label }),
+        el("span", { class: `chip ${better ? "ok" : "wait"}`, text: trend }));
+    }
+    return el("div", { class: "stat" }, el("b", { text: shown }), el("span", { class: "sub", text: label }),
+      el("span", { class: "muted", text: before == null ? "" : "igual que el mes anterior" }));
+  });
+  const networks = Object.entries(r.metrics.mensajes_por_red || {})
+    .map(([n, count]) => `${(NETWORKS[n] || [n])[0]}: ${count}`).join(" · ");
+  const goals = r.goals.map((g) => {
+    const drop = el("button", { class: "btn small", type: "button", text: "Quitar" });
+    drop.addEventListener("click", async () => {
+      drop.disabled = true;
+      try { await api(`/v1/insights/goals/${encodeURIComponent(g.goal_id)}`, { method: "DELETE" }); route(); } catch { drop.disabled = false; }
+    });
+    const bar = el("progress", { max: "100", value: String(g.progress ?? 0), "aria-label": `Progreso de ${g.label}` });
+    return el("div", { class: "doc" },
+      el("span", { class: "what" },
+        el("strong", { text: `${g.label}: ${g.metric === "inasistencias" ? "como máximo" : "llegar a"} ${g.target}${g.metric === "tasa_asistencia" ? " %" : ""}` }),
+        el("br"), el("span", { class: "muted", text: g.note }), el("br"), bar,
+        el("span", { class: "muted", text: ` Va en ${g.value ?? "—"}` })),
+      el("span", { class: `chip ${g.met ? "ok" : "wait"}`, text: g.met ? "Cumplida" : `${g.progress ?? 0} %` }),
+      drop);
+  });
+  const engagement = await api("/v1/insights/engagement").catch(() => null);
+  const print = el("button", { class: "btn", type: "button", text: "Imprimir o guardar en PDF" });
+  print.addEventListener("click", () => window.print());
+  return [
+    el("div", { class: "head" },
+      el("h2", { class: "title", text: title }),
+      el("div", { class: "row tight" }, link(go(-1), "‹ Mes anterior"), link(go(1), "Mes siguiente ›"), print)),
+    el("section", { class: "stats", "aria-label": "Cifras del mes" }, ...cells),
+    networks ? el("p", { class: "muted", text: `Mensajes por red: ${networks}.` }) : null,
+    card("Lo que destaca", "", ...(r.highlights.length ? r.highlights.map((h) => el("p", { text: `• ${h}` })) : [empty("Nada fuera de lo común este mes.")])),
+    card("Objetivos SMART del mes", "", ...(goals.length ? goals : [empty("Aún no hay objetivos para este mes.")]), goalForm(r)),
+    engagement ? card("Compromiso de las pacientes (con consentimiento de analítica)", "",
+      el("p", { text: `${engagement.with_analytics_consent} de ${engagement.patients} pacientes dieron su consentimiento.` }),
+      el("p", {}, el("span", { class: "chip ok", text: `Alto: ${engagement.levels.alto}` }), " ",
+        el("span", { class: "chip wait", text: `Medio: ${engagement.levels.medio}` }), " ",
+        el("span", { class: "chip bad", text: `Bajo: ${engagement.levels.bajo}` }), " ",
+        el("span", { class: "chip neutral", text: `Sin datos: ${engagement.levels.sin_datos}` })),
+      el("p", { class: "muted", text: `Promedios: atención ${engagement.averages.atencion ?? "—"} · participación ${engagement.averages.participacion ?? "—"} · conexión social ${engagement.averages.conexion ?? "—"}.` }),
+      el("p", { class: "muted", text: engagement.note })) : null,
+    el("p", { class: "muted", text: "Solo totales del consultorio: ningún dato de una paciente sale en este informe." }),
+  ].filter(Boolean);
+}
+
+function goalForm(r) {
+  const metric = el("select", { "aria-label": "Qué medir" },
+    ...Object.entries(r.labels).map(([key, label]) => el("option", { value: key, text: label })));
+  const target = el("input", { type: "number", min: "1", step: "1", required: true, "aria-label": "Meta" });
+  const note = el("input", { type: "text", maxlength: "300", required: true, placeholder: "Por qué importa (ej.: más pacientes conocen los talleres)" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Agregar objetivo" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Qué medir", metric), el("label", { class: "field" }, "Meta del mes", target)),
+    el("label", { class: "field" }, "Por qué es importante y alcanzable", note), save, status,
+    el("p", { class: "muted", text: "SMART: una cifra concreta, medible, alcanzable, relevante para el consultorio y con plazo (este mes). El progreso lo calcula el sistema." }));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!Number(target.value) || !note.value.trim()) return say(status, "Escribe la meta y por qué es importante.", "error");
+    save.disabled = true;
+    try {
+      await api("/v1/insights/goals", { method: "POST", body: { month: r.month, metric: metric.value, target: Number(target.value), note: note.value.trim() } });
+      route();
+    } catch (err) {
+      say(status, /this month or a later/.test(err.detail || "") ? "Los objetivos se fijan para este mes o los siguientes."
+        : /percentage/.test(err.detail || "") ? "La asistencia es un porcentaje: de 1 a 100." : humanError(err), "error");
+      save.disabled = false;
+    }
+  });
+  return form;
+}
+
+// Campaigns (RF-MKT-03): a control group measures the real effect; each one approved by a person.
+const KIND_NAMES = {
+  education: "Psicoeducación (material, talleres)", reactivation: "Invitar a volver",
+  recall: "Recordar el control", referral: "Recomendación", birthday: "Cumpleaños", pending_treatment: "Plan pendiente",
+};
+const SEGMENT_NAMES = {
+  dormant: "Sin visitas hace mucho tiempo", at_risk: "Se están alejando", loyal: "Constantes",
+  new: "Nuevas", champion: "Muy comprometidas", occasional: "Ocasionales", no_visits: "Sin ninguna visita",
+  recall_due: "Con control pendiente",
+};
+const CAMPAIGN_STATES = {
+  draft: ["Borrador", "neutral"], pending_approval: ["Por aprobar", "wait"], approved: ["Aprobada", "ok"],
+  queued: ["Enviándose", "wait"], sending: ["Enviándose", "wait"], completed: ["Enviada", "ok"],
+  partial_failed: ["Enviada con fallas", "bad"], cancelled: ["Cancelada", "neutral"],
+};
+
+async function campaignsTab() {
+  const list = await api("/v1/campaigns");
+  const rows = [...list].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((c) => {
+    const [label, cls] = CAMPAIGN_STATES[c.status] || [c.status, "neutral"];
+    const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+    const act = (text, path, primary = false) => {
+      const b = el("button", { class: `btn small${primary ? " primary" : ""}`, type: "button", text });
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        try { await api(`/v1/campaigns/${encodeURIComponent(c.id)}/${path}`, { method: "POST", body: {} }); route(); }
+        catch (err) { say(status, humanError(err), "error"); b.disabled = false; }
+      });
+      return b;
+    };
+    const results = el("button", { class: "btn small", type: "button", text: "Resultados" });
+    results.addEventListener("click", () => openResults(c));
+    const actions = [
+      ["draft", "pending_approval"].includes(c.status) ? act("Aprobar", "approve", true) : null,
+      c.status === "approved" ? act("Enviar", "send", true) : null,
+      ["draft", "pending_approval", "approved"].includes(c.status) ? act("Cancelar", "cancel") : null,
+      ["queued", "sending", "completed", "partial_failed"].includes(c.status) ? results : null,
+    ].filter(Boolean);
+    return el("article", { class: "card" },
+      el("div", { class: "head" },
+        el("div", {}, el("strong", { text: c.name }),
+          el("p", { class: "muted", text: `${KIND_NAMES[c.kind] || c.kind} · ${SEGMENT_NAMES[c.segment] || c.segment} · grupo de control ${c.holdout_pct} %${c.mode === "simulation" ? " · PRUEBA (no envía nada)" : ""}` })),
+        el("span", { class: `chip ${cls}`, text: label })),
+      el("p", { class: "pre muted", text: c.template }),
+      actions.length ? el("div", { class: "row tight" }, ...actions) : null, status);
+  });
+  return [
+    card("Nueva campaña", "", campaignForm()),
+    ...(rows.length ? rows : [empty("Aún no hay campañas.")]),
+  ];
+}
+
+function campaignForm() {
+  const name = el("input", { type: "text", maxlength: "200", required: true, placeholder: "Ej.: Invitación al taller de sueño" });
+  const kind = el("select", {}, ...Object.entries(KIND_NAMES).map(([k, v]) => el("option", { value: k, text: v })));
+  const segment = el("select", {}, ...Object.entries(SEGMENT_NAMES).map(([k, v]) => el("option", { value: k, text: v })));
+  const text = el("textarea", { rows: "4", maxlength: "1000", required: true });
+  text.value = "Hola {first_name}, en el consultorio preparamos un taller para dormir mejor. Si te interesa, inscríbete desde la app. Responde STOP para no recibir más mensajes.";
+  const holdout = el("input", { type: "number", min: "0", max: "50", value: "20" });
+  const mode = el("select", {}, el("option", { value: "simulation", text: "Prueba: revisa todo pero no envía nada" }), el("option", { value: "live", text: "Real: se envía al aprobarla y enviarla" }));
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Crear campaña" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Nombre", name),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Objetivo", kind), el("label", { class: "field" }, "A quiénes", segment)),
+    el("label", { class: "field" }, "Mensaje ({first_name} se reemplaza por el nombre)", text),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Grupo de control (%)", holdout), el("label", { class: "field" }, "Modo", mode)),
+    save, status,
+    el("p", { class: "muted", text: "Solo llega a quienes aceptaron recibir novedades. Nunca menciona tratamiento ni salud. El grupo de control no recibe nada: así se mide el efecto real. Primero aparece en su app; por Telegram solo si no la abre." }));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!name.value.trim() || !text.value.trim()) return say(status, "Escribe el nombre y el mensaje.", "error");
+    save.disabled = true;
+    try {
+      await api("/v1/campaigns", { method: "POST", body: { name: name.value.trim(), kind: kind.value, segment: segment.value,
+        template: text.value.trim(), holdout_pct: Number(holdout.value) || 0, mode: mode.value } });
+      route();
+    } catch (err) {
+      say(status, /STOP|BAJA|opt.?out/i.test(err.detail || "") ? "El mensaje debe decir cómo dejar de recibirlos (por ejemplo: «Responde STOP para no recibir más mensajes»)."
+        : err.status === 422 ? "El mensaje no pasó las reglas de tu profesión (por ejemplo, promesas de cura o datos de salud). Revísalo." : humanError(err), "error");
+      save.disabled = false;
+    }
+  });
+  return form;
+}
+
+async function openResults(c) {
+  const r = await api(`/v1/campaigns/${encodeURIComponent(c.id)}/results`);
+  const lines = [];
+  if (r.status === "simulation") lines.push("Fue una prueba: no se envió nada, así que no hay efecto que medir.");
+  else if (r.status === "provisional") lines.push(`Resultado provisional: la ventana de medición va en el día ${r.progress?.day ?? "?"} de ${r.progress?.of ?? "?"}.`);
+  else lines.push("Resultado final de la ventana de medición.");
+  const arms = r.itt?.arms;
+  if (arms) {
+    lines.push(`Recibieron el mensaje: ${arms.treatment.converted} de ${arms.treatment.n} agendaron (${Math.round(100 * arms.treatment.rate)} %).`);
+    lines.push(`Grupo de control: ${arms.control.converted} de ${arms.control.n} agendaron (${Math.round(100 * arms.control.rate)} %).`);
+  }
+  const itt = r.itt || {};
+  if (r.status === "final" && /too small/.test(r.conclusion || "")) {
+    lines.push("Los grupos son muy pequeños para sacar una conclusión: repite la campaña con más pacientes antes de decidir.");
+  } else if (itt.lift_abs != null) {
+    const significant = itt.p_value != null && itt.p_value < 0.05;
+    lines.push(`Efecto real: ${itt.lift_abs >= 0 ? "+" : ""}${Math.round(100 * itt.lift_abs)} puntos frente al grupo de control${itt.p_value != null ? ` (p = ${itt.p_value}: ${significant ? "es poco probable que sea casualidad" : "podría ser casualidad"})` : ""}.`);
+  }
+  dialog(`Resultados: ${c.name}`, ...lines.map((t) => el("p", { text: t })),
+    el("p", { class: "muted", text: "Se compara con el grupo de control, elegido al azar: así se sabe cuánto se debe realmente a la campaña." }));
+}
+
+// Publications (RF-PUB-04): created by code from a brief, approved by a person, on the calendar.
+async function publicationsTab() {
+  const [accounts, calendar, all] = await Promise.all([
+    api("/v1/social/accounts").catch(() => []),
+    api("/v1/social/publications/calendar").catch(() => []),
+    api("/v1/social/publications").catch(() => []),
+  ]);
+  const publishing = accounts.filter((a) => ["instagram", "facebook"].includes(a.network) && a.active !== false);
+  const STATES = { pending_approval: ["Por aprobar", "wait"], approved: ["Aprobada", "ok"], published: ["Publicada", "ok"], failed: ["Falló", "bad"], uncertain: ["Incierta", "bad"], cancelled: ["Cancelada", "neutral"], publishing: ["Publicándose", "wait"] };
+  const row = (p) => {
+    const [label, cls] = STATES[p.status] || [p.status, "neutral"];
+    const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+    const post = (text, path, primary = false) => {
+      const b = el("button", { class: `btn small${primary ? " primary" : ""}`, type: "button", text });
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        try { await api(`/v1/social/publications/${encodeURIComponent(p.publication_id)}/${path}`, { method: "POST" }); route(); }
+        catch (err) { say(status, humanError(err), "error"); b.disabled = false; }
+      });
+      return b;
+    };
+    const day = el("input", { type: "date", value: addDays(todayISO(), 1), "aria-label": "Fecha de publicación" });
+    const at = el("input", { type: "time", value: "10:00", step: "300", "aria-label": "Hora de publicación" });
+    const plan = el("button", { class: "btn small", type: "button", text: "Programar" });
+    plan.addEventListener("click", async () => {
+      plan.disabled = true;
+      try {
+        await api(`/v1/social/publications/${encodeURIComponent(p.publication_id)}/schedule`, { method: "PUT", body: { at: zoned(day.value, at.value) } });
+        route();
+      } catch (err) { say(status, /future/.test(err.detail || "") ? "Elige una fecha y hora futuras." : humanError(err), "error"); plan.disabled = false; }
+    });
+    const when = p.date || p.scheduled_for;
+    const whenText = when ? (() => { const x = partsIn(new Date(when)); return `${longDate(`${x.year}-${x.month}-${x.day}`)} · ${x.hour}:${x.minute}`; })() : "Sin fecha";
+    const open = ["pending_approval", "approved"].includes(p.status);
+    return el("article", { class: "card" },
+      el("div", { class: "head" },
+        el("div", {}, el("strong", { text: `${(NETWORKS[p.network] || [p.network])[0]} · ${p.media_type === "video" ? "video" : "imagen"}` }),
+          el("p", { class: "muted", text: whenText })),
+        el("span", { class: `chip ${cls}`, text: p.overdue ? "Atrasada: falta tu aprobación" : label })),
+      el("p", { class: "pre", text: p.caption }),
+      open ? el("div", { class: "row tight" }, day, at, plan,
+        p.status === "pending_approval" ? post("Aprobar", "approve", true) : null,
+        p.status === "approved" ? post("Publicar ahora", "publish") : null,
+        post("Cancelar", "cancel")) : null,
+      status);
+  };
+  const upcoming = all.filter((p) => ["pending_approval", "approved"].includes(p.status));
+  const done = calendar.filter((p) => !["pending_approval", "approved"].includes(p.status));
+  return [
+    publishing.length ? card("Nueva publicación", "", publicationForm(publishing))
+      : el("div", { class: "notice", role: "note" }, el("span", { text: "Para publicar, primero hay que conectar tu cuenta de Instagram o Facebook (requiere la verificación de Meta)." })),
+    card("Por publicar", "", ...(upcoming.length ? upcoming.map(row) : [empty("No hay publicaciones pendientes.")]),
+      el("p", { class: "muted", text: "Una publicación programada sale sola a su hora solo si ya la aprobaste." })),
+    done.length ? card("Este mes", "", ...done.map(row)) : null,
+  ].filter(Boolean);
+}
+
+function publicationForm(accounts) {
+  const account = el("select", { "aria-label": "Cuenta" }, ...accounts.map((a) => el("option", { value: a.account_id, text: `${(NETWORKS[a.network] || [a.network])[0]} · ${a.handle}` })));
+  const title = el("input", { type: "text", maxlength: "80", required: true, placeholder: "Ej.: Dormir bien también es salud mental" });
+  const points = el("textarea", { rows: "3", required: true, placeholder: "Una idea por línea (2 o 3)" });
+  const cta = el("input", { type: "text", maxlength: "60", value: "Agenda tu cita en la app" });
+  const caption = el("textarea", { rows: "3", maxlength: "2200", required: true });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Crear la imagen" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Cuenta", account),
+    el("label", { class: "field" }, "Título de la imagen", title),
+    el("label", { class: "field" }, "Ideas", points),
+    el("label", { class: "field" }, "Llamada a la acción", cta),
+    el("label", { class: "field" }, "Texto de la publicación", caption),
+    save, status,
+    el("p", { class: "muted", text: "La imagen se arma con tu identidad visual y pasa las reglas de tu profesión. No sale hasta que la apruebes." }));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ideas = points.value.split("\n").map((x) => x.trim()).filter(Boolean);
+    if (!title.value.trim() || !ideas.length || !caption.value.trim()) return say(status, "Completa el título, al menos una idea y el texto.", "error");
+    save.disabled = true;
+    say(status, "Creando la imagen…");
+    try {
+      await api("/v1/social/publications", { method: "POST", body: { account_id: account.value, kind: "infographic", caption: caption.value.trim(),
+        brief: { title: title.value.trim(), points: ideas.slice(0, 4), cta: cta.value.trim() || "Agenda tu cita", practice_name: state.session.practice } } });
+      route();
+    } catch (err) {
+      say(status, err.status === 422 ? "El texto no pasó las reglas de tu profesión (por ejemplo, promesas de cura o descuentos). Revísalo." : humanError(err), "error");
+      save.disabled = false;
+    }
+  });
+  return form;
+}
+
+async function workshopsTab() {
+  const list = await api("/v1/workshops?include_past=true");
+  const now = Date.now();
+  const upcoming = list.filter((w) => new Date(w.starts_at).getTime() >= now - 86400000);
+  const past = list.filter((w) => new Date(w.starts_at).getTime() < now - 86400000);
+  const row = (w) => {
+    const at = partsIn(new Date(w.starts_at));
+    const open = el("button", { class: "btn small", type: "button", text: "Inscritos" });
+    open.addEventListener("click", () => openWorkshop(w));
+    const taken = w.capacity - w.seats_left;
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: w.title }), el("br"),
+        el("span", { class: "muted", text: `${longDate(`${at.year}-${at.month}-${at.day}`)} · ${at.hour}:${at.minute} · ${w.place}` })),
+      w.status === "cancelled"
+        ? el("span", { class: "chip neutral", text: "Cancelado" })
+        : el("span", { class: `chip ${w.seats_left ? "ok" : "wait"}`, text: `${taken} de ${w.capacity} cupos` }),
+      open);
+  };
+  return [
+    card("Nuevo taller o charla", "", workshopForm()),
+    card("Próximos", "", ...(upcoming.length ? upcoming.map(row) : [empty("No hay talleres programados.")])),
+    past.length ? card("Anteriores", "", ...past.slice(-10).reverse().map(row)) : null,
+  ].filter(Boolean);
+}
+
+function workshopForm() {
+  const title = el("input", { type: "text", maxlength: "120", required: true, placeholder: "Ej.: Taller para dormir mejor" });
+  const description = el("textarea", { rows: "3", maxlength: "2000", required: true, placeholder: "Qué aprenderán y para quién es." });
+  const day = el("input", { type: "date", value: addDays(todayISO(), 7), required: true });
+  const at = el("input", { type: "time", value: "18:00", step: "300", required: true });
+  const length = el("input", { type: "number", min: "15", max: "480", step: "15", value: "90" });
+  const place = el("input", { type: "text", maxlength: "200", value: "En el consultorio" });
+  const seats = el("input", { type: "number", min: "1", max: "500", value: "12" });
+  const opensDay = el("input", { type: "date" });
+  const opensAt = el("input", { type: "time", value: "09:00", step: "300" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Publicar en la app de las pacientes" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Título", title),
+    el("label", { class: "field" }, "Descripción", description),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Fecha", day), el("label", { class: "field" }, "Hora", at),
+      el("label", { class: "field" }, "Duración (min)", length)),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Lugar", place), el("label", { class: "field" }, "Cupos", seats)),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Inscripción abierta para todas desde (opcional)", opensDay),
+      el("label", { class: "field" }, "Hora", opensAt)),
+    el("p", { class: "muted", text: "Si eliges una fecha, las pacientes en nivel Constancia se inscriben 48 horas antes y las de nivel Comunidad, 4 días antes. Sin fecha, la inscripción abre de inmediato." }),
+    save, status,
+    el("p", { class: "muted", text: "Las pacientes lo ven en su app y se inscriben, solas o con acompañante. Invitarlas por mensaje es una campaña: necesita su consentimiento y tu aprobación." }));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!title.value.trim() || !description.value.trim()) return say(status, "Escribe el título y la descripción.", "error");
+    save.disabled = true;
+    try {
+      await api("/v1/workshops", { method: "POST", body: {
+        title: title.value.trim(), description: description.value.trim(), starts_at: zoned(day.value, at.value),
+        duration_min: Number(length.value) || 90, place: place.value.trim() || "En el consultorio", capacity: Number(seats.value) || 10,
+        opens_at: opensDay.value ? zoned(opensDay.value, opensAt.value || "09:00") : null,
+      } });
+      route();
+    } catch (err) {
+      say(status, /future/.test(err.detail || "") ? "La fecha y hora deben ser futuras."
+        : /open before/.test(err.detail || "") ? "La inscripción debe abrir antes de que empiece el taller." : humanError(err), "error");
+      save.disabled = false;
+    }
+  });
+  return form;
+}
+
+async function openWorkshop(w) {
+  const people = await api(`/v1/workshops/${encodeURIComponent(w.workshop_id)}/registrations`);
+  const started = new Date(w.starts_at).getTime() <= Date.now();
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const STATES = { registered: "Inscrita", attended: "Asistió", absent: "No asistió" };
+  const rows = people.map((r) => {
+    const mark = (attended) => {
+      const b = el("button", { class: "btn small", type: "button", text: attended ? "Asistió" : "No asistió" });
+      b.addEventListener("click", async () => {
+        try {
+          await api(`/v1/workshops/${encodeURIComponent(w.workshop_id)}/attendance`, { method: "POST", body: { patient_id: r.patient_id, attended } });
+          $("#dialog").close();
+          openWorkshop(w);
+        } catch (err) { say(status, humanError(err), "error"); }
+      });
+      return b;
+    };
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: r.name }), el("br"),
+        el("span", { class: "muted", text: `${STATES[r.status] || r.status}${r.companions ? ` · con ${r.companions} acompañante${r.companions === 1 ? "" : "s"}` : ""}` })),
+      started && w.status !== "cancelled" ? el("span", { class: "row tight" }, mark(true), mark(false)) : null);
+  });
+  const cancel = el("button", { class: "btn", type: "button", text: "Cancelar el taller" });
+  cancel.addEventListener("click", async () => {
+    cancel.disabled = true;
+    try { await api(`/v1/workshops/${encodeURIComponent(w.workshop_id)}/cancel`, { method: "POST" }); $("#dialog").close(); route(); }
+    catch (err) { say(status, humanError(err), "error"); cancel.disabled = false; }
+  });
+  dialog(w.title,
+    el("p", { class: "muted", text: `${w.capacity - w.seats_left} de ${w.capacity} cupos ocupados (contando acompañantes).` }),
+    ...(rows.length ? rows : [empty("Todavía nadie se inscribió.")]),
+    started ? el("p", { class: "muted", text: "Marca quién asistió: sirve para medir el compromiso (solo de quienes lo consintieron)." }) : null,
+    !started && w.status !== "cancelled" ? cancel : null,
+    status);
 }
 
 // --- MENSAJES: one inbox for WhatsApp, Instagram and Facebook (ADR 0023) ---------------------------

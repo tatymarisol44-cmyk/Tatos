@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
@@ -28,6 +29,7 @@ from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, aware, utcnow
+from orchestrator.engagement import Engagement
 from orchestrator.establishment import Professionals
 from orchestrator.factories import (  # re-exported for callers of the old location
     build_chunk_store,
@@ -51,8 +53,10 @@ from orchestrator.insights import InsightsService
 from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
+from orchestrator.loyalty import Loyalty
 from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
+from orchestrator.monthly_report import MonthlyReport
 from orchestrator.oncall import OnCall
 from orchestrator.portal import PatientPortal
 from orchestrator.privacy_cases import PrivacyCases
@@ -66,6 +70,7 @@ from orchestrator.spend import Spend
 from orchestrator.subject_rights import SubjectRights
 from orchestrator.telemetry import OPS
 from orchestrator.whatsapp_assistant import WhatsAppAssistant
+from orchestrator.workshops import Workshops
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +218,10 @@ class Orchestrator:
         )
         # The inbox (ADR 0023): channels record into it; the assistant drafts for it.
         self.inbox = InboxService(self.db, self.audit, settings)
+        self.workshops = Workshops(self.db, self.audit)
+        self.loyalty = Loyalty(self.db)
+        self.engagement = Engagement(self.db, self.consents)
+        self.monthly_report = MonthlyReport(self.db, self.audit, ZoneInfo(settings.clinic_timezone))
         self.inbox.inbound = self.inbound
         self.inbox.assistant = self.inbound.assistant
         self.inbound.inbox = self.inbox
@@ -234,6 +243,7 @@ class Orchestrator:
             self.clinical_files,
             self.campaigns,
             self.inbox,
+            self.workshops,
             self.reviews,
             self.audit,
         )

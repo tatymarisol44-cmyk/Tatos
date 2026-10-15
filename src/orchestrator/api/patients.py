@@ -18,6 +18,7 @@ from orchestrator.crm import CrmError
 from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.instruments import InstrumentError
 from orchestrator.service import Orchestrator, PendingReviewError
+from orchestrator.workshops import MAX_COMPANIONS, WorkshopError
 
 router = APIRouter(prefix="/v1/me", tags=["patient"])
 Me = Annotated[Principal, Depends(require_patient)]
@@ -59,8 +60,10 @@ async def my_treatments(request: Request, p: Me) -> list[dict[str, Any]]:
 
 @router.get("/loyalty")
 async def my_loyalty(request: Request, p: Me) -> dict[str, Any]:
+    """Visits, offers and the loyalty tier with its benefits (RF-MKT-02)."""
     profile = await _profile(request, p)
-    return {**profile["loyalty"], "offers": profile["offers"]}
+    tier = await orch(request).loyalty.for_patient(p.tenant, _subject(p))
+    return {**profile["loyalty"], "offers": profile["offers"], "tier": tier}
 
 
 @router.post("/offers/seen")
@@ -127,6 +130,52 @@ class BookIn(BaseModel):
     starts_at: AwareDatetime
 
 
+class SignUpIn(BaseModel):
+    companions: int = Field(default=0, ge=0, le=MAX_COMPANIONS)
+
+
+@router.get("/workshops")
+async def my_workshops(request: Request, p: Me) -> list[dict[str, Any]]:
+    """Upcoming workshops and talks of the practice, with the patient's own sign-up."""
+    tier = await orch(request).loyalty.for_patient(p.tenant, _subject(p))
+    return await orch(request).workshops.for_patient(
+        p.tenant, _subject(p), early_hours=tier["early_hours"]
+    )
+
+
+@router.post("/workshops/{workshop_id}")
+async def sign_up(
+    workshop_id: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")],
+    body: SignUpIn,
+    request: Request,
+    p: Me,
+) -> dict[str, Any]:
+    try:
+        tier = await orch(request).loyalty.for_patient(p.tenant, _subject(p))
+        return await orch(request).workshops.register(
+            p.tenant, workshop_id, _subject(p), body.companions, early_hours=tier["early_hours"]
+        )
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "workshop not found") from exc
+    except WorkshopError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+
+@router.delete("/workshops/{workshop_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw(
+    workshop_id: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")],
+    request: Request,
+    p: Me,
+) -> None:
+    try:
+        if not await orch(request).workshops.withdraw(p.tenant, workshop_id, _subject(p)):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no sign-up to withdraw")
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "workshop not found") from exc
+    except WorkshopError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+
 @router.get("/practice")
 async def my_practice(request: Request, p: Me) -> dict[str, Any]:
     """The practice's name and its active professionals (names only), for the patient's
@@ -151,7 +200,10 @@ async def my_slots(
     professional_id: Annotated[str, Query(pattern=r"^[\w.@-]{1,64}$")],
     days: Annotated[int, Query(ge=1, le=60)] = 14,
 ) -> list[dict[str, Any]]:
-    """Free times of a professional of the patient's practice."""
+    """Free times of a professional of the patient's practice, as far ahead as the
+    patient's loyalty tier allows (RF-MKT-02)."""
+    tier = await orch(request).loyalty.for_patient(p.tenant, _subject(p))
+    days = min(days, tier["booking_days"])
     try:
         return await orch(request).agenda.free_slots(p.tenant, professional_id, days=days)
     except KeyError as exc:

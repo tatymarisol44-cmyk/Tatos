@@ -172,7 +172,7 @@ function route() {
 
 // --- INICIO ------------------------------------------------------------------------------------------
 VIEWS.inicio = async (main) => {
-  const [me, tests] = await Promise.all([api("/v1/me"), api("/v1/me/tests")]);
+  const [me, tests, talks] = await Promise.all([api("/v1/me"), api("/v1/me/tests"), api("/v1/me/workshops")]);
   state.me = me;
   const next = me.upcoming_appointments.sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0];
   main.append(el("h1", { class: "title", text: `Hola, ${firstName(me.profile.display_name)}` }));
@@ -188,6 +188,14 @@ VIEWS.inicio = async (main) => {
       el("h2", { text: tests.length === 1 ? "Tienes un test por responder" : `Tienes ${tests.length} tests por responder` }),
       el("p", { class: "muted", text: "Tu psicóloga te lo envió para conocer cómo te has sentido. Toma unos minutos." }),
       el("a", { class: "btn primary", href: "#tests", text: "Responder" })));
+  }
+  if (talks.length) {
+    const next = talks[0];
+    main.append(el("section", { class: "card" },
+      el("p", { class: "muted", text: "Próximo taller" }),
+      el("h2", { text: next.title }),
+      el("p", { class: "muted", text: `${when(next.starts_at)} · ${next.place}` }),
+      el("a", { class: "btn", href: "#talleres", text: next.registered ? "Ver mi inscripción" : "Ver e inscribirme" })));
   }
 };
 
@@ -216,9 +224,9 @@ async function bookingCard() {
   const pick = el("select", { "aria-label": "Profesional" }, ...team.map((t) => el("option", { value: t.professional_id, text: t.display_name })));
   const load = async () => {
     area.replaceChildren(el("p", { class: "muted", text: "Buscando horarios libres…" }));
-    const slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(pick.value)}&days=21`);
+    const slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(pick.value)}&days=60`);
     const days = [...new Set(slots.map((s) => s.local.slice(0, 10)))];
-    if (!days.length) { area.replaceChildren(el("p", { class: "empty", text: "No hay horarios libres en las próximas 3 semanas. Escribe al consultorio." })); return; }
+    if (!days.length) { area.replaceChildren(el("p", { class: "empty", text: "No hay horarios libres en los próximos días. Escribe al consultorio." })); return; }
     let chosenDay = days[0];
     let chosen = null;
     const pills = el("div", { class: "day-pills", role: "group", "aria-label": "Día" });
@@ -332,15 +340,65 @@ function answerTest(main, test) {
     el("p", { class: "muted", text: "No hay respuestas buenas ni malas. Tu psicóloga revisará los resultados contigo." })].filter(Boolean));
 }
 
+// --- TALLERES (RF-MKT-05) ----------------------------------------------------------------------------
+VIEWS.talleres = async (main) => {
+  const list = await api("/v1/me/workshops");
+  main.append(el("h1", { class: "title", text: "Talleres y charlas" }));
+  if (!list.length) {
+    main.append(el("p", { class: "empty", text: "Por ahora no hay talleres programados. Te avisaremos en la app." }));
+    return;
+  }
+  for (const w of list) main.append(workshopCard(w));
+};
+
+function workshopCard(w) {
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const companions = el("select", { "aria-label": "Acompañantes" },
+    ...[0, 1, 2, 3].map((n) => el("option", { value: String(n), text: n === 0 ? "Voy sola o solo" : `Voy con ${n} acompañante${n === 1 ? "" : "s"}` })));
+  companions.value = String(w.companions || 0);
+  const join = button(w.registered ? "Guardar cambios" : "Inscribirme", async () => {
+    join.disabled = true;
+    try {
+      await api(`/v1/me/workshops/${encodeURIComponent(w.workshop_id)}`, { method: "POST", body: { companions: Number(companions.value) } });
+      say(status, "¡Listo! Estás inscrita o inscrito. Te esperamos.", "done");
+      setTimeout(route, 1200);
+    } catch (err) {
+      say(status, err.status === 409 ? "Ya no quedan cupos suficientes, o el taller cerró su inscripción." : humanError(err), "error");
+      join.disabled = false;
+    }
+  }, "btn primary");
+  const leave = w.registered ? button("Ya no puedo ir", async () => {
+    leave.disabled = true;
+    try { await api(`/v1/me/workshops/${encodeURIComponent(w.workshop_id)}`, { method: "DELETE" }); route(); }
+    catch (err) { say(status, humanError(err), "error"); leave.disabled = false; }
+  }) : null;
+  const notYet = !w.registered && w.opens_for_you && new Date(w.opens_for_you).getTime() > Date.now();
+  if (notYet) { join.disabled = true; join.textContent = `La inscripción abre el ${when(w.opens_for_you)}`; }
+  return el("section", { class: "card" },
+    el("h2", { text: w.title }),
+    el("p", { class: "muted", text: `${when(w.starts_at)} · ${w.place}` }),
+    el("p", { text: w.description }),
+    w.registered ? el("span", { class: "chip ok", text: "Inscrita/o" }) : el("span", { class: "chip neutral", text: w.seats_left ? `Quedan ${w.seats_left} cupos` : "Sin cupos" }),
+    el("label", { class: "field" }, "¿Vas con alguien?", companions),
+    ...[join, leave].filter(Boolean), status);
+}
+
 // --- PERFIL ------------------------------------------------------------------------------------------
 VIEWS.perfil = async (main) => {
-  const [me, prompt] = await Promise.all([api("/v1/me"), api("/v1/me/consents")]);
+  const [me, prompt, loyalty] = await Promise.all([api("/v1/me"), api("/v1/me/consents"), api("/v1/me/loyalty")]);
   const p = me.profile;
+  const tier = loyalty.tier;
   main.append(el("h1", { class: "title", text: "Mi perfil" }),
     el("section", { class: "card" },
       el("p", {}, el("strong", { text: p.display_name })),
       el("p", { class: "muted", text: [p.phone, p.email].filter(Boolean).join(" · ") || "Sin datos de contacto" }),
-      el("p", { class: "muted", text: "Para corregir tus datos, pídeselo al consultorio." })));
+      el("p", { class: "muted", text: "Para corregir tus datos, pídeselo al consultorio." })),
+    el("section", { class: "card" },
+      el("p", { class: "muted", text: "Tu nivel" }),
+      el("h2", { text: tier.name }),
+      el("ul", {}, ...tier.benefits.map((b) => el("li", { text: b }))),
+      tier.next ? el("p", { class: "muted", text: `Siguiente nivel: ${tier.next.name}. ${tier.next.how}` }) : null,
+      el("p", { class: "muted", text: "Los niveles dependen del tiempo que llevas con nosotros y de los talleres a los que asistes, nunca de cuántas sesiones tomas. No son descuentos." })));
   const labels = { marketing: "Novedades del consultorio", analytics: "Ayudarnos a mejorar lo que publicamos", memory: "Recordar tus preferencias" };
   const current = prompt.consents || {};
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });

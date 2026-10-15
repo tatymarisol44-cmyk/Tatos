@@ -26,12 +26,14 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     instruments,
     knowledge,
     migrate,
+    monthly_report,
     oncall,
     privacy_cases,
     publishing,
     social,
     spend,
     whatsapp_assistant,
+    workshops,
 )
 from orchestrator.db import Database, metadata
 

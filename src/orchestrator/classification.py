@@ -124,6 +124,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "instruments": DataClass.INTERNAL,  # definitions: items, scoring, no patient data
     "knowledge_documents": DataClass.INTERNAL,
     "knowledge_versions": DataClass.INTERNAL,
+    "marketing_goals": DataClass.INTERNAL,  # a metric, a target, a month: no patient
     "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
     "principals": DataClass.CREDENTIAL,
@@ -137,4 +138,6 @@ TABLE_CLASS: dict[str, DataClass] = {
     "subject_threads": DataClass.HEALTH,
     "thread_leases": DataClass.INTERNAL,
     "whatsapp_offers": DataClass.PERSONAL,  # pseudonymous number + offered times, no text
+    "workshop_registrations": DataClass.HEALTH,  # who, of a mental-health practice's patients
+    "workshops": DataClass.INTERNAL,  # the event itself: no patient data
 }

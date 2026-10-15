@@ -18,6 +18,7 @@ from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, Subj
 from orchestrator.inbox import InboxService
 from orchestrator.instruments import Instruments
 from orchestrator.memory import SemanticMemory
+from orchestrator.workshops import Workshops
 
 
 class ThreadPort(Protocol):
@@ -44,6 +45,7 @@ class SubjectRights:
         files: ClinicalFiles,
         campaigns: CampaignService,
         inbox: InboxService,
+        workshops: Workshops,
         reviews: ReviewQueue,
         audit: AuditLog,
     ) -> None:
@@ -58,6 +60,7 @@ class SubjectRights:
         self.files = files
         self.campaigns = campaigns
         self.inbox = inbox
+        self.workshops = workshops
         self.reviews = reviews
         self.audit = audit
 
@@ -91,6 +94,7 @@ class SubjectRights:
             "clinical_files": await self.files.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "inbox_conversations": await self.inbox.export_subject(tenant, subject_id),
+            "workshops": await self.workshops.history(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],
             "access_keys": access,
@@ -137,6 +141,7 @@ class SubjectRights:
             "consents": await self.consents.erase(tenant, subject_id),
             "campaign_messages_anonymised": await self.campaigns.erase_subject(tenant, subject_id),
             "inbox_conversations": await self.inbox.erase_subject(tenant, subject_id),
+            "workshop_registrations": await self.workshops.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
         }
         result["retained"] = [
