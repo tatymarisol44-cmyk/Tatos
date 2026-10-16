@@ -9,7 +9,6 @@ import asyncio
 import hashlib
 import hmac
 import json
-import re
 import socket
 import sys
 import threading
@@ -26,6 +25,7 @@ from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
+from orchestrator.staff_login import totp_at, unb32
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
@@ -191,32 +191,25 @@ def test_the_key_is_forgotten_on_sign_out(server: str, browser: Any) -> None:
     assert not problems, problems
 
 
-def _latest_mail(folder: Any, to: str) -> str:
-    """The newest e-mail to `to` in the dev outbox (no SMTP in tests)."""
-    name = to.replace("@", "_")  # the outbox names files after the address, @ replaced
-    mails = sorted(folder.glob(f"*{name}*.txt"), key=lambda f: f.stat().st_mtime_ns)
-    assert mails, f"no e-mail to {to}"
-    return str(mails[-1].read_text(encoding="utf-8"))
+def _app_code(secret_text: str, ahead: int = 0) -> str:
+    """What an authenticator app shows for this secret (`ahead` steps of 30 s later)."""
+    secret = unb32(secret_text.replace(" ", ""))
+    return totp_at(secret, int(time.time() // 30) + ahead)
 
 
-def test_e_mail_sign_in_from_invitation_to_the_team_card(
-    server: str, browser: Any, settings: Settings, tmp_path: Any
-) -> None:
-    outbox = tmp_path / "correos"
-    settings.dev_outbox_dir = str(outbox)
+def test_e_mail_sign_in_with_an_authenticator_and_the_team_card(server: str, browser: Any) -> None:
     made = httpx.post(
         f"{server}/v1/admin/team",
         json={"name": "Ana Recepción", "email": "ana@example.test", "roles": ["reception"]},
         headers=SERVICE,
     )
     assert made.status_code == 201, made.text
-    token = re.search(r"#clave=([\w-]+)", _latest_mail(outbox, "ana@example.test"))
-    assert token
+    token = made.json()["link"].split("#clave=")[1]
     page = browser.new_page()
     problems = _watch(page)
 
-    # The invitation link opens "choose a password"; its token leaves the address bar.
-    page.goto(f"{server}/app#clave={token.group(1)}")
+    # The personal link: a password first; its token leaves the address bar.
+    page.goto(f"{server}/app#clave={token}")
     page.wait_for_selector("#password-form:not([hidden])")
     assert "clave" not in page.url
     page.fill("#new-password", "Mi gato duerme al sol")
@@ -225,21 +218,17 @@ def test_e_mail_sign_in_from_invitation_to_the_team_card(
     assert "no son iguales" in page.inner_text("#signin-status")
     page.fill("#new-password-2", "Mi gato duerme al sol")
     page.click("#password-form button[type=submit]")
-    page.wait_for_selector("text=tu contraseña quedó guardada")
 
-    # E-mail and password, then the code from the e-mail.
-    page.fill("#signin-email", "ana@example.test")
-    page.fill("#signin-password", "Mi gato duerme al sol")
-    page.click("#email-form button[type=submit]")
-    page.wait_for_selector("#code-form:not([hidden])")
-    assert "a***@example.test" in page.inner_text("#code-sent")
-    code = re.search(r"\b(\d{6})\b", _latest_mail(outbox, "ana@example.test"))
-    assert code
-    page.fill("#signin-code", "000000" if code.group(1) != "000000" else "111111")
-    page.click("#code-form button[type=submit]")
+    # Then the authenticator: a QR code, a link for the phone, the key to type by hand.
+    page.wait_for_selector("#enroll-form:not([hidden])")
+    assert page.locator("#enroll-qr svg path").count() == 1
+    assert page.get_attribute("#enroll-open", "href").startswith("otpauth://totp/")
+    secret = page.inner_text("#enroll-secret")
+    page.fill("#enroll-code", "000000" if _app_code(secret) != "000000" else "111111")
+    page.click("#enroll-form button[type=submit]")
     page.wait_for_selector("text=El código no es correcto")
-    page.fill("#signin-code", code.group(1))
-    page.click("#code-form button[type=submit]")
+    page.fill("#enroll-code", _app_code(secret))
+    page.click("#enroll-form button[type=submit]")
     page.wait_for_selector("#app:not([hidden])")
     page.click("a[data-nav=ajustes]")
     page.wait_for_selector("text=Entras con tu correo ana@example.test")
@@ -248,18 +237,29 @@ def test_e_mail_sign_in_from_invitation_to_the_team_card(
     page.wait_for_selector("#email-form:not([hidden])")
     assert page.evaluate("() => [sessionStorage.length, localStorage.length]") == [0, 0]
 
-    # The administration sees her as active, invites someone else and removes Ana.
+    # Signing in again: e-mail, password, then the app's next code.
+    page.fill("#signin-email", "ana@example.test")
+    page.fill("#signin-password", "Mi gato duerme al sol")
+    page.click("#email-form button[type=submit]")
+    page.wait_for_selector("#code-form:not([hidden])")
+    page.fill("#signin-code", _app_code(secret, ahead=1))
+    page.click("#code-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+
+    # The administration sees her as active, adds someone, gives Ana a new link, removes her.
     admin, _ = _signed_in(browser, server, _staff_key(server))
     admin.click("a[data-nav=ajustes]")
-    admin.wait_for_selector(".doc:has-text('ana@example.test') >> text=Activa")
+    row = ".doc:has-text('ana@example.test')"
+    admin.wait_for_selector(f"{row} >> text=Activa")
     admin.click("text=Agregar a una persona")
     admin.fill("input[placeholder='Ej.: Ana Pérez']", "Luis Marketing")
     admin.fill("details input[type=email]", "luis@example.test")
     admin.check("details input[value=marketing]")
     admin.click("text=Invitar")
-    admin.wait_for_selector("text=le enviamos a luis@example.test")
-    admin.wait_for_selector(".doc:has-text('luis@example.test') >> text=Invitación enviada")
-    row = ".doc:has-text('ana@example.test')"
+    admin.wait_for_selector("text=Envíale este enlace a Luis Marketing")
+    assert "#clave=" in admin.input_value("input[aria-label='Enlace de acceso de Luis Marketing']")
+    admin.click(f"{row} >> text=Enlace de acceso")
+    admin.wait_for_selector("input[aria-label='Enlace de acceso de Ana Recepción']")
     admin.click(f"{row} >> text=Quitar acceso")
     admin.click(f"{row} >> text=Sí, quitar acceso")
     admin.wait_for_selector(row, state="detached")

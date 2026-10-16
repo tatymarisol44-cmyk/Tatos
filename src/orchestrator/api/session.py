@@ -3,7 +3,8 @@ show their own agenda. It names the key's roles and the professional it belongs 
 the key itself. Patients use `/v1/me`.
 
 `POST /v1/session/email` lets a staff member add an e-mail login to their own account
-(staff_login.py): an invitation to choose a password goes to that address."""
+(staff_login.py): the answer is their personal link, to choose a password and add an
+authenticator app right away."""
 
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ from pydantic import BaseModel, Field
 
 from orchestrator.api.security import require_staff
 from orchestrator.auth import STAFF, Principal
-from orchestrator.staff_login import MailUnavailable
 
 router = APIRouter(prefix="/v1/session", tags=["session"])
 Staff = Annotated[Principal, Depends(require_staff)]
@@ -46,7 +46,7 @@ class OwnEmailIn(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
 
-@router.post("/email", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/email")
 async def add_own_email(body: OwnEmailIn, request: Request, p: Staff) -> dict[str, str]:
     """Add (or change, before it is used) the e-mail this person signs in with."""
     if p.kind != STAFF:
@@ -55,12 +55,7 @@ async def add_own_email(body: OwnEmailIn, request: Request, p: Staff) -> dict[st
     professional = await orch.professionals.for_staff(p.tenant, p.id)
     name = professional["display_name"] if professional else None
     try:
-        await orch.staff_logins.attach_own_email(p.tenant, p.id, body.email, name)
+        return await orch.staff_logins.attach_own_email(p.tenant, p.id, body.email, name)  # type: ignore[no-any-return]
     except ValueError as exc:
         code = status.HTTP_422_UNPROCESSABLE_CONTENT if "invalid" in str(exc) else 409
         raise HTTPException(code, str(exc)) from exc
-    except MailUnavailable as exc:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "e-mail is not available on this server"
-        ) from exc
-    return {"status": "invitation sent"}

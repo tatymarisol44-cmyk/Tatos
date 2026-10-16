@@ -9,15 +9,13 @@ links and the synthetic keys to Desktop\\PRACTICA-DE-PRUEBA.txt and keeps servin
 Ctrl+C. Nothing here touches the production service or its database. Every run starts
 from an empty database.
 
-E-mail sign-in (ADR 0024) works too: a synthetic account like the owner's gets an e-mail
-and a password, and every e-mail the app "sends" (codes, invitations) is written as a text
-file to Desktop\\Correos de prueba."""
+E-mail sign-in (ADR 0024) can be tried end to end: a synthetic account like the owner's
+gets a personal link, to choose a password and add the practice to an authenticator app
+on one's own phone."""
 
 from __future__ import annotations
 
-import re
 import secrets
-import shutil
 import sys
 import threading
 import time
@@ -35,7 +33,6 @@ PORT = 8800
 BASE = f"http://127.0.0.1:{PORT}"
 HOME = Path.home() / "agency-demo"
 SHEET = Path.home() / "Desktop" / "PRACTICA-DE-PRUEBA.txt"
-OUTBOX = Path.home() / "Desktop" / "Correos de prueba"
 EMAIL = "carla@consultorio-prueba.test"
 
 
@@ -43,10 +40,8 @@ def main() -> int:
     HOME.mkdir(exist_ok=True)
     database = HOME / "demo.db"
     database.unlink(missing_ok=True)  # a fresh practice every time
-    shutil.rmtree(OUTBOX, ignore_errors=True)
     service_key = f"svc_demo_{secrets.token_hex(12)}"
     meta_secret = secrets.token_hex(16)
-    password = f"Prueba-{secrets.token_hex(4)}"  # a new one each run, shown in the sheet
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]
         app_env="dev",
@@ -62,10 +57,8 @@ def main() -> int:
         media_dir=HOME / "media",
         public_base_url=BASE,
         rate_limit_per_minute=10_000,
-        dev_outbox_dir=str(OUTBOX),
     )
-    orch = Orchestrator(settings)
-    app = create_app(settings, orch)
+    app = create_app(settings, Orchestrator(settings))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
     deadline = time.time() + 120
@@ -77,8 +70,8 @@ def main() -> int:
     print("Filling the practice with synthetic data (about a minute)...")
     with httpx.Client(base_url=BASE, timeout=180) as client:
         out = Demo(client, service_key, meta_app_secret=meta_secret).run()
-        # An account like the owner's, signing in with e-mail: invited, then its password set
-        # from the invitation link (the e-mail lands in the outbox folder too).
+        # An account like the owner's, to sign in with e-mail and an authenticator app: its
+        # personal link goes in the sheet, so the whole first sign-in can be tried.
         made = client.post(
             "/v1/admin/team",
             json={
@@ -89,20 +82,17 @@ def main() -> int:
             headers={"X-API-Key": service_key},
         )
         made.raise_for_status()
-        link = re.search(r"#clave=([\w-]+)", orch.mailer.outbox[-1].text)
-        assert link is not None
-        chosen = {"token": link.group(1), "password": password}
-        client.post("/v1/auth/password", json=chosen).raise_for_status()
+        link = made.json()["link"]
     keys = out["keys"]
     SHEET.write_text(
         "PRÁCTICA DE PRUEBA (datos ficticios): solo en esta computadora\n"
         "================================================================\n\n"
         f"App del consultorio:  {BASE}/app\n\n"
-        "  Entrar con correo (cuenta como la de Carla: dueña, administración y psicóloga):\n"
-        f"    Correo:      {EMAIL}\n"
-        f"    Contraseña:  {password}\n"
-        "    El código de 6 números llega como archivo a la carpeta «Correos de prueba»\n"
-        "    de tu escritorio: abre el archivo más nuevo.\n\n"
+        "  Entrar con correo y app autenticadora (cuenta como la de Carla: dueña,\n"
+        "  administración y psicóloga). La primera vez, abre este enlace: creas tu\n"
+        "  contraseña y escaneas el código QR con la app autenticadora de tu celular.\n"
+        f"    Enlace:  {link}\n"
+        f"    Correo:  {EMAIL}\n\n"
         "  Llaves de emergencia (botón «Entrar con llave de emergencia»):\n"
         f"    Dra. Vera (psicóloga ficticia):  {keys['dra.vera']}\n"
         f"    Dirección (dueña ficticia):      {keys['direccion']}\n\n"

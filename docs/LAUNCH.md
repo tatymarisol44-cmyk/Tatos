@@ -24,7 +24,7 @@ All of these run in CI on every commit:
 | Clinical workspace: tests designed by the psychologist, clinical files, follow-up (ADR 0019) | `tests/test_instruments.py`, `tests/test_clinical_files.py`, `tests/test_followup.py` |
 | Agenda without double booking, calendar feeds, reminders, WhatsApp assistant without medical advice (ADR 0020) | `tests/test_agenda.py`, `tests/test_reminders.py`, `tests/test_whatsapp_assistant.py` |
 | One sealed inbox for WhatsApp, Instagram and Facebook; the AI drafts, a person sends (ADR 0023) | `tests/test_inbox.py` |
-| Staff sign-in with e-mail, password and an e-mailed code; passwords in scrypt, codes and sessions as hashes, nothing tells whether an e-mail exists (ADR 0024) | `tests/test_staff_login.py`, `tests/test_consultorio_e2e.py` |
+| Staff sign-in with e-mail, password and an authenticator app (TOTP, RFC 6238 test values); passwords in scrypt, the app's secret sealed, sessions and links as hashes, replayed codes refused, nothing tells whether an e-mail exists (ADR 0024) | `tests/test_staff_login.py`, `tests/test_consultorio_e2e.py` |
 | Summary before a session, by code and never from a note's text; tests answered by the patient in the app, crisis alert on an alert answer | `tests/test_briefing.py`, `tests/test_self_report.py` |
 | Monthly model spend cap per practice | `tests/test_spend.py` |
 | One-command MVP demo in Codespaces | `scripts/demo-codespaces.sh`, `tests/test_demo.py`, `docs/DEMO.md` |

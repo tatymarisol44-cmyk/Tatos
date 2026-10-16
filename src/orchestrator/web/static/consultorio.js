@@ -228,17 +228,35 @@ function firstName() {
 }
 
 // --- sign in and out -------------------------------------------------------------------------
-// With e-mail (ADR 0024): e-mail and password, then a 6-digit code from the e-mail. The
-// personal key stays as break-glass access. A link "#clave=..." from an invitation or a
-// reset opens the step to choose a password; its token never stays in the address bar.
-const auth = { email: false, challenge: null, token: null };
-const STEPS = { email: "#email-form", code: "#code-form", password: "#password-form", key: "#signin-form" };
+// With e-mail (ADR 0024): e-mail and password, then the 6-digit code of an authenticator
+// app. A personal link "#clave=..." (from Equipo, or from Tu cuenta) leads to choosing a
+// password and adding the app; its token never stays in the address bar. The personal
+// key stays as break-glass access.
+const auth = { challenge: null, token: null, enroll: null };
+const STEPS = { email: "#email-form", code: "#code-form", password: "#password-form", enroll: "#enroll-form", key: "#signin-form" };
 
 function showStep(step) {
   for (const [name, sel] of Object.entries(STEPS)) $(sel).hidden = name !== step;
-  $("#use-key").hidden = !(auth.email && step === "email");
-  $("#use-email").hidden = !(auth.email && step === "key");
+  $("#use-key").hidden = step !== "email";
+  $("#use-email").hidden = step !== "key";
   $(STEPS[step]).querySelector("input")?.focus();
+}
+
+/** The QR code the server computed, drawn as one SVG path (no script, no inline style). */
+function drawQr(rows) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${rows.length} ${rows.length}`);
+  svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Código QR para agregar el consultorio a tu app autenticadora");
+  let d = "";
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (row[x] === "1") d += `M${x} ${y}h1v1h-1z`; });
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("fill", "#000");
+  svg.append(path);
+  return svg;
 }
 
 async function emailStep(event) {
@@ -252,14 +270,12 @@ async function emailStep(event) {
     const started = await api("/v1/auth/sign-in", { method: "POST", body: { email, password } });
     auth.challenge = started.challenge;
     $("#signin-password").value = "";
-    $("#code-sent").textContent = `Te enviamos un código de 6 números a ${started.sent_to}. Vence en 10 minutos. Si no lo ves, revisa la carpeta de spam.`;
+    $("#code-sent").textContent = "Abre tu app autenticadora y escribe el código de 6 números que muestra para el consultorio. Cambia cada 30 segundos.";
     say(status, "");
     showStep("code");
   } catch (err) {
     say(status, err.status === 401 ? "Correo o contraseña incorrectos."
-      : err.status === 429 ? "Demasiados intentos seguidos. Espera un minuto."
-        : err.status === 503 ? "No pudimos enviar el código por correo. Inténtalo más tarde o entra con tu llave de emergencia."
-          : humanError(err), "error");
+      : err.status === 429 ? "Demasiados intentos seguidos. Espera un minuto." : humanError(err), "error");
   }
 }
 
@@ -277,34 +293,13 @@ async function codeStep(event) {
     await start();
     say(status, "");
   } catch (err) {
-    say(status, err.status === 401 ? "El código no es correcto o ya venció. Revisa el último correo o pide otro código."
+    say(status, err.status === 401 ? "El código no es correcto. Escribe el que muestra la app ahora, antes de que cambie. Si fallas varias veces, vuelve a empezar."
       : humanError(err), "error");
   }
 }
 
-async function resendCode() {
-  const status = $("#signin-status");
-  try {
-    await api("/v1/auth/resend", { method: "POST", body: { challenge: auth.challenge } });
-    say(status, "Te enviamos otro código. Usa el más reciente.", "done");
-  } catch (err) {
-    say(status, err.status === 429 ? "Espera un minuto antes de pedir otro código."
-      : err.status === 401 ? "Este intento venció. Vuelve a escribir tu correo y tu contraseña."
-        : humanError(err), "error");
-  }
-}
-
-async function forgotPassword() {
-  const status = $("#signin-status");
-  const email = $("#signin-email").value.trim();
-  if (!email) {
-    $("#signin-email").focus();
-    return say(status, "Escribe tu correo arriba y vuelve a tocar «Olvidé mi contraseña».", "error");
-  }
-  try {
-    await api("/v1/auth/forgot", { method: "POST", body: { email } });
-    say(status, "Si ese correo está registrado, te enviamos un enlace para crear una contraseña nueva. Vence en 30 minutos.", "done");
-  } catch (err) { say(status, humanError(err), "error"); }
+function forgotPassword() {
+  say($("#signin-status"), "Pide a la administración del consultorio un enlace nuevo. Con él eliges otra contraseña (y, si cambiaste de celular, vuelves a agregar la app).", "done");
 }
 
 async function passwordStep(event) {
@@ -313,17 +308,43 @@ async function passwordStep(event) {
   const password = $("#new-password").value;
   if (password.length < 10) return say(status, "La contraseña necesita al menos 10 caracteres.", "error");
   if (password !== $("#new-password-2").value) return say(status, "Las dos contraseñas no son iguales.", "error");
-  say(status, "Guardando…");
+  say(status, "Revisando…");
   try {
-    await api("/v1/auth/password", { method: "POST", body: { token: auth.token, password } });
-    auth.token = null;
+    const step = await api("/v1/auth/link", { method: "POST", body: { token: auth.token, password } });
+    auth.enroll = step.challenge;
     $("#new-password").value = "";
     $("#new-password-2").value = "";
-    showStep("email");
-    say(status, "Listo, tu contraseña quedó guardada. Ahora entra con tu correo y tu contraseña.", "done");
+    $("#enroll-open").setAttribute("href", step.uri);
+    $("#enroll-qr").replaceChildren(drawQr(step.qr));
+    $("#enroll-secret").textContent = step.secret.replace(/(.{4})/g, "$1 ").trim();
+    say(status, "");
+    showStep("enroll");
   } catch (err) {
-    say(status, err.status === 410 ? "Este enlace ya se usó o venció. Pide uno nuevo con «Olvidé mi contraseña»."
+    say(status, err.status === 410 ? "Este enlace ya se usó o venció. Pide uno nuevo a la administración del consultorio."
       : err.status === 422 && err.detail ? err.detail : humanError(err), "error");
+  }
+}
+
+async function enrollStep(event) {
+  event.preventDefault();
+  const status = $("#signin-status");
+  const code = $("#enroll-code").value.replace(/\D/g, "");
+  if (code.length !== 6) return say(status, "Escribe los 6 números que muestra la app.", "error");
+  const remember = $("#enroll-remember").checked;
+  say(status, "Entrando…");
+  try {
+    const session = await api("/v1/auth/enroll", { method: "POST", body: { challenge: auth.enroll, code, remember } });
+    auth.token = null;
+    auth.enroll = null;
+    $("#enroll-code").value = "";
+    $("#enroll-secret").textContent = "";
+    $("#enroll-qr").replaceChildren();
+    keyStore.set(session.key, remember);
+    await start();
+    say(status, "");
+  } catch (err) {
+    say(status, err.status === 401 ? "El código no es correcto. Revisa que sea el del consultorio y escríbelo antes de que cambie."
+      : err.status === 410 ? "Este paso venció. Vuelve a abrir tu enlace para empezar de nuevo." : humanError(err), "error");
   }
 }
 
@@ -372,7 +393,7 @@ function signOut(message = "") {
   state.session = null;
   $("#app").hidden = true;
   $("#signin").hidden = false;
-  showStep(auth.email ? "email" : "key");
+  showStep("email");
   say($("#signin-status"), message, message ? "error" : "");
 }
 
@@ -742,40 +763,50 @@ function accountCard() {
     el("p", { text: `Entraste como ${s.id}.` }),
     el("p", { class: "muted", text: `Permisos: ${roleList(s.roles)}.` }),
   ];
-  if (s.kind !== "staff" || !auth.email) return card("Tu cuenta", "", ...parts);
+  if (s.kind !== "staff") return card("Tu cuenta", "", ...parts);
   const login = s.email_login;
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   if (login && login.active) {
-    parts.push(el("p", { text: `Entras con tu correo ${login.email}, tu contraseña y un código que te llega al correo.` }));
+    parts.push(el("p", { text: `Entras con tu correo ${login.email}, tu contraseña y tu app autenticadora. Si cambias de celular, pide un enlace nuevo a la administración.` }));
     return card("Tu cuenta", "", ...parts);
   }
   const email = el("input", { type: "email", maxlength: "254", autocomplete: "email", spellcheck: "false", value: login ? login.email : "" });
-  const send = el("button", { class: "btn", type: "submit", text: login ? "Enviarme la invitación otra vez" : "Enviarme la invitación" });
+  const send = el("button", { class: "btn", type: "submit", text: "Configurar ahora" });
   const form = el("form", { class: "stack", novalidate: true },
-    el("p", { text: login
-      ? `Te enviamos una invitación a ${login.email}. Ábrela para crear tu contraseña.`
-      : "Puedes entrar con tu correo y una contraseña en vez de la llave. Escribe tu correo y te enviaremos un enlace para crear tu contraseña." }),
+    el("p", { text: "Puedes entrar con tu correo, una contraseña y tu app autenticadora en vez de la llave. Escribe tu correo: en dos pasos creas la contraseña y agregas la app. Tu llave seguirá sirviendo como llave de emergencia." }),
     el("label", { class: "field" }, "Tu correo", email), send, status);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!email.value.trim()) return say(status, "Escribe tu correo.", "error");
     send.disabled = true;
     try {
-      await api("/v1/session/email", { method: "POST", body: { email: email.value.trim() } });
-      state.session = await api("/v1/session");
-      say(status, `Listo: revisa ${email.value.trim()} y abre el enlace para crear tu contraseña.`, "done");
+      const made = await api("/v1/session/email", { method: "POST", body: { email: email.value.trim() } });
+      location.hash = new URL(made.link).hash; // opens the two steps right here
     } catch (err) {
       say(status, err.status === 409 ? "Ese correo ya lo usa otra persona del equipo."
-        : err.status === 422 ? "Ese correo no parece válido. Revísalo."
-          : err.status === 503 ? "El envío de correos todavía no está configurado." : humanError(err), "error");
+        : err.status === 422 ? "Ese correo no parece válido. Revísalo." : humanError(err), "error");
     } finally { send.disabled = false; }
   });
   return card("Tu cuenta", "", ...parts, form);
 }
 
 const MEMBER_STATES = {
-  active: ["Activa", "ok"], invited: ["Invitación enviada", "wait"], key_only: ["Entra con llave", "neutral"],
+  active: ["Activa", "ok"], invited: ["Falta usar su enlace", "wait"], key_only: ["Entra con llave", "neutral"],
 };
+
+/** A personal link to hand over: copy it and send it by WhatsApp (never shown again). */
+function linkBox(who, made) {
+  const field = el("input", { type: "text", readonly: true, value: made.link, "aria-label": `Enlace de acceso de ${who}` });
+  const note = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const copy = el("button", { class: "btn small", type: "button", text: "Copiar enlace" });
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(made.link); say(note, "Enlace copiado.", "done"); }
+    catch { field.select(); say(note, "Selecciónalo y cópialo con Ctrl+C.", ""); }
+  });
+  return el("div", { class: "link-box" },
+    el("p", { text: `Envíale este enlace a ${who} por WhatsApp. Con él crea su contraseña y agrega el consultorio a su app autenticadora. Vence en 72 horas y sirve una sola vez.` }),
+    field, copy, note);
+}
 
 async function teamCard() {
   const members = (await api("/v1/admin/team")).filter((m) => m.status !== "revoked");
@@ -783,17 +814,17 @@ async function teamCard() {
   const rows = members.map((m) => {
     const [label, cls] = MEMBER_STATES[m.status] || [m.status, "neutral"];
     const actions = [];
-    if (m.status === "invited") {
-      const again = el("button", { class: "btn small", type: "button", text: "Reenviar invitación" });
-      again.addEventListener("click", async () => {
-        again.disabled = true;
+    const shown = el("div");
+    if (m.email && m.id !== state.session.id) {
+      const access = el("button", { class: "btn small", type: "button", text: "Enlace de acceso" });
+      access.addEventListener("click", async () => {
+        access.disabled = true;
         try {
-          await api(`/v1/admin/team/${encodeURIComponent(m.id)}/invite`, { method: "POST" });
-          say(status, `Invitación enviada otra vez a ${m.email}.`, "done");
-        } catch (err) { say(status, err.status === 503 ? "No pudimos enviar el correo. Inténtalo más tarde." : humanError(err), "error"); }
-        finally { again.disabled = false; }
+          shown.replaceChildren(linkBox(m.name, await api(`/v1/admin/team/${encodeURIComponent(m.id)}/link`, { method: "POST" })));
+        } catch (err) { say(status, humanError(err), "error"); }
+        finally { access.disabled = false; }
       });
-      actions.push(again);
+      actions.push(access);
     }
     if (m.id !== state.session.id) {
       const drop = el("button", { class: "btn small", type: "button", text: "Quitar acceso" });
@@ -805,10 +836,12 @@ async function teamCard() {
       });
       actions.push(drop);
     }
-    return el("div", { class: "doc" },
-      el("span", { class: "what" }, el("strong", { text: m.name }), el("br"),
-        el("span", { class: "muted", text: `${m.email || "sin correo"} · ${roleList(m.roles)}` })),
-      el("span", { class: `chip ${cls}`, text: label }), ...actions);
+    return el("div", { class: "stack" },
+      el("div", { class: "doc" },
+        el("span", { class: "what" }, el("strong", { text: m.name }), el("br"),
+          el("span", { class: "muted", text: `${m.email || "sin correo"} · ${roleList(m.roles)}` })),
+        el("span", { class: `chip ${cls}`, text: label }), ...actions),
+      shown);
   });
 
   const name = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: Ana Pérez" });
@@ -830,10 +863,8 @@ async function teamCard() {
     invite.disabled = true;
     try {
       const made = await api("/v1/admin/team", { method: "POST", body: { name: name.value.trim(), email: email.value.trim(), roles } });
-      say(status, made.invited
-        ? `Listo: le enviamos a ${made.email} un enlace para crear su contraseña. Vence en 72 horas.`
-        : "La persona quedó registrada, pero no pudimos enviar el correo. Usa «Reenviar invitación» más tarde.", made.invited ? "done" : "error");
-      setTimeout(route, 1500);
+      form.replaceWith(linkBox(made.name, made));
+      say(status, `Listo: ${made.name} quedó en el equipo. Ahora envíale su enlace.`, "done");
     } catch (err) {
       say(status, err.status === 409 ? "Ese correo ya lo usa otra persona del equipo."
         : err.status === 422 ? "Ese correo no parece válido. Revísalo." : humanError(err), "error");
@@ -841,7 +872,7 @@ async function teamCard() {
     }
   });
   return card("Equipo", "",
-    el("p", { class: "muted", text: "Cada persona entra con su correo, su contraseña y un código que le llega al correo. Cuando alguien deja el consultorio, quítale el acceso ese mismo día." }),
+    el("p", { class: "muted", text: "Cada persona entra con su correo, su contraseña y el código de su app autenticadora. Si alguien olvida su contraseña o cambia de celular, dale un «Enlace de acceso». Cuando alguien deja el consultorio, quítale el acceso ese mismo día." }),
     ...(rows.length ? rows : [empty("Todavía no hay nadie más en el equipo.")]),
     el("details", {}, el("summary", { text: "Agregar a una persona" }), form),
     status);
@@ -1928,12 +1959,12 @@ async function conversationCard(id) {
 }
 
 // --- start -------------------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   $("#signin-form").addEventListener("submit", signIn);
   $("#email-form").addEventListener("submit", emailStep);
   $("#code-form").addEventListener("submit", codeStep);
   $("#password-form").addEventListener("submit", passwordStep);
-  $("#resend").addEventListener("click", resendCode);
+  $("#enroll-form").addEventListener("submit", enrollStep);
   $("#forgot").addEventListener("click", forgotPassword);
   $("#code-back").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
   $("#use-key").addEventListener("click", () => { say($("#signin-status"), ""); showStep("key"); });
@@ -1951,7 +1982,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("beforeunload", (event) => { if (unsavedText()) event.preventDefault(); });
   document.addEventListener("input", (event) => { if (event.target.matches("textarea")) event.target.dataset.dirty = "1"; });
   $("#skip").addEventListener("click", (event) => { event.preventDefault(); $("#view").focus(); });
-  try { auth.email = Boolean((await api("/v1/auth/options")).email); } catch { auth.email = false; }
   if (takeLinkToken()) return;
   if (keyStore.get()) {
     start().catch(() => signOut("Tu sesión terminó. Vuelve a entrar."));

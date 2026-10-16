@@ -54,7 +54,6 @@ from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.loyalty import Loyalty
-from orchestrator.mailer import Mailer
 from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.monthly_report import MonthlyReport
@@ -179,8 +178,7 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
-        self.mailer = Mailer(settings)
-        self.staff_logins = StaffLogins(self.db, self.audit, self.principals, self.mailer, settings)
+        self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)

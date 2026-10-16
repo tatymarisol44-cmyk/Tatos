@@ -155,6 +155,11 @@ legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
   color: var(--accent-dark); font-size: 14px; font-weight: 600; text-decoration: underline;
 }
 .roles { display: flex; flex-direction: column; gap: 2px; }
+/* The authenticator's QR code: black on white whatever the theme, with its quiet zone. */
+.qr { align-self: center; }
+.qr svg { display: block; width: 208px; height: 208px; background: #fff; border-radius: 8px; }
+.secret { font-family: ui-monospace, Consolas, monospace; letter-spacing: .06em; overflow-wrap: anywhere; }
+.link-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; background: var(--accent-soft); }
 .roles .check { align-items: flex-start; min-height: 32px; }
 .roles .check input { margin-top: 3px; }
 .card details > summary {

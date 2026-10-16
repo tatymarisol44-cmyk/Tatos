@@ -14,7 +14,7 @@
       <div class="brand"><span class="avatar" aria-hidden="true">✚</span><h1 class="title">Consultorio</h1></div>
 
       <form id="email-form" class="stack" novalidate hidden>
-        <p class="sub">Entra con tu correo y tu contraseña. Después te enviaremos un código a tu correo.</p>
+        <p class="sub">Entra con tu correo y tu contraseña. Después te pediremos el código de tu app autenticadora.</p>
         <label class="field">Correo
           <input id="signin-email" type="email" autocomplete="username" inputmode="email" spellcheck="false" required>
         </label>
@@ -32,21 +32,31 @@
         </label>
         <label class="check"><input id="code-remember" type="checkbox"> Recordarme en esta computadora (30 días)</label>
         <button class="btn primary" type="submit">Entrar</button>
-        <div class="row tight">
-          <button id="resend" class="linkish" type="button">Enviar otro código</button>
-          <button id="code-back" class="linkish" type="button">Volver</button>
-        </div>
+        <button id="code-back" class="linkish" type="button">Volver</button>
       </form>
 
       <form id="password-form" class="stack" novalidate hidden>
-        <p class="sub">Crea tu contraseña: al menos 10 caracteres. Una frase corta que recuerdes es una buena opción, por ejemplo «Mi gato duerme al sol».</p>
+        <p class="sub"><strong>Paso 1 de 2.</strong> Crea tu contraseña: al menos 10 caracteres. Una frase corta que recuerdes es una buena opción, por ejemplo «Mi gato duerme al sol».</p>
         <label class="field">Contraseña nueva
           <input id="new-password" type="password" autocomplete="new-password" required>
         </label>
         <label class="field">Repítela
           <input id="new-password-2" type="password" autocomplete="new-password" required>
         </label>
-        <button class="btn primary" type="submit">Guardar contraseña</button>
+        <button class="btn primary" type="submit">Continuar</button>
+      </form>
+
+      <form id="enroll-form" class="stack" novalidate hidden>
+        <p class="sub"><strong>Paso 2 de 2.</strong> Agrega el consultorio a tu app autenticadora (Google Authenticator, Microsoft Authenticator u otra). Si no tienes una, instálala gratis desde la tienda de tu celular.</p>
+        <a id="enroll-open" class="btn">Si estás en el celular: abrir en mi app autenticadora</a>
+        <p class="muted">Si estás en la computadora: abre la app en tu celular, toca «+» y escanea este código.</p>
+        <div id="enroll-qr" class="qr"></div>
+        <p class="muted">¿No puedes escanear? En la app elige «Ingresar una clave de configuración» y escribe esta clave: <strong id="enroll-secret" class="secret"></strong></p>
+        <label class="field">Código de 6 números que muestra la app
+          <input id="enroll-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+        </label>
+        <label class="check"><input id="enroll-remember" type="checkbox"> Recordarme en esta computadora (30 días)</label>
+        <button class="btn primary" type="submit">Confirmar y entrar</button>
       </form>
 
       <form id="signin-form" class="stack" novalidate>

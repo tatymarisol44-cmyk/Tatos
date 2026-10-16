@@ -31,6 +31,7 @@ dependencies = [
     "opentelemetry-exporter-prometheus>=0.48b0",
     "pyjwt[crypto]>=2.10",
     "cryptography>=46",
+    "segno>=1.6",
 ]
 
 [project.scripts]

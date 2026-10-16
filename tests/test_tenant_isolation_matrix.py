@@ -58,12 +58,10 @@ UNSCOPED = {
     ("POST", "/v1/route"),
     ("GET", "/v1/clinical/instrument-templates"),
     # Signing in names no practice; answers never say whether an e-mail exists (ADR 0024).
-    ("GET", "/v1/auth/options"),
     ("POST", "/v1/auth/sign-in"),
     ("POST", "/v1/auth/code"),
-    ("POST", "/v1/auth/resend"),
-    ("POST", "/v1/auth/forgot"),
-    ("POST", "/v1/auth/password"),
+    ("POST", "/v1/auth/link"),
+    ("POST", "/v1/auth/enroll"),
 }
 
 
@@ -507,24 +505,22 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             "/v1/admin/team",
             {"name": "Intrusa", "email": i["member_email"], "roles": ["admin"]},
         ),
-        ("POST", "/v1/admin/team/{principal_id}/invite"): (
-            f"/v1/admin/team/{i['member']}/invite",
+        ("POST", "/v1/admin/team/{principal_id}/link"): (
+            f"/v1/admin/team/{i['member']}/link",
             None,
         ),
         ("DELETE", "/v1/admin/team/{principal_id}"): (f"/v1/admin/team/{i['member']}", None),
         ("POST", "/v1/session/email"): ("/v1/session/email", {"email": i["member_email"]}),
-        ("GET", "/v1/auth/options"): ("/v1/auth/options", None),
         ("POST", "/v1/auth/sign-in"): (
             "/v1/auth/sign-in",
             {"email": i["member_email"], "password": "adivinanza-123"},
         ),
         ("POST", "/v1/auth/code"): ("/v1/auth/code", {"challenge": "0" * 32, "code": "123456"}),
-        ("POST", "/v1/auth/resend"): ("/v1/auth/resend", {"challenge": "0" * 32}),
-        ("POST", "/v1/auth/forgot"): ("/v1/auth/forgot", {"email": i["member_email"]}),
-        ("POST", "/v1/auth/password"): (
-            "/v1/auth/password",
+        ("POST", "/v1/auth/link"): (
+            "/v1/auth/link",
             {"token": "x" * 43, "password": "Cuaderno-Azul-2026"},
         ),
+        ("POST", "/v1/auth/enroll"): ("/v1/auth/enroll", {"challenge": "0" * 32, "code": "123456"}),
         ("POST", "/v1/auth/sign-out"): ("/v1/auth/sign-out", None),
         ("DELETE", "/v1/admin/principals/{principal_id}"): (
             f"/v1/admin/principals/{i['principal']}",
@@ -933,7 +929,7 @@ ADDRESSED = {
         ("POST", "/v1/reviews/{thread_id}"),
         ("DELETE", "/v1/admin/principals/{principal_id}"),
         ("POST", "/v1/admin/principals/{principal_id}/sign-out"),
-        ("POST", "/v1/admin/team/{principal_id}/invite"),
+        ("POST", "/v1/admin/team/{principal_id}/link"),
         ("DELETE", "/v1/admin/team/{principal_id}"),
         ("POST", "/v1/crm/patients/{patient_id}/access"),
         ("GET", "/v1/crm/patients/{patient_id}"),

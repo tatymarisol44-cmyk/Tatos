@@ -1,4 +1,4 @@
-"""Staff sign-in with e-mail, password and an e-mailed code (ADR 0024)
+"""Staff sign-in with e-mail, password and an authenticator app (ADR 0024)
 
 Revision ID: 0024
 Revises: 0023
@@ -28,6 +28,8 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(length=120), nullable=False),
         sa.Column("password_hash", sa.String(length=200), nullable=True),
         sa.Column("password_set_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("totp_sealed", sa.Text(), nullable=True),
+        sa.Column("totp_last_step", sa.Integer(), nullable=True),
         sa.Column("failed_attempts", sa.Integer(), nullable=False),
         sa.Column("locked_until", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_sign_in_at", sa.DateTime(timezone=True), nullable=True),
@@ -43,9 +45,9 @@ def upgrade() -> None:
         sa.Column("principal_id", sa.String(length=128), nullable=False),
         sa.Column("purpose", sa.String(length=16), nullable=False),
         sa.Column("secret_hash", sa.String(length=64), nullable=False),
+        sa.Column("payload_sealed", sa.Text(), nullable=True),
         sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("sends", sa.Integer(), nullable=False),
-        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("challenge_id"),
