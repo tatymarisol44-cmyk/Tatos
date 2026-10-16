@@ -1,0 +1,15 @@
+# Gitleaks configuration (CI scans the whole git history, .github/workflows/ci.yml).
+# Every default rule applies. The allowlist below covers only synthetic passwords typed in
+# the staff sign-in tests (ADR 0024): they open nothing, and are allowed only in those
+# files and only as these exact values. A real secret anywhere is still a finding.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic passwords in the staff sign-in tests (ADR 0024)"
+condition = "AND"
+paths = ['''^tests/test_(staff_login|tenant_isolation_matrix)\.py$''']
+regexTarget = "secret"
+regexes = [
+  '''^(?:Cuaderno-Azul-2026|Otro-Cuaderno-2027|ana\.perez-2026x|adivinanza-123|otra-cosa-123|no-es-esta-1)$''',
+]
