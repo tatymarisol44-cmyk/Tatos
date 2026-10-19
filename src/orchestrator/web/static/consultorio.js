@@ -15,6 +15,7 @@ const keyStore = {
     try {
       sessionStorage.setItem(KEY, value);
       if (remember) localStorage.setItem(KEY, value);
+      else localStorage.removeItem(KEY);
     } catch { /* storage unavailable: the key lives in memory for this page only */ }
     memoryKey = value;
   },
@@ -47,8 +48,11 @@ class ApiError extends Error {
 }
 
 async function api(path, options = {}) {
+  const session = state.session;
   const resp = await request(path, options);
-  return resp.status === 204 ? null : resp.json();
+  const data = resp.status === 204 ? null : await resp.json();
+  if (session && session !== state.session) throw new ApiError(0, "");
+  return data;
 }
 
 /** A file from the API, saved by the browser (the key travels in a header, so a plain
@@ -64,6 +68,7 @@ async function download(path, filename) {
 }
 
 async function request(path, { method = "GET", body } = {}) {
+  const sessionAtRequest = state.session;
   const headers = { "X-API-Key": keyStore.get() || memoryKey || "" };
   let payload;
   if (body instanceof FormData) payload = body; // the browser sets the multipart header
@@ -77,6 +82,8 @@ async function request(path, { method = "GET", body } = {}) {
   } catch {
     throw new ApiError(0, "");
   }
+  // A reply from a signed-out account must not update or sign out a newer one.
+  if (sessionAtRequest && state.session !== sessionAtRequest) throw new ApiError(0, "");
   if (resp.status === 401 && state.session) {
     signOut("Tu sesión terminó. Vuelve a entrar.");
     throw new ApiError(401, "");
@@ -89,7 +96,6 @@ async function request(path, { method = "GET", body } = {}) {
     } catch { /* no body */ }
     throw new ApiError(resp.status, detail);
   }
-  if (method !== "GET") for (const t of document.querySelectorAll("textarea[data-dirty]")) delete t.dataset.dirty;
   return resp;
 }
 
@@ -219,6 +225,9 @@ function myName() {
   return s.professional?.display_name || s.id;
 }
 function isAdmin() { return state.session.roles.includes("admin"); }
+function canReadCare() {
+  return state.session.roles.some((role) => ["admin", "owner", "reviewer", "reception"].includes(role));
+}
 /** "Psic. Carla Luzuriaga" or "carla.luzuriaga" -> "Carla": for the greeting. */
 function firstName() {
   const words = myName().replace(/^(psic[oó]log[oa]|psic|dra|dr|lic|mgs|msc|mg)\.?\s+/i, "")
@@ -232,7 +241,7 @@ function firstName() {
 // app. A personal link "#clave=..." (from Equipo, or from Tu cuenta) leads to choosing a
 // password and adding the app; its token never stays in the address bar. The personal
 // key stays as break-glass access.
-const auth = { challenge: null, token: null, enroll: null };
+const auth = { challenge: null, token: null, enroll: null, generation: 0 };
 const STEPS = { email: "#email-form", code: "#code-form", password: "#password-form", enroll: "#enroll-form", key: "#signin-form" };
 
 function showStep(step) {
@@ -261,40 +270,56 @@ function drawQr(rows) {
 
 async function emailStep(event) {
   event.preventDefault();
+  const submit = event.currentTarget.querySelector("button[type=submit]");
+  if (submit.disabled) return;
   const status = $("#signin-status");
   const email = $("#signin-email").value.trim();
   const password = $("#signin-password").value;
   if (!email || !password) return say(status, "Escribe tu correo y tu contraseña.", "error");
+  const generation = ++auth.generation;
+  submit.disabled = true;
   say(status, "Revisando…");
   try {
     const started = await api("/v1/auth/sign-in", { method: "POST", body: { email, password } });
+    if (generation !== auth.generation) return;
     auth.challenge = started.challenge;
     $("#signin-password").value = "";
     $("#code-sent").textContent = "Abre tu app autenticadora y escribe el código de 6 números que muestra para el consultorio. Cambia cada 30 segundos.";
     say(status, "");
     showStep("code");
   } catch (err) {
+    if (generation !== auth.generation) return;
     say(status, err.status === 401 ? "Correo o contraseña incorrectos."
       : err.status === 429 ? "Demasiados intentos seguidos. Espera un minuto." : humanError(err), "error");
+  } finally {
+    if (generation === auth.generation) submit.disabled = false;
   }
 }
 
 async function codeStep(event) {
   event.preventDefault();
+  const submit = event.currentTarget.querySelector("button[type=submit]");
+  if (submit.disabled) return;
   const status = $("#signin-status");
   const code = $("#signin-code").value.replace(/\D/g, "");
   if (code.length !== 6) return say(status, "Escribe los 6 números del código.", "error");
   const remember = $("#code-remember").checked;
+  const generation = ++auth.generation;
+  submit.disabled = true;
   say(status, "Entrando…");
   try {
     const session = await api("/v1/auth/code", { method: "POST", body: { challenge: auth.challenge, code, remember } });
+    if (generation !== auth.generation) return;
     keyStore.set(session.key, remember);
     $("#signin-code").value = "";
     await start();
     say(status, "");
   } catch (err) {
+    if (generation !== auth.generation) return;
     say(status, err.status === 401 ? "El código no es correcto. Escribe el que muestra la app ahora, antes de que cambie. Si fallas varias veces, vuelve a empezar."
       : humanError(err), "error");
+  } finally {
+    if (generation === auth.generation) submit.disabled = false;
   }
 }
 
@@ -316,13 +341,18 @@ function cancelSetup() {
 
 async function passwordStep(event) {
   event.preventDefault();
+  const submit = event.currentTarget.querySelector("button[type=submit]");
+  if (submit.disabled) return;
   const status = $("#signin-status");
   const password = $("#new-password").value;
   if (password.length < 10) return say(status, "La contraseña necesita al menos 10 caracteres.", "error");
   if (password !== $("#new-password-2").value) return say(status, "Las dos contraseñas no son iguales.", "error");
+  const generation = ++auth.generation;
+  submit.disabled = true;
   say(status, "Revisando…");
   try {
     const step = await api("/v1/auth/link", { method: "POST", body: { token: auth.token, password } });
+    if (generation !== auth.generation) return;
     auth.enroll = step.challenge;
     $("#new-password").value = "";
     $("#new-password-2").value = "";
@@ -332,20 +362,28 @@ async function passwordStep(event) {
     say(status, "");
     showStep("enroll");
   } catch (err) {
+    if (generation !== auth.generation) return;
     say(status, err.status === 410 ? "Este enlace ya se usó o venció. Pide uno nuevo a la administración del consultorio."
       : err.status === 422 && err.detail ? err.detail : humanError(err), "error");
+  } finally {
+    if (generation === auth.generation) submit.disabled = false;
   }
 }
 
 async function enrollStep(event) {
   event.preventDefault();
+  const submit = event.currentTarget.querySelector("button[type=submit]");
+  if (submit.disabled) return;
   const status = $("#signin-status");
   const code = $("#enroll-code").value.replace(/\D/g, "");
   if (code.length !== 6) return say(status, "Escribe los 6 números que muestra la app.", "error");
   const remember = $("#enroll-remember").checked;
+  const generation = ++auth.generation;
+  submit.disabled = true;
   say(status, "Entrando…");
   try {
     const session = await api("/v1/auth/enroll", { method: "POST", body: { challenge: auth.enroll, code, remember } });
+    if (generation !== auth.generation) return;
     auth.token = null;
     auth.enroll = null;
     $("#enroll-code").value = "";
@@ -355,8 +393,11 @@ async function enrollStep(event) {
     await start();
     say(status, "");
   } catch (err) {
+    if (generation !== auth.generation) return;
     say(status, err.status === 401 ? "El código no es correcto. Revisa que sea el del consultorio y escríbelo antes de que cambie."
       : err.status === 410 ? "Este paso venció. Vuelve a abrir tu enlace para empezar de nuevo." : humanError(err), "error");
+  } finally {
+    if (generation === auth.generation) submit.disabled = false;
   }
 }
 
@@ -364,11 +405,20 @@ async function enrollStep(event) {
 function takeLinkToken() {
   const found = /^#clave=([\w-]{20,100})$/.exec(location.hash);
   if (!found) return false;
+  ++auth.generation;
   auth.token = found[1];
   history.replaceState(null, "", location.pathname);
   here = "";
   keyStore.clear();
   state.session = null;
+  state.patients = null;
+  state.weekStart = null;
+  patientNames = {};
+  inboxFilter = "";
+  ++turn;
+  $("#view").replaceChildren();
+  if ($("#dialog").open) $("#dialog").close();
+  $("#dialog").replaceChildren();
   $("#app").hidden = true;
   $("#signin").hidden = false;
   say($("#signin-status"), "");
@@ -378,24 +428,45 @@ function takeLinkToken() {
 
 async function signIn(event) {
   event.preventDefault();
+  const submit = event.currentTarget.querySelector("button[type=submit]");
+  if (submit.disabled) return;
   const status = $("#signin-status");
   const key = $("#signin-key").value.trim();
   if (!key) return say(status, "Escribe tu llave personal.", "error");
+  const generation = ++auth.generation;
+  submit.disabled = true;
   keyStore.set(key, $("#signin-remember").checked);
   say(status, "Entrando…");
   try {
     await start();
+    if (generation !== auth.generation) return;
     $("#signin-key").value = "";
     say(status, "");
   } catch (err) {
+    if (generation !== auth.generation) return;
     keyStore.clear();
     say(status, err instanceof ApiError && (err.status === 401 || err.status === 403)
       ? "Esa llave no es válida para el consultorio. Revísala e inténtalo de nuevo."
       : humanError(err), "error");
+  } finally {
+    if (generation === auth.generation) submit.disabled = false;
   }
 }
 
 function signOut(message = "") {
+  ++auth.generation;
+  auth.challenge = null;
+  auth.token = null;
+  auth.enroll = null;
+  for (const selector of Object.values(STEPS)) {
+    $(selector).reset();
+    $(selector).querySelector("button[type=submit]").disabled = false;
+  }
+  $("#enroll-secret").textContent = "";
+  $("#enroll-qr").replaceChildren();
+  $("#enroll-open").removeAttribute("href");
+  setBadge("#badge-alerts", 0, "");
+  setBadge("#badge-unread", 0, "");
   const key = keyStore.get() || memoryKey;
   if (key && key.startsWith("ss_")) {
     // End the e-mail session on the server too; the page forgets it either way.
@@ -403,6 +474,14 @@ function signOut(message = "") {
   }
   keyStore.clear();
   state.session = null;
+  state.patients = null;
+  state.weekStart = null;
+  patientNames = {};
+  inboxFilter = "";
+  ++turn; // invalidate requests still drawing a screen from the previous account
+  $("#view").replaceChildren();
+  if ($("#dialog").open) $("#dialog").close();
+  $("#dialog").replaceChildren();
   $("#app").hidden = true;
   $("#signin").hidden = false;
   showStep("email");
@@ -410,7 +489,11 @@ function signOut(message = "") {
 }
 
 async function start() {
-  state.session = await api("/v1/session");
+  const generation = auth.generation;
+  const key = keyStore.get() || memoryKey;
+  const session = await api("/v1/session");
+  if (generation !== auth.generation || key !== (keyStore.get() || memoryKey)) return;
+  state.session = session;
   state.tz = state.session.timezone || state.tz;
   $("#me-name").textContent = myName();
   $("#me-initials").textContent = initials(myName());
@@ -418,7 +501,10 @@ async function start() {
   $("#me-practice").textContent = practice && practice !== myName() ? practice : "Consultorio";
   $("#signin").hidden = true;
   $("#app").hidden = false;
-  if (!location.hash) location.hash = "#hoy";
+  for (const link of document.querySelectorAll("[data-nav]")) {
+    link.hidden = ["hoy", "agenda", "pacientes", "mensajes"].includes(link.dataset.nav) && !canReadCare();
+  }
+  if (!location.hash) location.hash = canReadCare() ? "#hoy" : state.session.roles.includes("marketing") ? "#marketing/publicaciones" : "#ajustes";
   else route();
   refreshBadges();
 }
@@ -460,14 +546,17 @@ function route() {
   main.replaceChildren(el("p", { class: "muted", text: "Cargando…" }));
   // Each view draws into its own frame, shown only if it is still the latest.
   const frame = el("div");
-  view(frame, ...rest.map(decodeURIComponent))
+  Promise.resolve()
+    .then(() => view(frame, ...rest.map(decodeURIComponent)))
     .then(() => {
       if (mine !== turn) return;
       main.replaceChildren(...frame.childNodes);
       main.querySelector("[data-focus]")?.focus();
     })
     .catch((err) => {
-      if (mine === turn) main.replaceChildren(el("div", { class: "alert", role: "alert" }, el("span", { text: humanError(err) })));
+      if (mine === turn) main.replaceChildren(el("div", { class: "alert", role: "alert" },
+        el("span", { text: err instanceof URIError ? "El enlace no es válido." : humanError(err) }),
+        link("#hoy", "Volver a Hoy")));
     });
   main.focus({ preventScroll: true });
 }
@@ -615,7 +704,7 @@ VIEWS.agenda = async (main, arg) => {
   parts.push(el("section", { class: "card week", "aria-label": "Semana" }, el("div", { class: "week-grid" }, ...columns)),
     el("p", { class: "muted", text: "Las pacientes solo pueden reservar los espacios libres. Toca un espacio libre para agendar ahí." }));
   main.replaceChildren(...parts);
-  if (arg === "nueva") openVisitDialog({});
+  if (arg === "nueva" && location.hash === "#agenda/nueva") openVisitDialog({});
 };
 
 async function freeSlotsUntil(lastDay) {
@@ -664,7 +753,15 @@ async function patientsList() {
 }
 
 async function openVisitDialog({ date, time, minutes, patientId }) {
-  const patients = await patientsList();
+  const screen = turn;
+  let patients;
+  try {
+    patients = await patientsList();
+  } catch (err) {
+    if (screen === turn && state.session) dialog("No se pudo abrir la cita", el("p", { role: "alert", text: humanError(err) }));
+    return;
+  }
+  if (screen !== turn || !state.session) return;
   const who = el("select", { required: true },
     el("option", { value: "", text: patients.length ? "Elige un paciente" : "Primero crea un paciente" }),
     ...[...patients].sort((a, b) => a.display_name.localeCompare(b.display_name, "es"))
@@ -748,7 +845,7 @@ VIEWS.ajustes = async (main, section, which) => {
   const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia")];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
-  parts.push(await onCallCard());
+  if (canReadCare()) parts.push(await onCallCard());
   if (isAdmin()) parts.push(await teamCard());
   parts.push(accountCard());
   main.replaceChildren(...parts);
@@ -950,6 +1047,7 @@ async function testEditor(main, id) {
       items: fields.map((f) => ({ ...f.item, text: f.area.value.trim() })) };
     try {
       await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, { method: "PUT", body: { spec: revised } });
+      for (const area of form.querySelectorAll("textarea[data-dirty]")) delete area.dataset.dirty;
       say(status, "Textos guardados. Ya puedes enviar este test a tus pacientes.", "done");
     } catch (err) { say(status, humanError(err), "error"); }
     save.disabled = false;
@@ -1087,9 +1185,18 @@ VIEWS.pacientes = async (main, arg) => {
   if (arg === "nuevo") return newPatientView(main);
   const search = el("input", { type: "search", placeholder: "Buscar por nombre", "aria-label": "Buscar paciente por nombre" });
   const box = el("div", { class: "table-box" });
+  let searchTurn = 0;
   const show = async () => {
+    const mine = ++searchTurn;
     const q = search.value.trim();
-    const rows = await api(`/v1/crm/patients?limit=500${q ? `&search=${encodeURIComponent(q)}` : ""}`);
+    let rows;
+    try {
+      rows = await api(`/v1/crm/patients?limit=500${q ? `&search=${encodeURIComponent(q)}` : ""}`);
+    } catch (err) {
+      if (mine !== searchTurn || q !== search.value.trim()) return;
+      throw err;
+    }
+    if (mine !== searchTurn || q !== search.value.trim()) return;
     if (!q) state.patients = rows;
     box.replaceChildren(rows.length
       ? el("table", {},
@@ -1102,7 +1209,14 @@ VIEWS.pacientes = async (main, arg) => {
       : empty(q ? "Ningún paciente coincide con esa búsqueda." : "Aún no hay pacientes. Crea el primero."));
   };
   let timer = null;
-  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => show().catch(() => {}), 250); });
+  search.addEventListener("input", () => {
+    ++searchTurn;
+    clearTimeout(timer);
+    timer = setTimeout(() => show().catch((err) => {
+      if (!search.isConnected) return;
+      box.replaceChildren(el("p", { class: "alert", role: "alert", text: humanError(err) }));
+    }), 250);
+  });
   main.replaceChildren(page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
     el("label", { class: "field" }, "Buscar", search), box);
   await show();
@@ -1413,7 +1527,9 @@ const ROLE_NOTES = {
 // --- MARKETING: workshops first (RF-MKT-05); campaigns, calendar and report follow -----------
 const MKT_TABS = [["informe", "Informe del mes"], ["talleres", "Talleres"], ["campanas", "Campañas"], ["publicaciones", "Publicaciones"]];
 
-VIEWS.marketing = async (main, tab = "informe", arg = "") => {
+VIEWS.marketing = async (main, tab, arg = "") => {
+  tab = tab || (state.session.roles.some((role) => ["admin", "owner"].includes(role))
+    ? "informe" : state.session.roles.includes("marketing") ? "publicaciones" : "talleres");
   const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Secciones de marketing" },
     ...MKT_TABS.map(([key, label]) => {
       const b = el("button", { type: "button", role: "tab", "aria-selected": String(key === tab), text: label });
@@ -1743,7 +1859,7 @@ async function workshopsTab() {
       open);
   };
   return [
-    card("Nuevo taller o charla", "", workshopForm()),
+    state.session.roles.some((role) => ["admin", "owner", "marketing"].includes(role)) ? card("Nuevo taller o charla", "", workshopForm()) : null,
     card("Próximos", "", ...(upcoming.length ? upcoming.map(row) : [empty("No hay talleres programados.")])),
     past.length ? card("Anteriores", "", ...past.slice(-10).reverse().map(row)) : null,
   ].filter(Boolean);
@@ -1980,9 +2096,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#forgot").addEventListener("click", forgotPassword);
   $("#password-back").addEventListener("click", cancelSetup);
   $("#enroll-back").addEventListener("click", cancelSetup);
-  $("#code-back").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
-  $("#use-key").addEventListener("click", () => { say($("#signin-status"), ""); showStep("key"); });
-  $("#use-email").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
+  $("#code-back").addEventListener("click", cancelSetup);
+  $("#use-key").addEventListener("click", () => { cancelSetup(); showStep("key"); });
+  $("#use-email").addEventListener("click", cancelSetup);
   $("#signout").addEventListener("click", () => signOut());
   window.addEventListener("hashchange", () => {
     if (takeLinkToken()) return;

@@ -611,3 +611,238 @@ def test_browser_back_leaves_account_setup(server: str, browser: Any, stage: str
     page.wait_for_selector("#signin-form:not([hidden])")
     assert not problems, problems
     page.close()
+
+
+def test_marketing_can_open_own_account_settings(server: str, browser: Any) -> None:
+    made = httpx.post(
+        f"{server}/v1/admin/staff",
+        headers=SERVICE,
+        json={"name": "marketing.synthetic", "roles": ["marketing"]},
+    )
+    assert made.status_code == 201
+    page, problems = _signed_in(browser, server, made.json()["key"])
+    page.click("a[data-nav=ajustes]")
+    page.wait_for_selector("section[aria-label='Tu cuenta']")
+    assert page.get_by_role("button", name="Configurar ahora").is_visible()
+    assert page.locator("section[aria-label='Guardia para crisis']").count() == 0
+    assert not problems, problems
+    page.close()
+
+
+def test_malformed_route_has_recovery_instead_of_script_error(server: str, browser: Any) -> None:
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.wait_for_selector("text=Citas de hoy")
+    page.evaluate("location.hash = '#paciente/%E0%A4%A'")
+    page.wait_for_selector("#view [role=alert]")
+    page.get_by_role("link", name="Volver a Hoy", exact=True).click()
+    page.wait_for_selector("text=Citas de hoy")
+    assert not problems, problems
+    page.close()
+
+
+def test_sign_out_clears_cached_patients_before_another_tenant_signs_in(
+    server: str, browser: Any
+) -> None:
+    for key, patient_id, name in [
+        ("test-key", "private-acme", "Paciente Privada Acme"),
+        ("other-key", "private-globex", "Paciente Privada Globex"),
+    ]:
+        response = httpx.post(
+            f"{server}/v1/crm/patients",
+            headers={"X-API-Key": key},
+            json={"id": patient_id, "display_name": name},
+        )
+        assert response.status_code == 201
+    second = httpx.post(
+        f"{server}/v1/admin/staff",
+        headers={"X-API-Key": "other-key"},
+        json={"name": "globex.synthetic", "roles": ["admin"]},
+    )
+    assert second.status_code == 201
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.click("a[data-nav=pacientes]")
+    page.wait_for_selector("text=Paciente Privada Acme")
+    page.click("#signout")
+    _use_key(page)
+    page.fill("#signin-key", second.json()["key"])
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    page.click("a[data-nav=agenda]")
+    page.get_by_role("button", name="Nueva cita", exact=True).click()
+    page.wait_for_selector("#dialog[open]")
+    options = page.locator("#dialog select").first.inner_text()
+    assert "Paciente Privada Globex" in options
+    assert "Paciente Privada Acme" not in options
+    assert not problems, problems
+    page.close()
+
+
+@pytest.mark.parametrize("older_fails", [False, True])
+def test_patient_search_ignores_an_older_slow_result(
+    server: str, browser: Any, older_fails: bool
+) -> None:
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.click("a[data-nav=pacientes]")
+    page.wait_for_selector("text=Aún no hay pacientes")
+    held: list[Any] = []
+    page.route("**/v1/crm/patients?limit=500&search=*", lambda route: held.append(route))
+    search = page.get_by_role("searchbox", name="Buscar paciente por nombre")
+    search.fill("Ana")
+    page.wait_for_timeout(400)
+    assert len(held) == 1
+    search.fill("Bea")
+    page.wait_for_timeout(400)
+    assert len(held) == 2
+    held[1].fulfill(json=[{"id": "bea", "display_name": "Bea Sintetica"}])
+    page.wait_for_selector("text=Bea Sintetica")
+    if older_fails:
+        held[0].fulfill(status=503, json={"detail": "synthetic outage"})
+    else:
+        held[0].fulfill(json=[{"id": "ana", "display_name": "Ana Sintetica"}])
+    page.wait_for_timeout(200)
+    assert page.get_by_role("link", name="Bea Sintetica").is_visible()
+    assert page.get_by_role("link", name="Ana Sintetica").count() == 0
+    assert not problems, problems
+    page.close()
+
+
+def test_cancel_setup_ignores_a_late_password_response(server: str, browser: Any) -> None:
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app#clave=synthetic-access-token-123456")
+    page.wait_for_selector("#password-form:not([hidden])")
+    held: list[Any] = []
+    page.route("**/v1/auth/link", lambda route: held.append(route))
+    page.fill("#new-password", "Synthetic password 123")
+    page.fill("#new-password-2", "Synthetic password 123")
+    page.click("#password-form button[type=submit]")
+    assert held
+    page.evaluate("document.querySelector('#password-form').requestSubmit()")
+    page.wait_for_timeout(100)
+    assert len(held) == 1  # one-time links must not be submitted twice
+    page.click("#password-back")
+    page.wait_for_selector("#email-form:not([hidden])")
+    held[0].fulfill(
+        json={
+            "challenge": "synthetic-enrollment",
+            "uri": "otpauth://totp/Test?secret=JBSWY3DPEHPK3PXP",
+            "qr": ["111", "101", "111"],
+            "secret": "JBSWY3DPEHPK3PXP",
+        }
+    )
+    page.wait_for_timeout(200)
+    assert page.locator("#email-form").is_visible()
+    assert page.locator("#enroll-form").is_hidden()
+    assert page.inner_text("#enroll-secret") == ""
+    assert not problems, problems
+    page.close()
+
+
+def test_canceled_key_sign_in_does_not_reopen_the_app(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    session = httpx.get(f"{server}/v1/session", headers={"X-API-Key": key}).json()
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app")
+    _use_key(page)
+    held: list[Any] = []
+    page.route("**/v1/session", lambda route: held.append(route))
+    page.fill("#signin-key", key)
+    page.click("#signin-form button[type=submit]")
+    assert held
+    page.click("#use-email")
+    held[0].fulfill(json=session)
+    page.wait_for_timeout(200)
+    assert page.locator("#email-form").is_visible()
+    assert page.locator("#app").is_hidden()
+    assert page.evaluate("sessionStorage.getItem('consultorio.key')") is None
+    assert not problems, problems
+    page.close()
+
+
+def test_sign_in_without_remember_removes_an_old_persistent_key(server: str, browser: Any) -> None:
+    key = _staff_key(server)
+    page = browser.new_page()
+    page.goto(f"{server}/app")
+    _use_key(page)
+    page.evaluate("localStorage.setItem('consultorio.key', 'obsolete-synthetic-key')")
+    page.fill("#signin-key", key)
+    page.click("#signin-form button[type=submit]")
+    page.wait_for_selector("#app:not([hidden])")
+    assert page.evaluate("localStorage.getItem('consultorio.key')") is None
+    assert page.evaluate("sessionStorage.getItem('consultorio.key')") == key
+    page.close()
+
+
+def test_unrelated_api_action_keeps_the_unsaved_note_warning(server: str, browser: Any) -> None:
+    response = httpx.post(
+        f"{server}/v1/crm/patients",
+        headers=SERVICE,
+        json={"id": "p-unsaved", "display_name": "Paciente Sintetica"},
+    )
+    assert response.status_code == 201
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.evaluate("location.hash = '#paciente/p-unsaved/historia'")
+    page.wait_for_selector("#view textarea")
+    page.fill("#view textarea", "Nota pendiente de guardar")
+    page.get_by_role("button", name="Acceso a su app", exact=True).click()
+    page.get_by_role("button", name="Generar su enlace personal", exact=True).click()
+    page.wait_for_selector("#dialog input[aria-label='Enlace personal']")
+    page.get_by_role("button", name="Cerrar", exact=True).click()
+    asked: list[str] = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.dismiss()))
+    page.get_by_role("tab", name="Documentos", exact=True).click()
+    page.wait_for_timeout(200)
+    assert asked and "sin guardar" in asked[0]
+    assert page.input_value("#view textarea") == "Nota pendiente de guardar"
+    assert not problems, problems
+    page.close()
+
+
+def test_late_appointment_dialog_does_not_open_over_settings(server: str, browser: Any) -> None:
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.wait_for_selector("text=Citas de hoy")
+    held: list[Any] = []
+    page.route("**/v1/crm/patients?limit=500", lambda route: held.append(route))
+    page.evaluate("location.hash = '#agenda/nueva'")
+    page.wait_for_timeout(200)
+    assert held
+    page.click("a[data-nav=ajustes]")
+    page.wait_for_selector("section[aria-label='Tu cuenta']")
+    held[0].fulfill(json=[])
+    page.wait_for_timeout(200)
+    assert not page.locator("#dialog").evaluate("node => node.open")
+    assert page.locator("section[aria-label='Tu cuenta']").is_visible()
+    assert not problems, problems
+    page.close()
+
+
+@pytest.mark.parametrize(
+    ("role", "landing"),
+    [
+        ("admin", "#hoy"),
+        ("owner", "#hoy"),
+        ("reviewer", "#hoy"),
+        ("reception", "#hoy"),
+        ("marketing", "#marketing/publicaciones"),
+        ("privacy", "#ajustes"),
+    ],
+)
+def test_each_role_lands_on_an_accessible_screen(
+    server: str, browser: Any, role: str, landing: str
+) -> None:
+    made = httpx.post(
+        f"{server}/v1/admin/staff",
+        headers=SERVICE,
+        json={"name": f"synthetic.{role}", "roles": [role]},
+    )
+    assert made.status_code == 201
+    page, problems = _signed_in(browser, server, made.json()["key"])
+    page.wait_for_selector("#view h1")
+    assert page.url.endswith(landing)
+    assert page.locator("#view [role=alert]").count() == 0
+    if role == "marketing":
+        page.click("a[data-nav=marketing]")
+        page.wait_for_selector("section[aria-label='Por publicar']")
+    assert not problems, problems
+    page.close()
