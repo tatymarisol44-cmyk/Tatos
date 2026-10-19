@@ -302,6 +302,18 @@ function forgotPassword() {
   say($("#signin-status"), "Pide a la administración del consultorio un enlace nuevo. Con él eliges otra contraseña (y, si cambiaste de celular, vuelves a agregar la app).", "done");
 }
 
+function cancelSetup() {
+  auth.challenge = null;
+  auth.token = null;
+  auth.enroll = null;
+  $("#password-form").reset();
+  $("#enroll-form").reset();
+  $("#enroll-secret").textContent = "";
+  $("#enroll-qr").replaceChildren();
+  $("#enroll-open").removeAttribute("href");
+  signOut();
+}
+
 async function passwordStep(event) {
   event.preventDefault();
   const status = $("#signin-status");
@@ -1966,12 +1978,21 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#password-form").addEventListener("submit", passwordStep);
   $("#enroll-form").addEventListener("submit", enrollStep);
   $("#forgot").addEventListener("click", forgotPassword);
+  $("#password-back").addEventListener("click", cancelSetup);
+  $("#enroll-back").addEventListener("click", cancelSetup);
   $("#code-back").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
   $("#use-key").addEventListener("click", () => { say($("#signin-status"), ""); showStep("key"); });
   $("#use-email").addEventListener("click", () => { say($("#signin-status"), ""); showStep("email"); });
   $("#signout").addEventListener("click", () => signOut());
   window.addEventListener("hashchange", () => {
     if (takeLinkToken()) return;
+    // Setup clears the session. Back changes the hash, but route() cannot draw
+    // a signed-in screen; explicitly leave setup instead of leaving it stuck.
+    if (!state.session) {
+      here = location.hash;
+      cancelSetup();
+      return;
+    }
     if (unsavedText() && !confirm("Tienes texto sin guardar en esta pantalla. ¿Salir y perderlo?")) {
       history.replaceState(null, "", here); // stay; replaceState does not fire hashchange
       return;

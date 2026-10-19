@@ -572,3 +572,42 @@ def test_a_campaign_rehearsed_and_a_publication_scheduled(server: str, browser: 
     [publication] = httpx.get(f"{server}/v1/social/publications", headers=SERVICE).json()
     assert publication["status"] == "approved" and publication["scheduled_for"]
     assert not problems, problems
+
+
+@pytest.mark.parametrize("stage", ["password", "enroll"])
+def test_browser_back_leaves_account_setup(server: str, browser: Any, stage: str) -> None:
+    """Back to #ajustes must leave setup even though it cleared the signed-in session."""
+    page = browser.new_page()
+    problems = _watch(page)
+    page.goto(f"{server}/app#ajustes")
+    page.wait_for_selector("#email-form:not([hidden])")
+    page.evaluate("location.hash = '#clave=synthetic-access-token-123456'")
+    page.wait_for_selector("#password-form:not([hidden])")
+    if stage == "enroll":
+        page.route(
+            "**/v1/auth/link",
+            lambda route: route.fulfill(
+                json={
+                    "challenge": "synthetic-enrollment",
+                    "uri": "otpauth://totp/Test?secret=JBSWY3DPEHPK3PXP",
+                    "qr": ["111", "101", "111"],
+                    "secret": "JBSWY3DPEHPK3PXP",
+                }
+            ),
+        )
+        page.fill("#new-password", "Synthetic password 123")
+        page.fill("#new-password-2", "Synthetic password 123")
+        page.click("#password-form button[type=submit]")
+        page.wait_for_selector("#enroll-form:not([hidden])")
+    page.go_back()
+    page.wait_for_selector("#email-form:not([hidden])")
+    assert page.url.endswith("#ajustes")
+    assert page.locator("#password-form").is_hidden()
+    assert page.locator("#enroll-form").is_hidden()
+    assert page.input_value("#new-password") == ""
+    assert page.inner_text("#enroll-secret") == ""
+    assert page.locator("#enroll-qr svg").count() == 0
+    page.get_by_role("button", name="Entrar con llave de emergencia").click()
+    page.wait_for_selector("#signin-form:not([hidden])")
+    assert not problems, problems
+    page.close()
