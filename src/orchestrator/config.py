@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["dev", "test", "prod"] = "dev"
     log_level: str = "INFO"
+    build_revision: str = Field(default="dev", pattern=r"^(?:dev|[0-9a-f]{7,40})$")
 
     # --- Agent catalog -----------------------------------------------------
     agents_dir: Path = Path("vendor/agency-agents")

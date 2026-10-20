@@ -19,6 +19,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS runtime
 ARG VERSION=dev
+ARG REVISION=dev
+ENV BUILD_REVISION=${REVISION}
 LABEL org.opencontainers.image.title="agency-orchestrator" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="MIT"

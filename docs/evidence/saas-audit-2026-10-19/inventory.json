@@ -1,0 +1,1207 @@
+{
+  "source_base": "3d290bca94a7bcd69a01fb914db7c41be382a8d7 plus preserved initial working changes",
+  "python_source_files": 124,
+  "test_files": 84,
+  "migration_files": 24,
+  "route_decorators": 171,
+  "routes": [
+    {
+      "file": "src/orchestrator/api/a2a.py",
+      "line": 60,
+      "method": "GET",
+      "path_without_router_prefix": "/.well-known/agent-card.json",
+      "handler": "get_agent_card"
+    },
+    {
+      "file": "src/orchestrator/api/a2a.py",
+      "line": 60,
+      "method": "GET",
+      "path_without_router_prefix": "/.well-known/agent.json",
+      "handler": "get_agent_card"
+    },
+    {
+      "file": "src/orchestrator/api/a2a.py",
+      "line": 103,
+      "method": "POST",
+      "path_without_router_prefix": "/a2a",
+      "handler": "a2a_rpc"
+    },
+    {
+      "file": "src/orchestrator/api/agenda.py",
+      "line": 40,
+      "method": "PUT",
+      "path_without_router_prefix": "/professionals/{professional_id}/hours",
+      "handler": "set_hours"
+    },
+    {
+      "file": "src/orchestrator/api/agenda.py",
+      "line": 54,
+      "method": "GET",
+      "path_without_router_prefix": "/professionals/{professional_id}/hours",
+      "handler": "get_hours"
+    },
+    {
+      "file": "src/orchestrator/api/agenda.py",
+      "line": 64,
+      "method": "GET",
+      "path_without_router_prefix": "/slots",
+      "handler": "slots"
+    },
+    {
+      "file": "src/orchestrator/api/agenda.py",
+      "line": 77,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "view"
+    },
+    {
+      "file": "src/orchestrator/api/agenda.py",
+      "line": 94,
+      "method": "POST",
+      "path_without_router_prefix": "/professionals/{professional_id}/calendar-link",
+      "handler": "calendar_link"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 265,
+      "method": "GET",
+      "path_without_router_prefix": "/",
+      "handler": "console"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 269,
+      "method": "GET",
+      "path_without_router_prefix": "/app",
+      "handler": "staff_app"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 276,
+      "method": "GET",
+      "path_without_router_prefix": "/mi",
+      "handler": "patient_app_redirect"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 280,
+      "method": "GET",
+      "path_without_router_prefix": "/mi/",
+      "handler": "patient_app"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 284,
+      "method": "GET",
+      "path_without_router_prefix": "/mi/manifest.webmanifest",
+      "handler": "patient_manifest"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 310,
+      "method": "GET",
+      "path_without_router_prefix": "/mi/sw.js",
+      "handler": "patient_service_worker"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 318,
+      "method": "GET",
+      "path_without_router_prefix": "/media/{name:path}",
+      "handler": "signed_media"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 336,
+      "method": "GET",
+      "path_without_router_prefix": "/calendar/{kind}/{tenant}/{owner}/{sig}.ics",
+      "handler": "calendar_feed"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 356,
+      "method": "GET",
+      "path_without_router_prefix": "/healthz",
+      "handler": "healthz"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 360,
+      "method": "GET",
+      "path_without_router_prefix": "/readyz",
+      "handler": "readyz"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 376,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/agents",
+      "handler": "list_agents"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 395,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/route",
+      "handler": "route"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 409,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/chat",
+      "handler": "chat"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 436,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/chat/stream",
+      "handler": "chat_stream"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 501,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/knowledge/documents",
+      "handler": "add_document"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 527,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/knowledge/documents",
+      "handler": "list_documents"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 538,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/knowledge/documents/{doc_id}",
+      "handler": "delete_document"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 544,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/threads/{thread_id}",
+      "handler": "thread_status"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 558,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/threads/{thread_id}",
+      "handler": "delete_thread"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 568,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/threads",
+      "handler": "delete_all_threads"
+    },
+    {
+      "file": "src/orchestrator/api/app.py",
+      "line": 574,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/knowledge/search",
+      "handler": "search_knowledge"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 94,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/reviews",
+      "handler": "list_reviews"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 105,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/reviews/{thread_id}",
+      "handler": "get_review"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 115,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/reviews/{thread_id}",
+      "handler": "resolve_review"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 138,
+      "method": "PUT",
+      "path_without_router_prefix": "/v1/subjects/{subject_id}/consents/{purpose}",
+      "handler": "set_consent"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 153,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/subjects/{subject_id}/consents",
+      "handler": "get_consents"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 162,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/subjects/{subject_id}/export",
+      "handler": "export_subject"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 170,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/subjects/{subject_id}",
+      "handler": "erase_subject"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 179,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/audit",
+      "handler": "audit_trail"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 190,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/audit/verify",
+      "handler": "verify_audit"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 198,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/admin/staff",
+      "handler": "create_staff_key"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 210,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/admin/principals",
+      "handler": "list_principals"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 215,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/admin/principals/{principal_id}",
+      "handler": "revoke_principal"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 223,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/admin/principals/{principal_id}/sign-out",
+      "handler": "sign_out_principal"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 238,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/patients/{patient_id}/access",
+      "handler": "create_patient_access"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 258,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/patients",
+      "handler": "create_patient"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 268,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/patients",
+      "handler": "list_patients"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 278,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/patients/{patient_id}",
+      "handler": "get_patient"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 288,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/patients/{patient_id}/loyalty",
+      "handler": "patient_loyalty"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 300,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/patients/{patient_id}/engagement",
+      "handler": "patient_engagement"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 312,
+      "method": "PATCH",
+      "path_without_router_prefix": "/v1/crm/patients/{patient_id}",
+      "handler": "update_patient"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 326,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/appointments",
+      "handler": "create_appointment"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 345,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/appointments",
+      "handler": "list_appointments"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 358,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/appointments/{appointment_id}/status",
+      "handler": "set_appointment_status"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 375,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/treatments",
+      "handler": "create_treatment"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 387,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/treatments",
+      "handler": "list_treatments"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 397,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/crm/treatments/{treatment_id}/stage",
+      "handler": "set_treatment_stage"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 412,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/crm/alerts",
+      "handler": "crm_alerts"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 426,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/insights/report",
+      "handler": "monthly_report"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 441,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/insights/goals",
+      "handler": "set_goal"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 449,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/insights/goals/{goal_id}",
+      "handler": "remove_goal"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 459,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/insights/engagement",
+      "handler": "engagement_summary"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 466,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/insights/summary",
+      "handler": "insights_summary"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 471,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/insights/segments",
+      "handler": "insights_segments"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 476,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/insights/ask",
+      "handler": "insights_ask"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 492,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns",
+      "handler": "create_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 513,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/campaigns",
+      "handler": "list_campaigns"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 518,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}",
+      "handler": "get_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 528,
+      "method": "PUT",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/template",
+      "handler": "edit_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 543,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/approve",
+      "handler": "approve_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 557,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/send",
+      "handler": "send_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 567,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/retry",
+      "handler": "retry_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 579,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/recipients/{patient_id}/delivery",
+      "handler": "resolve_delivery"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 596,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/cancel",
+      "handler": "cancel_campaign"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 606,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/campaigns/{campaign_id}/results",
+      "handler": "campaign_results"
+    },
+    {
+      "file": "src/orchestrator/api/business.py",
+      "line": 617,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/usage",
+      "handler": "usage"
+    },
+    {
+      "file": "src/orchestrator/api/channels.py",
+      "line": 32,
+      "method": "POST",
+      "path_without_router_prefix": "/telegram/{tenant}",
+      "handler": "telegram_webhook"
+    },
+    {
+      "file": "src/orchestrator/api/channels.py",
+      "line": 79,
+      "method": "GET",
+      "path_without_router_prefix": "/whatsapp",
+      "handler": "whatsapp_verify"
+    },
+    {
+      "file": "src/orchestrator/api/channels.py",
+      "line": 79,
+      "method": "GET",
+      "path_without_router_prefix": "/meta",
+      "handler": "whatsapp_verify"
+    },
+    {
+      "file": "src/orchestrator/api/channels.py",
+      "line": 160,
+      "method": "POST",
+      "path_without_router_prefix": "/whatsapp",
+      "handler": "whatsapp_webhook"
+    },
+    {
+      "file": "src/orchestrator/api/channels.py",
+      "line": 160,
+      "method": "POST",
+      "path_without_router_prefix": "/meta",
+      "handler": "whatsapp_webhook"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 44,
+      "method": "GET",
+      "path_without_router_prefix": "/document-types",
+      "handler": "document_types"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 50,
+      "method": "POST",
+      "path_without_router_prefix": "/patients/{patient_id}/documents",
+      "handler": "write_document"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 62,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/documents",
+      "handler": "list_documents"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 72,
+      "method": "GET",
+      "path_without_router_prefix": "/documents/{document_id}",
+      "handler": "get_document"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 89,
+      "method": "POST",
+      "path_without_router_prefix": "/patients/{patient_id}/files",
+      "handler": "upload_file"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 115,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/files",
+      "handler": "list_files"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 123,
+      "method": "GET",
+      "path_without_router_prefix": "/files/{file_id}",
+      "handler": "download_file"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 145,
+      "method": "GET",
+      "path_without_router_prefix": "/follow-up",
+      "handler": "needing_attention"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 152,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/briefing",
+      "handler": "session_briefing"
+    },
+    {
+      "file": "src/orchestrator/api/clinical.py",
+      "line": 162,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/follow-up",
+      "handler": "patient_follow_up"
+    },
+    {
+      "file": "src/orchestrator/api/establishment.py",
+      "line": 35,
+      "method": "POST",
+      "path_without_router_prefix": "",
+      "handler": "add_professional"
+    },
+    {
+      "file": "src/orchestrator/api/establishment.py",
+      "line": 52,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_professionals"
+    },
+    {
+      "file": "src/orchestrator/api/establishment.py",
+      "line": 57,
+      "method": "DELETE",
+      "path_without_router_prefix": "/{professional_id}",
+      "handler": "disable_professional"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 46,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_conversations"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 56,
+      "method": "GET",
+      "path_without_router_prefix": "/{conversation_id}",
+      "handler": "open_conversation"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 66,
+      "method": "POST",
+      "path_without_router_prefix": "/{conversation_id}/draft",
+      "handler": "draft_reply"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 79,
+      "method": "POST",
+      "path_without_router_prefix": "/{conversation_id}/reply",
+      "handler": "send_reply"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 93,
+      "method": "DELETE",
+      "path_without_router_prefix": "/{conversation_id}/drafts/{draft_id}",
+      "handler": "discard_draft"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 101,
+      "method": "PUT",
+      "path_without_router_prefix": "/{conversation_id}/patient",
+      "handler": "link_patient"
+    },
+    {
+      "file": "src/orchestrator/api/inbox.py",
+      "line": 114,
+      "method": "POST",
+      "path_without_router_prefix": "/{conversation_id}/close",
+      "handler": "close_conversation"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 57,
+      "method": "GET",
+      "path_without_router_prefix": "/instrument-templates",
+      "handler": "templates"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 63,
+      "method": "POST",
+      "path_without_router_prefix": "/instruments",
+      "handler": "create_instrument"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 71,
+      "method": "POST",
+      "path_without_router_prefix": "/instruments/from-template",
+      "handler": "create_from_template"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 78,
+      "method": "GET",
+      "path_without_router_prefix": "/instruments",
+      "handler": "list_instruments"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 83,
+      "method": "GET",
+      "path_without_router_prefix": "/instruments/{instrument_id}",
+      "handler": "get_instrument"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 93,
+      "method": "PUT",
+      "path_without_router_prefix": "/instruments/{instrument_id}",
+      "handler": "revise_instrument"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 106,
+      "method": "DELETE",
+      "path_without_router_prefix": "/instruments/{instrument_id}",
+      "handler": "retire_instrument"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 116,
+      "method": "POST",
+      "path_without_router_prefix": "/patients/{patient_id}/instrument-results",
+      "handler": "administer"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 131,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/instrument-results",
+      "handler": "list_results"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 141,
+      "method": "GET",
+      "path_without_router_prefix": "/instrument-results/{result_id}",
+      "handler": "get_result"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 157,
+      "method": "POST",
+      "path_without_router_prefix": "/patients/{patient_id}/assignments",
+      "handler": "assign"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 171,
+      "method": "GET",
+      "path_without_router_prefix": "/patients/{patient_id}/assignments",
+      "handler": "list_assignments"
+    },
+    {
+      "file": "src/orchestrator/api/instruments.py",
+      "line": 181,
+      "method": "DELETE",
+      "path_without_router_prefix": "/assignments/{assignment_id}",
+      "handler": "cancel_assignment"
+    },
+    {
+      "file": "src/orchestrator/api/oncall.py",
+      "line": 33,
+      "method": "POST",
+      "path_without_router_prefix": "",
+      "handler": "add_contact"
+    },
+    {
+      "file": "src/orchestrator/api/oncall.py",
+      "line": 41,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_contacts"
+    },
+    {
+      "file": "src/orchestrator/api/oncall.py",
+      "line": 46,
+      "method": "DELETE",
+      "path_without_router_prefix": "/{contact_id}",
+      "handler": "disable_contact"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 44,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "me"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 50,
+      "method": "GET",
+      "path_without_router_prefix": "/appointments",
+      "handler": "my_appointments"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 56,
+      "method": "GET",
+      "path_without_router_prefix": "/treatments",
+      "handler": "my_treatments"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 62,
+      "method": "GET",
+      "path_without_router_prefix": "/loyalty",
+      "handler": "my_loyalty"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 70,
+      "method": "POST",
+      "path_without_router_prefix": "/offers/seen",
+      "handler": "offers_seen"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 76,
+      "method": "GET",
+      "path_without_router_prefix": "/consents",
+      "handler": "my_consent_prompt"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 84,
+      "method": "PUT",
+      "path_without_router_prefix": "/consents/{purpose}",
+      "handler": "set_my_consent"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 97,
+      "method": "POST",
+      "path_without_router_prefix": "/chat",
+      "handler": "my_chat"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 114,
+      "method": "GET",
+      "path_without_router_prefix": "/chat/{thread_id}",
+      "handler": "my_thread"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 138,
+      "method": "GET",
+      "path_without_router_prefix": "/workshops",
+      "handler": "my_workshops"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 147,
+      "method": "POST",
+      "path_without_router_prefix": "/workshops/{workshop_id}",
+      "handler": "sign_up"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 165,
+      "method": "DELETE",
+      "path_without_router_prefix": "/workshops/{workshop_id}",
+      "handler": "withdraw"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 180,
+      "method": "GET",
+      "path_without_router_prefix": "/practice",
+      "handler": "my_practice"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 197,
+      "method": "GET",
+      "path_without_router_prefix": "/slots",
+      "handler": "my_slots"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 214,
+      "method": "POST",
+      "path_without_router_prefix": "/appointments",
+      "handler": "book"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 237,
+      "method": "GET",
+      "path_without_router_prefix": "/calendar-link",
+      "handler": "my_calendar_link"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 251,
+      "method": "GET",
+      "path_without_router_prefix": "/tests",
+      "handler": "my_tests"
+    },
+    {
+      "file": "src/orchestrator/api/patients.py",
+      "line": 257,
+      "method": "POST",
+      "path_without_router_prefix": "/tests/{assignment_id}",
+      "handler": "answer_test"
+    },
+    {
+      "file": "src/orchestrator/api/privacy.py",
+      "line": 50,
+      "method": "POST",
+      "path_without_router_prefix": "",
+      "handler": "open_case"
+    },
+    {
+      "file": "src/orchestrator/api/privacy.py",
+      "line": 67,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_cases"
+    },
+    {
+      "file": "src/orchestrator/api/privacy.py",
+      "line": 76,
+      "method": "GET",
+      "path_without_router_prefix": "/{case_id}",
+      "handler": "get_case"
+    },
+    {
+      "file": "src/orchestrator/api/privacy.py",
+      "line": 84,
+      "method": "POST",
+      "path_without_router_prefix": "/{case_id}/steps/{step}",
+      "handler": "complete_step"
+    },
+    {
+      "file": "src/orchestrator/api/privacy.py",
+      "line": 96,
+      "method": "POST",
+      "path_without_router_prefix": "/{case_id}/close",
+      "handler": "close_case"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 65,
+      "method": "POST",
+      "path_without_router_prefix": "",
+      "handler": "create_publication"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 81,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_publications"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 86,
+      "method": "GET",
+      "path_without_router_prefix": "/calendar",
+      "handler": "publication_calendar"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 108,
+      "method": "GET",
+      "path_without_router_prefix": "/{publication_id}",
+      "handler": "get_publication"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 118,
+      "method": "POST",
+      "path_without_router_prefix": "/{publication_id}/approve",
+      "handler": "approve_publication"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 131,
+      "method": "POST",
+      "path_without_router_prefix": "/{publication_id}/publish",
+      "handler": "publish_publication"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 141,
+      "method": "PUT",
+      "path_without_router_prefix": "/{publication_id}/schedule",
+      "handler": "schedule_publication"
+    },
+    {
+      "file": "src/orchestrator/api/publications.py",
+      "line": 152,
+      "method": "POST",
+      "path_without_router_prefix": "/{publication_id}/cancel",
+      "handler": "cancel_publication"
+    },
+    {
+      "file": "src/orchestrator/api/session.py",
+      "line": 24,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "session"
+    },
+    {
+      "file": "src/orchestrator/api/session.py",
+      "line": 50,
+      "method": "POST",
+      "path_without_router_prefix": "/email",
+      "handler": "add_own_email"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 55,
+      "method": "GET",
+      "path_without_router_prefix": "/rules",
+      "handler": "platform_rules"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 64,
+      "method": "POST",
+      "path_without_router_prefix": "/accounts",
+      "handler": "connect_account"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 83,
+      "method": "GET",
+      "path_without_router_prefix": "/accounts",
+      "handler": "list_accounts"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 95,
+      "method": "GET",
+      "path_without_router_prefix": "/alerts",
+      "handler": "list_alerts"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 110,
+      "method": "POST",
+      "path_without_router_prefix": "/alerts/{alert_id}/reply",
+      "handler": "reply_to_alert"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 127,
+      "method": "POST",
+      "path_without_router_prefix": "/alerts/{alert_id}/ack",
+      "handler": "acknowledge_alert"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 138,
+      "method": "GET",
+      "path_without_router_prefix": "/alerts/{alert_id}/notifications",
+      "handler": "alert_notifications"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 151,
+      "method": "POST",
+      "path_without_router_prefix": "/alerts/{alert_id}/resolve",
+      "handler": "resolve_alert"
+    },
+    {
+      "file": "src/orchestrator/api/social.py",
+      "line": 161,
+      "method": "DELETE",
+      "path_without_router_prefix": "/accounts/{account_id}",
+      "handler": "disable_account"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 74,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/auth/sign-in",
+      "handler": "sign_in"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 82,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/auth/code",
+      "handler": "code"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 90,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/auth/link",
+      "handler": "use_link"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 102,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/auth/enroll",
+      "handler": "enroll"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 113,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/auth/sign-out",
+      "handler": "sign_out"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 122,
+      "method": "GET",
+      "path_without_router_prefix": "/v1/admin/team",
+      "handler": "team"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 127,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/admin/team",
+      "handler": "add_member"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 139,
+      "method": "POST",
+      "path_without_router_prefix": "/v1/admin/team/{principal_id}/link",
+      "handler": "new_link"
+    },
+    {
+      "file": "src/orchestrator/api/staff_login.py",
+      "line": 151,
+      "method": "DELETE",
+      "path_without_router_prefix": "/v1/admin/team/{principal_id}",
+      "handler": "remove_member"
+    },
+    {
+      "file": "src/orchestrator/api/workshops.py",
+      "line": 45,
+      "method": "POST",
+      "path_without_router_prefix": "",
+      "handler": "create_workshop"
+    },
+    {
+      "file": "src/orchestrator/api/workshops.py",
+      "line": 53,
+      "method": "GET",
+      "path_without_router_prefix": "",
+      "handler": "list_workshops"
+    },
+    {
+      "file": "src/orchestrator/api/workshops.py",
+      "line": 60,
+      "method": "GET",
+      "path_without_router_prefix": "/{workshop_id}/registrations",
+      "handler": "registrations"
+    },
+    {
+      "file": "src/orchestrator/api/workshops.py",
+      "line": 70,
+      "method": "POST",
+      "path_without_router_prefix": "/{workshop_id}/cancel",
+      "handler": "cancel_workshop"
+    },
+    {
+      "file": "src/orchestrator/api/workshops.py",
+      "line": 78,
+      "method": "POST",
+      "path_without_router_prefix": "/{workshop_id}/attendance",
+      "handler": "mark_attendance"
+    }
+  ],
+  "status": "IN_PROGRESS_NOT_FULL_COVERAGE_ACCEPTANCE"
+}

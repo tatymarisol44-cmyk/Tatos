@@ -1,0 +1,372 @@
+{
+  "recorded_at_utc": "2026-10-19T22:54:43.185964+00:00",
+  "github": {
+    "/rulesets": {
+      "http_status": 200,
+      "rules": [
+        {
+          "id": 24809708,
+          "name": "main-protegida",
+          "type": null,
+          "enforcement": "active",
+          "ruleset_id": null
+        }
+      ]
+    },
+    "/rules/branches/main": {
+      "http_status": 200,
+      "rules": [
+        {
+          "id": null,
+          "name": null,
+          "type": "deletion",
+          "enforcement": null,
+          "ruleset_id": 24809708
+        },
+        {
+          "id": null,
+          "name": null,
+          "type": "non_fast_forward",
+          "enforcement": null,
+          "ruleset_id": 24809708
+        },
+        {
+          "id": null,
+          "name": null,
+          "type": "pull_request",
+          "enforcement": null,
+          "ruleset_id": 24809708
+        },
+        {
+          "id": null,
+          "name": null,
+          "type": "required_status_checks",
+          "enforcement": null,
+          "ruleset_id": 24809708
+        }
+      ]
+    },
+    "/environments": {
+      "http_status": 200,
+      "environments": [
+        {
+          "name": "production",
+          "protection_rules": [
+            {
+              "id": 68282700,
+              "node_id": "GA_kwDOSE5W084EEelM",
+              "type": "branch_policy"
+            },
+            {
+              "id": 68282934,
+              "node_id": "GA_kwDOSE5W084EEeo2",
+              "type": "required_reviewers",
+              "prevent_self_review": false,
+              "reviewers": [
+                {
+                  "type": "User",
+                  "reviewer": {
+                    "login": "tatymarisol44-cmyk",
+                    "id": 237309214,
+                    "node_id": "U_kgDODiUNHg",
+                    "avatar_url": "https://avatars.githubusercontent.com/u/237309214?v=4",
+                    "gravatar_id": "",
+                    "url": "https://api.github.com/users/tatymarisol44-cmyk",
+                    "html_url": "https://github.com/tatymarisol44-cmyk",
+                    "followers_url": "https://api.github.com/users/tatymarisol44-cmyk/followers",
+                    "following_url": "https://api.github.com/users/tatymarisol44-cmyk/following{/other_user}",
+                    "gists_url": "https://api.github.com/users/tatymarisol44-cmyk/gists{/gist_id}",
+                    "starred_url": "https://api.github.com/users/tatymarisol44-cmyk/starred{/owner}{/repo}",
+                    "subscriptions_url": "https://api.github.com/users/tatymarisol44-cmyk/subscriptions",
+                    "organizations_url": "https://api.github.com/users/tatymarisol44-cmyk/orgs",
+                    "repos_url": "https://api.github.com/users/tatymarisol44-cmyk/repos",
+                    "events_url": "https://api.github.com/users/tatymarisol44-cmyk/events{/privacy}",
+                    "received_events_url": "https://api.github.com/users/tatymarisol44-cmyk/received_events",
+                    "type": "User",
+                    "user_view_type": "public",
+                    "site_admin": false
+                  }
+                }
+              ]
+            }
+          ],
+          "deployment_branch_policy": {
+            "protected_branches": false,
+            "custom_branch_policies": true
+          }
+        },
+        {
+          "name": "staging",
+          "protection_rules": [],
+          "deployment_branch_policy": null
+        }
+      ],
+      "configuration": {
+        "production_variables": {
+          "http_status": 200,
+          "names": []
+        },
+        "production_secrets": {
+          "http_status": 200,
+          "names": []
+        },
+        "staging_variables": {
+          "http_status": 200,
+          "names": []
+        },
+        "staging_secrets": {
+          "http_status": 200,
+          "names": []
+        }
+      }
+    },
+    "/actions/runs/39298528515/jobs?per_page=100": {
+      "http_status": 200,
+      "jobs": [
+        {
+          "name": "resolve",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118217273877",
+          "started_at": "2026-10-19T17:57:38Z",
+          "completed_at": "2026-10-19T17:57:51Z"
+        },
+        {
+          "name": "single-node",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118217415317",
+          "started_at": "2026-10-19T17:57:54Z",
+          "completed_at": "2026-10-19T18:02:22Z"
+        },
+        {
+          "name": "rehearsal",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118217415460",
+          "started_at": "2026-10-19T17:57:54Z",
+          "completed_at": "2026-10-19T18:02:02Z"
+        },
+        {
+          "name": "render",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118217415472",
+          "started_at": "2026-10-19T17:57:54Z",
+          "completed_at": "2026-10-19T18:01:39Z"
+        },
+        {
+          "name": "production-render",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118219276830",
+          "started_at": "2026-10-19T18:01:40Z",
+          "completed_at": "2026-10-19T18:01:39Z"
+        },
+        {
+          "name": "staging",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118219463018",
+          "started_at": "2026-10-19T18:02:03Z",
+          "completed_at": "2026-10-19T18:02:03Z"
+        },
+        {
+          "name": "production",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118219464636",
+          "started_at": "2026-10-19T18:02:03Z",
+          "completed_at": "2026-10-19T18:02:03Z"
+        },
+        {
+          "name": "production-vm",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515/job/118219622024",
+          "started_at": "2026-10-19T18:02:23Z",
+          "completed_at": "2026-10-19T18:02:22Z"
+        }
+      ]
+    },
+    "/actions/runs/39296543783/jobs?per_page=100": {
+      "http_status": 200,
+      "jobs": [
+        {
+          "name": "Lint & types",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442343",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:44:07Z"
+        },
+        {
+          "name": "Java A2A agent (tests + live contract)",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442567",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:44:10Z"
+        },
+        {
+          "name": "Routing eval gate",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442629",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:43:48Z"
+        },
+        {
+          "name": "Security scan",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442650",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:43:47Z"
+        },
+        {
+          "name": "Tests (py3.13)",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442706",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:50:34Z"
+        },
+        {
+          "name": "Validate Kubernetes manifests",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442727",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:43:46Z"
+        },
+        {
+          "name": "Tests (py3.12)",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118210442753",
+          "started_at": "2026-10-19T17:43:25Z",
+          "completed_at": "2026-10-19T17:51:44Z"
+        },
+        {
+          "name": "Build, scan and push images",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783/job/118214479956",
+          "started_at": "2026-10-19T17:51:47Z",
+          "completed_at": "2026-10-19T17:57:27Z"
+        }
+      ]
+    },
+    "/actions/runs/39296543783/artifacts?per_page=100": {
+      "http_status": 200,
+      "artifacts": [
+        {
+          "id": 12209772771,
+          "name": "tatymarisol44-cmyk~Tatos~IOTATQ.dockerbuild",
+          "size_in_bytes": 90433,
+          "expired": false,
+          "digest": "sha256:82394c15eba903c07246d186ad1fbb96aaf51a47c62d2128dcf7343fdfb361a6"
+        },
+        {
+          "id": 12209702990,
+          "name": "tatymarisol44-cmyk~Tatos~WNBJ60.dockerbuild",
+          "size_in_bytes": 36862,
+          "expired": false,
+          "digest": "sha256:1b808d9124987d1ed61368877aae0df6dc651ae201ed9e4345bc1b0133659aaa"
+        },
+        {
+          "id": 12209308304,
+          "name": "tatymarisol44-cmyk~Tatos~CZYJES.dockerbuild",
+          "size_in_bytes": 44871,
+          "expired": false,
+          "digest": "sha256:537a4d84d7ffb6fdb5e6b91fc0987dc3434fdaaa0e2e520908d0e12ed2f50e75"
+        },
+        {
+          "id": 12209222510,
+          "name": "test-results-py3.12",
+          "size_in_bytes": 44487,
+          "expired": false,
+          "digest": "sha256:552c196ed9c95bf251e5567dd7c3c255668a8f7d421190e04299e57ab6a3fa2e"
+        },
+        {
+          "id": 12209068476,
+          "name": "tatymarisol44-cmyk~Tatos~Q9TKH2.dockerbuild",
+          "size_in_bytes": 45168,
+          "expired": false,
+          "digest": "sha256:1f0ee059d43d74b8b2c5a2a974712a1c31e5c0b0a63acab91ce645e412f6f96f"
+        },
+        {
+          "id": 12208835865,
+          "name": "test-results-py3.13",
+          "size_in_bytes": 44363,
+          "expired": false,
+          "digest": "sha256:eb44cc74e47b77aaf32cff4fac096468525c05bcc97be667b0ef6f10f7d7dd3c"
+        },
+        {
+          "id": 12208360738,
+          "name": "eval-report",
+          "size_in_bytes": 1371,
+          "expired": false,
+          "digest": "sha256:0ccea65ca734ccf386bece416fe169bf7179d18eb20cb9aea0f0f5a4dd492a61"
+        }
+      ]
+    },
+    "/actions/runs/39298528515": {
+      "http_status": 200,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+      "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515"
+    },
+    "/actions/permissions": {
+      "http_status": 200,
+      "enabled": true,
+      "allowed_actions": "all"
+    },
+    "/actions/permissions/workflow": {
+      "http_status": 200,
+      "default_workflow_permissions": "read",
+      "can_approve_pull_request_reviews": false
+    }
+  },
+  "registry": {
+    "tag": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator:sha-3d290bc",
+    "index_digest": "sha256:e0d79a1e1b27a7b9f518f6033db6a44530e78399e74f501969701e1dc5df29ee",
+    "platforms": [
+      {
+        "architecture": "amd64",
+        "os": "linux",
+        "manifest_digest": "sha256:8d4444fc9772bd25c631a94301f434d73ad09ac1cc35ac1ab3070e7762524ef3",
+        "labels": {
+          "org.opencontainers.image.created": "2026-10-19T17:52:09.395Z",
+          "org.opencontainers.image.description": "",
+          "org.opencontainers.image.licenses": "MIT",
+          "org.opencontainers.image.revision": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+          "org.opencontainers.image.source": "https://github.com/tatymarisol44-cmyk/Tatos",
+          "org.opencontainers.image.title": "Tatos",
+          "org.opencontainers.image.url": "https://github.com/tatymarisol44-cmyk/Tatos",
+          "org.opencontainers.image.version": "main"
+        },
+        "build_revision_env": []
+      },
+      {
+        "architecture": "arm64",
+        "os": "linux",
+        "manifest_digest": "sha256:ae56e22c27867fbeb26a795dc0058737820548c36ac4fdee63bdccffe552c802",
+        "labels": {
+          "org.opencontainers.image.created": "2026-10-19T17:52:09.395Z",
+          "org.opencontainers.image.description": "",
+          "org.opencontainers.image.licenses": "MIT",
+          "org.opencontainers.image.revision": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+          "org.opencontainers.image.source": "https://github.com/tatymarisol44-cmyk/Tatos",
+          "org.opencontainers.image.title": "Tatos",
+          "org.opencontainers.image.url": "https://github.com/tatymarisol44-cmyk/Tatos",
+          "org.opencontainers.image.version": "main"
+        },
+        "build_revision_env": []
+      }
+    ],
+    "signature_verified_here": false
+  }
+}

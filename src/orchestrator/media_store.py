@@ -13,8 +13,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import os
 import re
 import shutil
+import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -49,6 +52,19 @@ def media_signature(key: bytes, name: str, expires: int) -> str:
     return hmac.new(key, f"{name}|{expires}".encode(), hashlib.sha256).hexdigest()
 
 
+def _atomic_file(target: Path, write: Callable[[Path], Any]) -> None:
+    """Readers see either the complete old file or the complete new one."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, filename = tempfile.mkstemp(prefix=".media-", suffix=".tmp", dir=target.parent)
+    os.close(descriptor)
+    temporary = Path(filename)
+    try:
+        write(temporary)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 class LocalMediaStore:
     """Files under MEDIA_DIR. With PUBLIC_BASE_URL (e.g. a Codespace's public port, or a
     single-node deployment) the API itself serves each creative at a URL signed with HMAC
@@ -76,8 +92,9 @@ class LocalMediaStore:
 
     async def put(self, name: str, source: Path, content_type: str) -> None:
         target = self._path(name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(shutil.copyfile, source, target)
+        await asyncio.to_thread(
+            _atomic_file, target, lambda temporary: shutil.copyfile(source, temporary)
+        )
 
     def path_for(self, name: str) -> Path:
         return self._path(name)
@@ -129,8 +146,10 @@ class GcsMediaStore:
         if cached is not None:
             return cached
         target = self.cache.path_for(name)  # created on another replica: fetch it
-        target.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(self.bucket.blob(name).download_to_filename, str(target))
+        blob = self.bucket.blob(name)
+        await asyncio.to_thread(
+            _atomic_file, target, lambda temporary: blob.download_to_filename(str(temporary))
+        )
         return target
 
     async def signed_url(self, name: str) -> str | None:

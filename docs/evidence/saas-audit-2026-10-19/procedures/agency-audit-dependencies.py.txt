@@ -1,0 +1,18 @@
+from pathlib import Path
+import subprocess, json, hashlib, time, shutil
+root=Path(__file__).resolve().parent/'agency-audit-2026-10-19'
+repo=Path(r'C:\Users\momoy\Desktop\VS CODE\AGENTES\agency-orchestrator')
+results={'lock_sha256':hashlib.sha256((repo/'uv.lock').read_bytes()).hexdigest(),'scanner':'pip-audit==2.10.1','commands':[]}
+for scope,groups in [('runtime',['--no-dev']),('all-groups',['--all-groups'])]:
+    req=root/f'{scope}-requirements.txt';out=root/f'{scope}-dependency-audit.json'
+    args=['uv','export','--frozen',*groups,'--no-emit-project','--format','requirements-txt','--output-file',str(req)]
+    export=subprocess.run(args,cwd=repo,capture_output=True,text=True,timeout=90)
+    assert export.returncode==0,'Dependency export failed'
+    scan=[shutil.which('uvx'),'--from','pip-audit==2.10.1','pip-audit','--disable-pip','--no-deps','--strict','-r',str(req),'--format','json','--output',str(out)]
+    start=time.monotonic();run=subprocess.run(scan,cwd=repo,capture_output=True,text=True,timeout=300)
+    (root/f'{scope}-dependency-audit.log').write_text(run.stdout+run.stderr,encoding='utf-8')
+    data=json.loads(out.read_text()) if out.exists() else {}
+    deps=data.get('dependencies',[])
+    results['commands'].append({'scope':scope,'command':scan,'exit_code':run.returncode,'elapsed_seconds':round(time.monotonic()-start,2),'dependencies':len(deps),'vulnerable':[{'name':d['name'],'version':d.get('version'),'vulns':d.get('vulns')} for d in deps if d.get('vulns')],'skipped':[d for d in deps if d.get('skip_reason')],'output_tail':(run.stdout+run.stderr)[-1500:]})
+(root/'dependency-summary.json').write_text(json.dumps(results,indent=2)+'\n',encoding='utf-8')
+print(json.dumps(results))

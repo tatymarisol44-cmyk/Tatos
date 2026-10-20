@@ -6,6 +6,7 @@
 useDefault = true
 
 [[allowlists]]
+targetRules = ["generic-api-key"]
 description = "Synthetic passwords in the staff sign-in tests (ADR 0024)"
 condition = "AND"
 paths = ['''^tests/test_(staff_login|tenant_isolation_matrix)\.py$''']
@@ -13,3 +14,20 @@ regexTarget = "secret"
 regexes = [
   '''^(?:Cuaderno-Azul-2026|Otro-Cuaderno-2027|ana\.perez-2026x|adivinanza-123|otra-cosa-123|no-es-esta-1)$''',
 ]
+
+# Exact false positives reviewed and explicitly approved by the user on 2026-10-20.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Synthetic enrollment password in audit concurrency test"
+condition = "AND"
+paths = ['''^tests/test_audit_auth_concurrency\.py$''']
+regexTarget = "secret"
+regexes = ['''^Cuaderno-Azul-2026$''']
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Four verified source file SHA-256 digests in the audit manifest"
+condition = "AND"
+paths = ['''^docs/evidence/saas-audit-2026-10-19/final-start-manifest\.json$''']
+regexTarget = "secret"
+regexes = ['''^(?:9ecd9b9118f446007c9cac789f4e0af566b1106d30ab038a1d9ccfb5c86a99dc|594e5bf9929a9a39b8c83f0a2bb70b38421a62acdc1e2ec94e3efe2d5ab77980|27917eaa7abc82342bb94f732662ede3d58b2749f77b79f16ff3b58989ce3214|ee498e1c00e1de5655a3cef34cc178d1ba866c2b141c03c338b6a6039d7fc590)$''']

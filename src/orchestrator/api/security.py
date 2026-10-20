@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import secrets
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Protocol
@@ -45,11 +46,24 @@ class RateLimiter:
     def __init__(self, per_minute: int) -> None:
         self.capacity = float(per_minute)
         self.rate = per_minute / 60.0
-        self._buckets: dict[str, _Bucket] = {}
+        self._buckets: OrderedDict[str, _Bucket] = OrderedDict()
+        self.max_buckets = 10_000
 
     async def allow(self, key: str) -> bool:
         now = time.monotonic()
-        bucket = self._buckets.setdefault(key, _Bucket(self.capacity, now))
+        if key not in self._buckets:
+            # A bucket is fully refilled after a minute. Retire idle addresses,
+            # but never evict an active budget to admit a new address.
+            while self._buckets:
+                oldest = next(iter(self._buckets))
+                if now - self._buckets[oldest].updated < 60:
+                    break
+                self._buckets.popitem(last=False)
+            if len(self._buckets) >= self.max_buckets:
+                return False
+            self._buckets[key] = _Bucket(self.capacity, now)
+        bucket = self._buckets[key]
+        self._buckets.move_to_end(key)
         bucket.tokens = min(self.capacity, bucket.tokens + (now - bucket.updated) * self.rate)
         bucket.updated = now
         if bucket.tokens < 1:
@@ -120,7 +134,14 @@ class RedisRateLimiter:
         await self.redis.aclose()
 
 
-def build_limiter(settings: Settings) -> Limiter:
+def build_limiter(
+    settings: Settings,
+    *,
+    per_minute: int | None = None,
+    prefix: str = "agency:ratelimit:",
+    on_outage: str | None = None,
+) -> Limiter:
+    capacity = settings.rate_limit_per_minute if per_minute is None else per_minute
     if settings.rate_limit_backend == "redis":
         if settings.redis_url is None:
             raise ValueError("RATE_LIMIT_BACKEND=redis requires REDIS_URL")
@@ -132,9 +153,12 @@ def build_limiter(settings: Settings) -> Limiter:
             socket_connect_timeout=0.5,
         )
         return RedisRateLimiter(
-            client, settings.rate_limit_per_minute, on_outage=settings.rate_limit_on_outage
+            client,
+            capacity,
+            prefix=prefix,
+            on_outage=settings.rate_limit_on_outage if on_outage is None else on_outage,
         )
-    return RateLimiter(settings.rate_limit_per_minute)
+    return RateLimiter(capacity)
 
 
 def resolve_tenant(settings: Settings, api_key: str | None) -> str | None:

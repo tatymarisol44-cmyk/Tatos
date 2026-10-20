@@ -1,0 +1,26 @@
+{
+  "lock_sha256": "f6a97a0c6f87095610589c6e153a3ddcba0105b40a69575ceae85dc199ac5628",
+  "scope": "All PyPI registry packages in uv.lock, including host-excluded platform packages. Direct local project is not a registry advisory target. No packages installed.",
+  "command": [
+    "C:\\Users\\momoy\\AppData\\Local\\Microsoft\\WinGet\\Packages\\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\\uvx.EXE",
+    "--from",
+    "pip-audit==2.10.1",
+    "pip-audit",
+    "--disable-pip",
+    "--no-deps",
+    "--strict",
+    "-r",
+    "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\all-platform-lock-requirements.txt",
+    "--format",
+    "json",
+    "--output",
+    "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\all-platform-lock-audit.json"
+  ],
+  "exit_code": 0,
+  "locked_registry_packages": 189,
+  "audited_dependencies": 189,
+  "uvloop_included": true,
+  "vulnerable": [],
+  "skipped": [],
+  "tail": "WARNING:pip_audit._cli:--no-deps is supported, but users are encouraged to fully hash their pinned dependencies\nWARNING:pip_audit._cli:Consider using a tool like `pip-compile`: https://pip-tools.readthedocs.io/en/latest/#using-hashes\nNo known vulnerabilities found\n"
+}

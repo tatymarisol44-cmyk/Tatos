@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-20",
+  "passed": 1082,
+  "skipped": 39,
+  "failures": 0,
+  "errors": 0,
+  "coverage_percent": 95.21,
+  "duration_seconds": 440.18,
+  "source_files_checked": 306,
+  "source_drift": [],
+  "junit": "saas-audit-final-tests.xml",
+  "postgres_enabled": false,
+  "production_deployed": false,
+  "gitleaks_exceptions_applied": false
+}

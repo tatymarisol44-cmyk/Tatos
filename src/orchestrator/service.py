@@ -588,7 +588,8 @@ class Orchestrator:
         holder = uuid.uuid4().hex
         await self.leases.acquire(tenant, thread_id, holder)
         try:
-            yield
+            async with self.leases.keepalive(tenant, thread_id, holder):
+                yield
         finally:
             await self.leases.release(tenant, thread_id, holder)
 
@@ -598,7 +599,10 @@ class Orchestrator:
         stale = await self.reviews.stale_resolving(
             timedelta(seconds=self.settings.thread_lease_seconds)
         )
+        reconciled = 0
         for review in stale:
+            if await self.leases.active(review.tenant, review.thread_id):
+                continue
             snapshot = await self.graph.aget_state(self._config(review.tenant, review.thread_id))
             if snapshot.next:
                 await self.reviews.release(review.tenant, review.thread_id)
@@ -607,8 +611,9 @@ class Orchestrator:
                 await self.reviews.finish(
                     review.tenant, review.thread_id, "approved" if approved else "rejected"
                 )
+            reconciled += 1
             log.warning("reconciled review %s:%s", review.tenant, review.thread_id)
-        return len(stale)
+        return reconciled
 
     async def resolve_review(
         self,
@@ -708,19 +713,21 @@ class Orchestrator:
         holder = uuid.uuid4().hex
         await self.leases.acquire(tenant, thread_id, holder)
         try:
-            thread_id, inputs, config = await self._prepare(
-                question, thread_id, agent_id, agent_ids, mode, tenant, subject_id, force_review
-            )
-            if subject_id:
-                await self.subject_threads.link(tenant, thread_id, subject_id)
+            async with self.leases.keepalive(tenant, thread_id, holder):
+                thread_id, inputs, config = await self._prepare(
+                    question, thread_id, agent_id, agent_ids, mode, tenant, subject_id, force_review
+                )
+                if subject_id:
+                    await self.subject_threads.link(tenant, thread_id, subject_id)
         except BaseException:
             await self.leases.release(tenant, thread_id, holder)
             raise
 
         async def events() -> AsyncIterator[tuple[str, dict[str, Any]]]:
             try:
-                async for item in run():
-                    yield item
+                async with self.leases.keepalive(tenant, thread_id, holder):
+                    async for item in run():
+                        yield item
             finally:
                 await self.leases.release(tenant, thread_id, holder)
 

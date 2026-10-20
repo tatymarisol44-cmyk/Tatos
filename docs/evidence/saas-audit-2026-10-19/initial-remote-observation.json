@@ -1,0 +1,218 @@
+{
+  "recorded_at_utc": "2026-10-19T17:58:00.975051+00:00",
+  "local_head": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+  "existing_tracked_changes": 10,
+  "github": {
+    "": {
+      "http_status": 200,
+      "default_branch": "main",
+      "private": false,
+      "archived": false
+    },
+    "/commits/main": {
+      "http_status": 200,
+      "sha": "3d290bca94a7bcd69a01fb914db7c41be382a8d7"
+    },
+    "/actions/runs?per_page=12": {
+      "http_status": 200,
+      "runs": [
+        {
+          "id": 39298528515,
+          "name": "Deploy",
+          "status": "in_progress",
+          "conclusion": null,
+          "head_sha": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39298528515",
+          "created_at": "2026-10-19T17:57:34Z"
+        },
+        {
+          "id": 39296543783,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296543783",
+          "created_at": "2026-10-19T17:43:22Z"
+        },
+        {
+          "id": 39296370795,
+          "name": "Deploy",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "dfff715427745fc9b5e27f3a65a7471cf3c6125d",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39296370795",
+          "created_at": "2026-10-19T17:42:08Z"
+        },
+        {
+          "id": 39294420088,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "dfff715427745fc9b5e27f3a65a7471cf3c6125d",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39294420088",
+          "created_at": "2026-10-19T17:28:28Z"
+        },
+        {
+          "id": 39251373704,
+          "name": "Nightly eval (real models)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39251373704",
+          "created_at": "2026-10-19T12:21:04Z"
+        },
+        {
+          "id": 39119543369,
+          "name": "Nightly eval (real models)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39119543369",
+          "created_at": "2026-10-18T10:30:45Z"
+        },
+        {
+          "id": 39024205057,
+          "name": "Nightly eval (real models)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39024205057",
+          "created_at": "2026-10-17T10:15:25Z"
+        },
+        {
+          "id": 38889941945,
+          "name": "Nightly eval (real models)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/38889941945",
+          "created_at": "2026-10-16T10:51:11Z"
+        },
+        {
+          "id": 38832619021,
+          "name": "Deploy",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/38832619021",
+          "created_at": "2026-10-16T00:59:26Z"
+        },
+        {
+          "id": 38831274905,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "39a4c35ae65560068982e6f8e7ff70c2fe7ffe98",
+          "head_branch": "dependabot/uv/python-deps-f064d368b0",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/38831274905",
+          "created_at": "2026-10-16T00:45:16Z"
+        },
+        {
+          "id": 38830991077,
+          "name": "Deploy",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/38830991077",
+          "created_at": "2026-10-16T00:42:19Z"
+        },
+        {
+          "id": 38830872037,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+          "head_branch": "main",
+          "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/38830872037",
+          "created_at": "2026-10-16T00:41:04Z"
+        }
+      ]
+    },
+    "/branches/main/protection": {
+      "http_status": 404,
+      "required_status_checks": null,
+      "required_pull_request_reviews": false
+    },
+    "/actions/variables": {
+      "http_status": 200,
+      "variables": []
+    },
+    "/actions/secrets": {
+      "http_status": 200,
+      "names": []
+    },
+    "/contents/src/orchestrator/web/static/consultorio.js?ref=main": {
+      "http_status": 200,
+      "sha256": "ed8cc3a8c8735e8fa6d52d82b40f761d9309ad909a881fadc3c5fce08ed7c1fa"
+    }
+  },
+  "production": [
+    {
+      "path": "/app",
+      "http_status": 200,
+      "sha256": "5f9bfafcdd12256a4662ca59e636d7a803cdccbccfcd64268819146a4bad2b9a",
+      "headers": {
+        "x-app-revision": null,
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "bytes": 5527
+    },
+    {
+      "path": "/healthz",
+      "http_status": 200,
+      "sha256": "a29ee2b15c494311c52521766e44af56a3ad2248e7a8ab465e5206463c13d288",
+      "headers": {
+        "x-app-revision": null,
+        "content-security-policy": null,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "bytes": 15
+    },
+    {
+      "path": "/readyz",
+      "http_status": 200,
+      "sha256": "de675e30855556c680c27d4435b7510dad6b9a01b1cf0e7c87eab2e6be4797aa",
+      "headers": {
+        "x-app-revision": null,
+        "content-security-policy": null,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "bytes": 83
+    },
+    {
+      "path": "/static/consultorio.js",
+      "http_status": 200,
+      "sha256": "724a1a65290e6c36026fb97c9b621bcdff78fbaa6efba1fead3a6678fb5d4f5a",
+      "headers": {
+        "x-app-revision": null,
+        "content-security-policy": null,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=31536000; includeSubDomains"
+      },
+      "bytes": 115069
+    }
+  ],
+  "local_consultorio_sha256": "ed8cc3a8c8735e8fa6d52d82b40f761d9309ad909a881fadc3c5fce08ed7c1fa"
+}

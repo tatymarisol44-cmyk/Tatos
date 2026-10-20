@@ -1,0 +1,153 @@
+{
+  "python": "3.12.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "logical_cpus": 12,
+  "source_sha256": "456006d927563d277ad9c7f38811b7462e2bcde4fff9914ec773c7ffbb8eda63",
+  "method": "loopback HTTP, one uvicorn process, full catalog, SQLite in memory, fake LLM 50ms, shared host with load generator",
+  "phases": [
+    {
+      "concurrency": 1,
+      "elapsed_seconds": 8.103,
+      "requests": 115,
+      "statuses": {
+        "200": 115
+      },
+      "requests_per_second": 14.19,
+      "p50_ms": 100.42,
+      "p95_ms": 121.83,
+      "p99_ms": 128.37,
+      "rss_mb": 213.02,
+      "cpu_one_core_percent": 54.19,
+      "agents": 260,
+      "audit_chain": {
+        "ok": true,
+        "events": 71,
+        "broken_at": null,
+        "head": "6716d9678ac7eb5a576181c4d672bdf9b7f1628485c9f1df3f8411511792d0e1",
+        "anchors_checked": 0
+      },
+      "by_endpoint": {
+        "/v1/chat": {
+          "requests": 71,
+          "p50_ms": 108.72,
+          "p95_ms": 123.71,
+          "p99_ms": 180.56
+        },
+        "/v1/insights/summary": {
+          "requests": 22,
+          "p50_ms": 10.74,
+          "p95_ms": 11.62,
+          "p99_ms": 15.72
+        },
+        "/v1/crm/appointments": {
+          "requests": 11,
+          "p50_ms": 2.36,
+          "p95_ms": 2.98,
+          "p99_ms": 2.98
+        },
+        "/v1/agents": {
+          "requests": 11,
+          "p50_ms": 3.45,
+          "p95_ms": 3.76,
+          "p99_ms": 3.76
+        }
+      }
+    },
+    {
+      "concurrency": 8,
+      "elapsed_seconds": 8.186,
+      "requests": 222,
+      "statuses": {
+        "200": 222
+      },
+      "requests_per_second": 27.12,
+      "p50_ms": 329.69,
+      "p95_ms": 495.12,
+      "p99_ms": 549.82,
+      "rss_mb": 225.92,
+      "cpu_one_core_percent": 100.02,
+      "agents": 260,
+      "audit_chain": {
+        "ok": true,
+        "events": 203,
+        "broken_at": null,
+        "head": "529c0a3c87720bcbbb9dbdcdb207b92e75212dec5c55a53310abd6b26b39b284",
+        "anchors_checked": 0
+      },
+      "by_endpoint": {
+        "/v1/chat": {
+          "requests": 132,
+          "p50_ms": 347.91,
+          "p95_ms": 517.05,
+          "p99_ms": 549.82
+        },
+        "/v1/insights/summary": {
+          "requests": 46,
+          "p50_ms": 346.85,
+          "p95_ms": 496.9,
+          "p99_ms": 603.1
+        },
+        "/v1/crm/appointments": {
+          "requests": 22,
+          "p50_ms": 17.6,
+          "p95_ms": 116.85,
+          "p99_ms": 273.52
+        },
+        "/v1/agents": {
+          "requests": 22,
+          "p50_ms": 3.7,
+          "p95_ms": 4.92,
+          "p99_ms": 5.14
+        }
+      }
+    },
+    {
+      "concurrency": 32,
+      "elapsed_seconds": 8.47,
+      "requests": 206,
+      "statuses": {
+        "200": 206
+      },
+      "requests_per_second": 24.32,
+      "p50_ms": 1462.5,
+      "p95_ms": 1986.47,
+      "p99_ms": 2290.89,
+      "rss_mb": 243.07,
+      "cpu_one_core_percent": 100.36,
+      "agents": 260,
+      "audit_chain": {
+        "ok": true,
+        "events": 340,
+        "broken_at": null,
+        "head": "23c99c998611370d663d240d731d3fd274427f5bc1c4048a31c2b2e2ccce5018",
+        "anchors_checked": 0
+      },
+      "by_endpoint": {
+        "/v1/agents": {
+          "requests": 18,
+          "p50_ms": 4.65,
+          "p95_ms": 53.88,
+          "p99_ms": 53.88
+        },
+        "/v1/crm/appointments": {
+          "requests": 15,
+          "p50_ms": 166.43,
+          "p95_ms": 699.62,
+          "p99_ms": 699.62
+        },
+        "/v1/chat": {
+          "requests": 137,
+          "p50_ms": 1487.1,
+          "p95_ms": 1690.27,
+          "p99_ms": 1818.28
+        },
+        "/v1/insights/summary": {
+          "requests": 36,
+          "p50_ms": 1795.26,
+          "p95_ms": 2342.89,
+          "p99_ms": 2406.07
+        }
+      }
+    }
+  ]
+}

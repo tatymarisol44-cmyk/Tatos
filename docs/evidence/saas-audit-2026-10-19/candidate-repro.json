@@ -1,0 +1,53 @@
+{
+  "profile": "current candidate, separate non-editable installation",
+  "base_head": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+  "commands": [
+    {
+      "command": [
+        "uv",
+        "sync",
+        "--frozen",
+        "--offline",
+        "--no-editable",
+        "--python",
+        "C:\\Users\\momoy\\Desktop\\VS CODE\\AGENTES\\agency-orchestrator\\.venv\\Scripts\\python.exe"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 11.74
+    },
+    {
+      "command": [
+        "uv",
+        "build",
+        "--offline",
+        "--out-dir",
+        "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\dist-candidate"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 5.27
+    }
+  ],
+  "production_providers_used": false,
+  "packaged_migrations": 24,
+  "packaged_consultorio": true,
+  "wheel_sha256": "ba567376503cbc5d8173ddf11cc347334b4415ac8884014ec703228e8ae17580",
+  "probe": {
+    "exit_code": 0,
+    "elapsed_seconds": 9.73,
+    "result": {
+      "passed": true,
+      "checks": [
+        "/app",
+        "/static/consultorio.js",
+        "/healthz",
+        "/readyz",
+        "unauthenticated denied",
+        "authenticated catalog",
+        "A2A no-store"
+      ],
+      "non_editable_site_packages": true,
+      "migration_head": "0024",
+      "aiohttp": "3.14.5"
+    }
+  }
+}

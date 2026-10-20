@@ -1,0 +1,47 @@
+from pathlib import Path
+import subprocess, os, json, zipfile, hashlib,time
+root=Path(__file__).resolve().parent/'agency-audit-2026-10-19'
+repo=Path(r'C:\Users\momoy\Desktop\VS CODE\AGENTES\agency-orchestrator')
+target=root/'candidate';assert not target.exists();target.mkdir()
+names=subprocess.check_output(['git','ls-files'],cwd=repo,text=True).splitlines()
+names+=['tests/test_audit_auth_concurrency.py','tests/test_saas_audit.py','scripts/ci/deploy_summary.py','loadtest/audit_local.py']
+for name in names:
+    source=repo/name;dest=target/name
+    assert dest.resolve().is_relative_to(target.resolve())
+    if source.is_file():dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(source.read_bytes())
+env=os.environ.copy();env.pop('PYTHONPATH',None);env['UV_PYTHON_DOWNLOADS']='never';env['UV_NO_PROGRESS']='1'
+result={'profile':'current candidate, separate non-editable installation','base_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip(),'commands':[],'production_providers_used':False}
+cmds=[['uv','sync','--frozen','--offline','--no-editable','--python',str(repo/'.venv/Scripts/python.exe')],['uv','build','--offline','--out-dir',str(root/'dist-candidate')]]
+for i,cmd in enumerate(cmds):
+    start=time.monotonic();run=subprocess.run(cmd,cwd=target,env=env,capture_output=True,text=True,timeout=240)
+    (root/f'candidate-{i}.log').write_text(run.stdout+run.stderr,encoding='utf-8')
+    result['commands'].append({'command':cmd,'exit_code':run.returncode,'elapsed_seconds':round(time.monotonic()-start,2)})
+    assert run.returncode==0,'Candidate packaging failed'
+wheels=list((root/'dist-candidate').glob('*.whl'));assert len(wheels)==1
+with zipfile.ZipFile(wheels[0]) as z:
+    files=z.namelist();result['packaged_migrations']=len([n for n in files if n.startswith('orchestrator/migrations/versions/') and n.endswith('.py')]);result['packaged_consultorio']='orchestrator/web/static/consultorio.js' in files
+result['wheel_sha256']=hashlib.sha256(wheels[0].read_bytes()).hexdigest()
+probe='''from pathlib import Path
+import json,aiohttp
+import orchestrator
+from fastapi.testclient import TestClient
+from orchestrator.config import Settings
+from orchestrator.api.app import create_app
+from orchestrator.migrate import head
+settings=Settings(_env_file=None,app_env='test',llm_backend='fake',router_use_llm=False,agents_dir=Path(FIXTURES),api_keys='probe-only:synthetic-probe',build_revision='3d290bca94a7bcd69a01fb914db7c41be382a8d7',outbox_interval_seconds=0)
+checks=[]
+with TestClient(create_app(settings)) as client:
+ for path in ['/app','/static/consultorio.js','/healthz','/readyz']:
+  r=client.get(path);assert r.status_code==200;assert r.headers['x-app-revision']==settings.build_revision;checks.append(path)
+ assert client.get('/v1/crm/patients').status_code==401;checks.append('unauthenticated denied')
+ assert client.get('/v1/agents',headers={'X-API-Key':'probe-only'}).status_code==200;checks.append('authenticated catalog')
+ assert client.post('/a2a',json={},headers={'X-API-Key':'probe-only'}).headers['cache-control']=='no-store';checks.append('A2A no-store')
+assert 'site-packages' in orchestrator.__file__
+print(json.dumps({'passed':True,'checks':checks,'non_editable_site_packages':True,'migration_head':head(),'aiohttp':aiohttp.__version__}))
+'''.replace('FIXTURES',repr(str(target/'tests/fixtures/agents')))
+start=time.monotonic();run=subprocess.run([str(target/'.venv/Scripts/python.exe'),'-I','-c',probe],cwd=root,env=env,capture_output=True,text=True,timeout=90)
+(root/'candidate-probe.log').write_text(run.stdout+run.stderr,encoding='utf-8')
+result['probe']={'exit_code':run.returncode,'elapsed_seconds':round(time.monotonic()-start,2),'result':json.loads(run.stdout.strip().splitlines()[-1]) if run.returncode==0 else {'failed':True}}
+(root/'candidate-repro.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result))
+raise SystemExit(run.returncode)

@@ -1,0 +1,1266 @@
+{
+  "openapi_operation_count": 157,
+  "operations": [
+    {
+      "method": "GET",
+      "path": "/.well-known/agent-card.json",
+      "operation_id": "get_agent_card__well_known_agent_card_json_get",
+      "tags": [
+        "a2a"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/a2a",
+      "operation_id": "a2a_rpc_a2a_post",
+      "tags": [
+        "a2a"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reviews",
+      "operation_id": "list_reviews_v1_reviews_get",
+      "tags": [
+        "reviews"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reviews/{thread_id}",
+      "operation_id": "get_review_v1_reviews__thread_id__get",
+      "tags": [
+        "reviews"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/reviews/{thread_id}",
+      "operation_id": "resolve_review_v1_reviews__thread_id__post",
+      "tags": [
+        "reviews"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/subjects/{subject_id}/consents/{purpose}",
+      "operation_id": "set_consent_v1_subjects__subject_id__consents__purpose__put",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/subjects/{subject_id}/consents",
+      "operation_id": "get_consents_v1_subjects__subject_id__consents_get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/subjects/{subject_id}/export",
+      "operation_id": "export_subject_v1_subjects__subject_id__export_get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/subjects/{subject_id}",
+      "operation_id": "erase_subject_v1_subjects__subject_id__delete",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/audit",
+      "operation_id": "audit_trail_v1_audit_get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/audit/verify",
+      "operation_id": "verify_audit_v1_audit_verify_get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/staff",
+      "operation_id": "create_staff_key_v1_admin_staff_post",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/principals",
+      "operation_id": "list_principals_v1_admin_principals_get",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/principals/{principal_id}",
+      "operation_id": "revoke_principal_v1_admin_principals__principal_id__delete",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/principals/{principal_id}/sign-out",
+      "operation_id": "sign_out_principal_v1_admin_principals__principal_id__sign_out_post",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/patients/{patient_id}/access",
+      "operation_id": "create_patient_access_v1_crm_patients__patient_id__access_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/patients",
+      "operation_id": "create_patient_v1_crm_patients_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/patients",
+      "operation_id": "list_patients_v1_crm_patients_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/patients/{patient_id}",
+      "operation_id": "get_patient_v1_crm_patients__patient_id__get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/crm/patients/{patient_id}",
+      "operation_id": "update_patient_v1_crm_patients__patient_id__patch",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/patients/{patient_id}/loyalty",
+      "operation_id": "patient_loyalty_v1_crm_patients__patient_id__loyalty_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/patients/{patient_id}/engagement",
+      "operation_id": "patient_engagement_v1_crm_patients__patient_id__engagement_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/appointments",
+      "operation_id": "create_appointment_v1_crm_appointments_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/appointments",
+      "operation_id": "list_appointments_v1_crm_appointments_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/appointments/{appointment_id}/status",
+      "operation_id": "set_appointment_status_v1_crm_appointments__appointment_id__status_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/treatments",
+      "operation_id": "create_treatment_v1_crm_treatments_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/treatments",
+      "operation_id": "list_treatments_v1_crm_treatments_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crm/treatments/{treatment_id}/stage",
+      "operation_id": "set_treatment_stage_v1_crm_treatments__treatment_id__stage_post",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crm/alerts",
+      "operation_id": "crm_alerts_v1_crm_alerts_get",
+      "tags": [
+        "crm"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/insights/report",
+      "operation_id": "monthly_report_v1_insights_report_get",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/insights/goals",
+      "operation_id": "set_goal_v1_insights_goals_post",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/insights/goals/{goal_id}",
+      "operation_id": "remove_goal_v1_insights_goals__goal_id__delete",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/insights/engagement",
+      "operation_id": "engagement_summary_v1_insights_engagement_get",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/insights/summary",
+      "operation_id": "insights_summary_v1_insights_summary_get",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/insights/segments",
+      "operation_id": "insights_segments_v1_insights_segments_get",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/insights/ask",
+      "operation_id": "insights_ask_v1_insights_ask_post",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns",
+      "operation_id": "create_campaign_v1_campaigns_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/campaigns",
+      "operation_id": "list_campaigns_v1_campaigns_get",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/campaigns/{campaign_id}",
+      "operation_id": "get_campaign_v1_campaigns__campaign_id__get",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/campaigns/{campaign_id}/template",
+      "operation_id": "edit_campaign_v1_campaigns__campaign_id__template_put",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns/{campaign_id}/approve",
+      "operation_id": "approve_campaign_v1_campaigns__campaign_id__approve_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns/{campaign_id}/send",
+      "operation_id": "send_campaign_v1_campaigns__campaign_id__send_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns/{campaign_id}/retry",
+      "operation_id": "retry_campaign_v1_campaigns__campaign_id__retry_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns/{campaign_id}/recipients/{patient_id}/delivery",
+      "operation_id": "resolve_delivery_v1_campaigns__campaign_id__recipients__patient_id__delivery_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/campaigns/{campaign_id}/cancel",
+      "operation_id": "cancel_campaign_v1_campaigns__campaign_id__cancel_post",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/campaigns/{campaign_id}/results",
+      "operation_id": "campaign_results_v1_campaigns__campaign_id__results_get",
+      "tags": [
+        "campaigns"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/usage",
+      "operation_id": "usage_v1_usage_get",
+      "tags": [
+        "insights"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me",
+      "operation_id": "me_v1_me_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/appointments",
+      "operation_id": "my_appointments_v1_me_appointments_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/me/appointments",
+      "operation_id": "book_v1_me_appointments_post",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/treatments",
+      "operation_id": "my_treatments_v1_me_treatments_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/loyalty",
+      "operation_id": "my_loyalty_v1_me_loyalty_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/me/offers/seen",
+      "operation_id": "offers_seen_v1_me_offers_seen_post",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/consents",
+      "operation_id": "my_consent_prompt_v1_me_consents_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/me/consents/{purpose}",
+      "operation_id": "set_my_consent_v1_me_consents__purpose__put",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/me/chat",
+      "operation_id": "my_chat_v1_me_chat_post",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/chat/{thread_id}",
+      "operation_id": "my_thread_v1_me_chat__thread_id__get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/workshops",
+      "operation_id": "my_workshops_v1_me_workshops_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/me/workshops/{workshop_id}",
+      "operation_id": "sign_up_v1_me_workshops__workshop_id__post",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/me/workshops/{workshop_id}",
+      "operation_id": "withdraw_v1_me_workshops__workshop_id__delete",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/practice",
+      "operation_id": "my_practice_v1_me_practice_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/slots",
+      "operation_id": "my_slots_v1_me_slots_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/calendar-link",
+      "operation_id": "my_calendar_link_v1_me_calendar_link_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/tests",
+      "operation_id": "my_tests_v1_me_tests_get",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/me/tests/{assignment_id}",
+      "operation_id": "answer_test_v1_me_tests__assignment_id__post",
+      "tags": [
+        "patient"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/inbox",
+      "operation_id": "list_conversations_v1_inbox_get",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/inbox/{conversation_id}",
+      "operation_id": "open_conversation_v1_inbox__conversation_id__get",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inbox/{conversation_id}/draft",
+      "operation_id": "draft_reply_v1_inbox__conversation_id__draft_post",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inbox/{conversation_id}/reply",
+      "operation_id": "send_reply_v1_inbox__conversation_id__reply_post",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/inbox/{conversation_id}/drafts/{draft_id}",
+      "operation_id": "discard_draft_v1_inbox__conversation_id__drafts__draft_id__delete",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/inbox/{conversation_id}/patient",
+      "operation_id": "link_patient_v1_inbox__conversation_id__patient_put",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inbox/{conversation_id}/close",
+      "operation_id": "close_conversation_v1_inbox__conversation_id__close_post",
+      "tags": [
+        "inbox"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/session",
+      "operation_id": "session_v1_session_get",
+      "tags": [
+        "session"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/session/email",
+      "operation_id": "add_own_email_v1_session_email_post",
+      "tags": [
+        "session"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in",
+      "operation_id": "sign_in_v1_auth_sign_in_post",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/code",
+      "operation_id": "code_v1_auth_code_post",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/link",
+      "operation_id": "use_link_v1_auth_link_post",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/enroll",
+      "operation_id": "enroll_v1_auth_enroll_post",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-out",
+      "operation_id": "sign_out_v1_auth_sign_out_post",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/team",
+      "operation_id": "team_v1_admin_team_get",
+      "tags": [
+        "auth",
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/team",
+      "operation_id": "add_member_v1_admin_team_post",
+      "tags": [
+        "auth",
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/team/{principal_id}/link",
+      "operation_id": "new_link_v1_admin_team__principal_id__link_post",
+      "tags": [
+        "auth",
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/team/{principal_id}",
+      "operation_id": "remove_member_v1_admin_team__principal_id__delete",
+      "tags": [
+        "auth",
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workshops",
+      "operation_id": "create_workshop_v1_workshops_post",
+      "tags": [
+        "workshops"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workshops",
+      "operation_id": "list_workshops_v1_workshops_get",
+      "tags": [
+        "workshops"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workshops/{workshop_id}/registrations",
+      "operation_id": "registrations_v1_workshops__workshop_id__registrations_get",
+      "tags": [
+        "workshops"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workshops/{workshop_id}/cancel",
+      "operation_id": "cancel_workshop_v1_workshops__workshop_id__cancel_post",
+      "tags": [
+        "workshops"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workshops/{workshop_id}/attendance",
+      "operation_id": "mark_attendance_v1_workshops__workshop_id__attendance_post",
+      "tags": [
+        "workshops"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/rules",
+      "operation_id": "platform_rules_v1_social_rules_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/accounts",
+      "operation_id": "connect_account_v1_social_accounts_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/accounts",
+      "operation_id": "list_accounts_v1_social_accounts_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/alerts",
+      "operation_id": "list_alerts_v1_social_alerts_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/alerts/{alert_id}/reply",
+      "operation_id": "reply_to_alert_v1_social_alerts__alert_id__reply_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/alerts/{alert_id}/ack",
+      "operation_id": "acknowledge_alert_v1_social_alerts__alert_id__ack_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/alerts/{alert_id}/notifications",
+      "operation_id": "alert_notifications_v1_social_alerts__alert_id__notifications_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/alerts/{alert_id}/resolve",
+      "operation_id": "resolve_alert_v1_social_alerts__alert_id__resolve_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/social/accounts/{account_id}",
+      "operation_id": "disable_account_v1_social_accounts__account_id__delete",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/publications",
+      "operation_id": "create_publication_v1_social_publications_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/publications",
+      "operation_id": "list_publications_v1_social_publications_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/publications/calendar",
+      "operation_id": "publication_calendar_v1_social_publications_calendar_get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/publications/{publication_id}",
+      "operation_id": "get_publication_v1_social_publications__publication_id__get",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/publications/{publication_id}/approve",
+      "operation_id": "approve_publication_v1_social_publications__publication_id__approve_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/publications/{publication_id}/publish",
+      "operation_id": "publish_publication_v1_social_publications__publication_id__publish_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/social/publications/{publication_id}/schedule",
+      "operation_id": "schedule_publication_v1_social_publications__publication_id__schedule_put",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/publications/{publication_id}/cancel",
+      "operation_id": "cancel_publication_v1_social_publications__publication_id__cancel_post",
+      "tags": [
+        "social"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/professionals",
+      "operation_id": "add_professional_v1_admin_professionals_post",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/professionals",
+      "operation_id": "list_professionals_v1_admin_professionals_get",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/professionals/{professional_id}",
+      "operation_id": "disable_professional_v1_admin_professionals__professional_id__delete",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/document-types",
+      "operation_id": "document_types_v1_clinical_document_types_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/patients/{patient_id}/documents",
+      "operation_id": "write_document_v1_clinical_patients__patient_id__documents_post",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/documents",
+      "operation_id": "list_documents_v1_clinical_patients__patient_id__documents_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/documents/{document_id}",
+      "operation_id": "get_document_v1_clinical_documents__document_id__get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/patients/{patient_id}/files",
+      "operation_id": "upload_file_v1_clinical_patients__patient_id__files_post",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/files",
+      "operation_id": "list_files_v1_clinical_patients__patient_id__files_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/files/{file_id}",
+      "operation_id": "download_file_v1_clinical_files__file_id__get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/follow-up",
+      "operation_id": "needing_attention_v1_clinical_follow_up_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/briefing",
+      "operation_id": "session_briefing_v1_clinical_patients__patient_id__briefing_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/follow-up",
+      "operation_id": "patient_follow_up_v1_clinical_patients__patient_id__follow_up_get",
+      "tags": [
+        "clinical"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/instrument-templates",
+      "operation_id": "templates_v1_clinical_instrument_templates_get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/instruments",
+      "operation_id": "create_instrument_v1_clinical_instruments_post",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/instruments",
+      "operation_id": "list_instruments_v1_clinical_instruments_get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/instruments/from-template",
+      "operation_id": "create_from_template_v1_clinical_instruments_from_template_post",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/instruments/{instrument_id}",
+      "operation_id": "get_instrument_v1_clinical_instruments__instrument_id__get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/clinical/instruments/{instrument_id}",
+      "operation_id": "revise_instrument_v1_clinical_instruments__instrument_id__put",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/clinical/instruments/{instrument_id}",
+      "operation_id": "retire_instrument_v1_clinical_instruments__instrument_id__delete",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/patients/{patient_id}/instrument-results",
+      "operation_id": "administer_v1_clinical_patients__patient_id__instrument_results_post",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/instrument-results",
+      "operation_id": "list_results_v1_clinical_patients__patient_id__instrument_results_get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/instrument-results/{result_id}",
+      "operation_id": "get_result_v1_clinical_instrument_results__result_id__get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/clinical/patients/{patient_id}/assignments",
+      "operation_id": "assign_v1_clinical_patients__patient_id__assignments_post",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clinical/patients/{patient_id}/assignments",
+      "operation_id": "list_assignments_v1_clinical_patients__patient_id__assignments_get",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/clinical/assignments/{assignment_id}",
+      "operation_id": "cancel_assignment_v1_clinical_assignments__assignment_id__delete",
+      "tags": [
+        "instruments"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/agenda/professionals/{professional_id}/hours",
+      "operation_id": "set_hours_v1_agenda_professionals__professional_id__hours_put",
+      "tags": [
+        "agenda"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agenda/professionals/{professional_id}/hours",
+      "operation_id": "get_hours_v1_agenda_professionals__professional_id__hours_get",
+      "tags": [
+        "agenda"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agenda/slots",
+      "operation_id": "slots_v1_agenda_slots_get",
+      "tags": [
+        "agenda"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agenda",
+      "operation_id": "view_v1_agenda_get",
+      "tags": [
+        "agenda"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agenda/professionals/{professional_id}/calendar-link",
+      "operation_id": "calendar_link_v1_agenda_professionals__professional_id__calendar_link_post",
+      "tags": [
+        "agenda"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/on-call",
+      "operation_id": "add_contact_v1_admin_on_call_post",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/on-call",
+      "operation_id": "list_contacts_v1_admin_on_call_get",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/on-call/{contact_id}",
+      "operation_id": "disable_contact_v1_admin_on_call__contact_id__delete",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/privacy/cases",
+      "operation_id": "open_case_v1_privacy_cases_post",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/privacy/cases",
+      "operation_id": "list_cases_v1_privacy_cases_get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/privacy/cases/{case_id}",
+      "operation_id": "get_case_v1_privacy_cases__case_id__get",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/privacy/cases/{case_id}/steps/{step}",
+      "operation_id": "complete_step_v1_privacy_cases__case_id__steps__step__post",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/privacy/cases/{case_id}/close",
+      "operation_id": "close_case_v1_privacy_cases__case_id__close_post",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "operation_id": "healthz_healthz_get",
+      "tags": [
+        "ops"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/readyz",
+      "operation_id": "readyz_readyz_get",
+      "tags": [
+        "ops"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agents",
+      "operation_id": "list_agents_v1_agents_get",
+      "tags": [
+        "agents"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/route",
+      "operation_id": "route_v1_route_post",
+      "tags": [
+        "orchestration"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat",
+      "operation_id": "chat_v1_chat_post",
+      "tags": [
+        "orchestration"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/stream",
+      "operation_id": "chat_stream_v1_chat_stream_post",
+      "tags": [
+        "orchestration"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/knowledge/documents",
+      "operation_id": "add_document_v1_knowledge_documents_post",
+      "tags": [
+        "knowledge"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/knowledge/documents",
+      "operation_id": "list_documents_v1_knowledge_documents_get",
+      "tags": [
+        "knowledge"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/knowledge/documents/{doc_id}",
+      "operation_id": "delete_document_v1_knowledge_documents__doc_id__delete",
+      "tags": [
+        "knowledge"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/threads/{thread_id}",
+      "operation_id": "thread_status_v1_threads__thread_id__get",
+      "tags": [
+        "orchestration"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/threads/{thread_id}",
+      "operation_id": "delete_thread_v1_threads__thread_id__delete",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/threads",
+      "operation_id": "delete_all_threads_v1_threads_delete",
+      "tags": [
+        "privacy"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/knowledge/search",
+      "operation_id": "search_knowledge_v1_knowledge_search_post",
+      "tags": [
+        "knowledge"
+      ]
+    }
+  ],
+  "scope": "Generated without application startup, accounts or outbound providers; existence does not prove functional acceptance."
+}

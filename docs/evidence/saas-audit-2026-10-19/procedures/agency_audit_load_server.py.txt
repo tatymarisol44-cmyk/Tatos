@@ -1,0 +1,30 @@
+from pathlib import Path
+import asyncio,os,json
+from pydantic import SecretStr
+from orchestrator.api.app import create_app
+from orchestrator.config import Settings
+import uvicorn
+
+def factory():
+    root=Path(__file__).resolve().parent/'agency-audit-2026-10-19'
+    repo=Path(r'C:\Users\momoy\Desktop\VS CODE\AGENTES\agency-orchestrator')
+    state=json.loads((root/'postgres-state.json').read_text())
+    database=os.environ['AGENCY_AUDIT_LOAD_DB']
+    assert database.startswith('agency_load_') and database.replace('_','').isalnum()
+    url=state['test_postgres_url'].rsplit('/',1)[0]+'/'+database
+    assert '@127.0.0.1:' in url
+    (root/f"load-app-{os.environ['AGENCY_AUDIT_LOAD_PORT']}.pid").write_text(str(os.getpid()))
+    settings=Settings(_env_file=None,app_env='test',agents_dir=repo/'tests/fixtures/agents',
+        llm_backend='fake',fake_llm_latency_ms=80,router_use_llm=False,
+        embedding_backend='hashing',vector_backend='memory',checkpointer_backend='postgres',
+        postgres_url=SecretStr(url),database_url=SecretStr(url.replace('postgresql://','postgresql+psycopg://',1)),
+        db_auto_migrate=True,postgres_pool_size=5,postgres_max_overflow=2,
+        api_keys='audit-load-only:synthetic-load,second-synthetic-only:synthetic-other',
+        rate_limit_per_minute=100000,max_inflight_model_requests=8,
+        outbox_interval_seconds=0,media_dir=root/'load-media')
+    return create_app(settings)
+
+if __name__=='__main__':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    port=int(os.environ['AGENCY_AUDIT_LOAD_PORT'])
+    uvicorn.run(factory(),host='127.0.0.1',port=port,loop='none',log_level='warning',access_log=False)

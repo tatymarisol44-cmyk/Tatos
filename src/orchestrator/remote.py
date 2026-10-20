@@ -62,13 +62,19 @@ def card_to_spec(base_url: str, card: dict[str, Any]) -> AgentSpec:
     if not slug:
         raise ValueError("agent card name has no usable characters")
 
-    skills = [s for s in card.get("skills") or [] if isinstance(s, dict)][:20]
+    raw_skills = card.get("skills")
+    if raw_skills is not None and not isinstance(raw_skills, list):
+        raise ValueError("agent card skills must be a list")
+    skills = [s for s in raw_skills or [] if isinstance(s, dict)][:20]
     skill_lines = []
     for skill in skills:
         if not _text(skill.get("name"), 80):
             continue
         line = f"- {_text(skill.get('name'), 80)}: {_text(skill.get('description'), 300)}"
-        tags = [t for t in skill.get("tags") or [] if isinstance(t, str)][:10]
+        raw_tags = skill.get("tags")
+        if raw_tags is not None and not isinstance(raw_tags, list):
+            raise ValueError("agent card skill tags must be a list")
+        tags = [t[:80] for t in raw_tags or [] if isinstance(t, str)][:10]
         skill_lines.append(line + (f" (tags: {', '.join(tags)})" if tags else ""))
     # Markdown shaped like the local agents, so the same index text and (if the remote
     # agent is down) a local fallback prompt can be built from it.
@@ -88,21 +94,25 @@ def card_to_spec(base_url: str, card: dict[str, Any]) -> AgentSpec:
     )
 
 
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _reply_text(result: Any) -> str:
     """Text of a `message/send` result, which may be a Message or a Task."""
     if not isinstance(result, dict):
         return ""
     parts: list[Any] = []
     if result.get("kind") == "message":
-        parts = list(result.get("parts") or [])
+        parts = _list(result.get("parts"))
     elif result.get("kind") == "task":
-        for artifact in result.get("artifacts") or []:
+        for artifact in _list(result.get("artifacts")):
             if isinstance(artifact, dict):
-                parts.extend(artifact.get("parts") or [])
+                parts.extend(_list(artifact.get("parts")))
         status = result.get("status")
         message = status.get("message") if isinstance(status, dict) else None
         if not parts and isinstance(message, dict):
-            parts = list(message.get("parts") or [])
+            parts = _list(message.get("parts"))
     texts = [p["text"] for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)]
     return "\n".join(texts).strip()
 

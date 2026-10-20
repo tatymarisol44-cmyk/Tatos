@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.12.24"
           enable-cache: true
       - run: uv sync
       - run: uv run ruff format --check .
@@ -61,6 +62,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.12.24"
           enable-cache: true
           python-version: ${{ matrix.python }}
       - run: uv sync
@@ -103,6 +105,7 @@ jobs:
           submodules: recursive
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.12.24"
           enable-cache: true
       - run: uv sync
       - run: uv run agency eval --min-top1 0.50 --min-recall 0.80 --output eval-report.json
@@ -147,6 +150,7 @@ jobs:
           cat agent.log; exit 1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
+          version: "0.12.24"
           enable-cache: true
       - run: uv sync
       # The Python orchestrator discovers the Java agent, routes to it and parses its replies.
@@ -169,6 +173,18 @@ jobs:
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
           tar xzf gitleaks.tar.gz gitleaks
           ./gitleaks git --no-banner --redact --exit-code 1 .
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.24"
+      - name: Audit every known Python runtime vulnerability
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file runtime-requirements.txt
+          uvx --from pip-audit==2.10.1 pip-audit --disable-pip --no-deps --strict -r runtime-requirements.txt --format json --output dependency-audit.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && hashFiles('dependency-audit.json') != ''
+        with:
+          name: dependency-audit
+          path: dependency-audit.json
       # Trivy resolves the Java agent's POMs; fetching them from Maven Central at scan time
       # hits its rate limit (429) and aborts the scan, even for POMs Maven itself never
       # needs. So: resolve the dependencies first (cached), then scan offline from that
@@ -269,7 +285,9 @@ jobs:
           push: false
           provenance: false
           tags: scan/api:${{ github.sha }}
-          build-args: VERSION=${{ steps.meta.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan API image
@@ -323,7 +341,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.meta.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
           provenance: true
           sbom: true
           cache-from: |

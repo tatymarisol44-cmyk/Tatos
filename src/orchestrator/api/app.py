@@ -56,7 +56,6 @@ from orchestrator.api.schemas import (
     RouteRequest,
 )
 from orchestrator.api.security import (
-    RateLimiter,
     build_limiter,
     require_staff,
     require_tenant,
@@ -158,8 +157,13 @@ def create_app(
                 worker.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await worker
-            await orch.close()
-            await app.state.limiter.close()
+            try:
+                await orch.close()
+            finally:
+                try:
+                    await app.state.limiter.close()
+                finally:
+                    await app.state.auth_limiter.close()
 
     app = FastAPI(
         title="Agency Orchestrator",
@@ -169,8 +173,14 @@ def create_app(
     )
     app.state.settings = settings
     app.state.limiter = build_limiter(settings)
-    # Sign-in attempts per client address; one instance serves this deployment (ADR 0024).
-    app.state.auth_limiter = RateLimiter(settings.auth_rate_per_minute)
+    # Shared across replicas when Redis is configured; separate from tenant budgets.
+    # Password attempts fail closed on Redis outages; personal emergency keys still work.
+    app.state.auth_limiter = build_limiter(
+        settings,
+        per_minute=settings.auth_rate_per_minute,
+        prefix="agency:auth-ratelimit:",
+        on_outage="closed",
+    )
     app.add_middleware(
         BodySizeLimit,
         max_bytes=settings.max_body_bytes,
@@ -181,7 +191,11 @@ def create_app(
             + 64 * 1024,
         },
     )
-    app.add_middleware(SecurityHeaders, hsts_max_age_seconds=settings.hsts_max_age_seconds)
+    app.add_middleware(
+        SecurityHeaders,
+        hsts_max_age_seconds=settings.hsts_max_age_seconds,
+        revision=settings.build_revision,
+    )
     app.add_middleware(ModelConcurrencyLimit, max_inflight=settings.max_inflight_model_requests)
     app.add_middleware(RequestMetrics)  # outermost: times everything, 413s and 401s too
     # Cross-site browser calls only from the exact origins configured; none by default.
