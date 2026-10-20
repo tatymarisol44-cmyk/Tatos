@@ -27,6 +27,7 @@ LABEL org.opencontainers.image.title="agency-orchestrator" \
 # ffmpeg renders the marketing videos (orchestrator.creatives): MP4 with H.264, as TikTok
 # requires. It runs as a separate program, never linked into the Python process.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 app

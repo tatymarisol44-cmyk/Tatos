@@ -1,0 +1,38 @@
+{
+  "source_image": "python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f",
+  "read_only_registry_scan": true,
+  "fixed_findings": [
+    {
+      "VulnerabilityID": "CVE-2026-103111",
+      "PkgName": "libpcre2-8-0",
+      "InstalledVersion": "10.46-1~deb13u2",
+      "FixedVersion": "10.46-1~deb13u3",
+      "Severity": "HIGH",
+      "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-103111"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-84782",
+      "PkgName": "libssl3t64",
+      "InstalledVersion": "3.5.7-1~deb13u2",
+      "FixedVersion": "3.5.7-1~deb13u3",
+      "Severity": "HIGH",
+      "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-84782"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-84782",
+      "PkgName": "openssl",
+      "InstalledVersion": "3.5.7-1~deb13u2",
+      "FixedVersion": "3.5.7-1~deb13u3",
+      "Severity": "HIGH",
+      "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-84782"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-84782",
+      "PkgName": "openssl-provider-legacy",
+      "InstalledVersion": "3.5.7-1~deb13u2",
+      "FixedVersion": "3.5.7-1~deb13u3",
+      "Severity": "HIGH",
+      "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-84782"
+    }
+  ]
+}
