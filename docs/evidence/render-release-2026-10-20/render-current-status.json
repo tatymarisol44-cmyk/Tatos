@@ -1,0 +1,54 @@
+{
+  "recorded_at_utc": "2026-10-20T18:24:22.215586+00:00",
+  "service_id": "srv-db6sqj0n74is738tm8jg",
+  "service_name": "agency-api",
+  "configured_images": {
+    "/imagePath": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator@sha256:62ef4b98f4157fb9ffc8465212d109412da98090bbff06614a4ebba93e744dce"
+  },
+  "public_configuration": {
+    "APP_ENV": "prod",
+    "LLM_BACKEND": "fake",
+    "EMBEDDING_BACKEND": "hashing",
+    "VECTOR_BACKEND": "qdrant",
+    "RATE_LIMIT_BACKEND": "redis",
+    "CHECKPOINTER_BACKEND": "postgres",
+    "DB_AUTO_MIGRATE": "true",
+    "PUBLIC_BASE_URL": "https://agency-api-irim.onrender.com"
+  },
+  "seal_key_matches_private_copy": true,
+  "deployments": [
+    {
+      "id": "dep-dbbr2ju1egvs73b181ug",
+      "status": "live",
+      "createdAt": "2026-10-20T18:22:07.430032Z",
+      "finishedAt": "2026-10-20T18:23:02.84038Z",
+      "trigger": "api",
+      "image": {
+        "ref": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator@sha256:62ef4b98f4157fb9ffc8465212d109412da98090bbff06614a4ebba93e744dce",
+        "sha": "sha256:e391210211fb21abe45cf06848c51a9af95bd15ec4a27ebfcf92ae3802ec2d85"
+      }
+    },
+    {
+      "id": "dep-db8ngc3bc2fs73bgss50",
+      "status": "deactivated",
+      "createdAt": "2026-10-16T01:04:48.429972Z",
+      "finishedAt": "2026-10-16T01:05:41.449408Z",
+      "trigger": "api",
+      "image": {
+        "ref": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator:main",
+        "sha": "sha256:20a753a5b9eacc5610aca313b7e3f00a7186cb6a89be4ed78f22713e8e3c8b63"
+      }
+    },
+    {
+      "id": "dep-db8k9hrl550s73bn98s0",
+      "status": "deactivated",
+      "createdAt": "2026-10-15T21:25:27.661285Z",
+      "finishedAt": "2026-10-15T21:26:21.581409Z",
+      "trigger": "api",
+      "image": {
+        "ref": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator:main",
+        "sha": "sha256:2849974e24acdcd949159ed3e2c5fde0a7deed73812d946ae38334fd3e2a818c"
+      }
+    }
+  ]
+}

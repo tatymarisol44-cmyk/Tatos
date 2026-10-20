@@ -1,0 +1,28 @@
+{
+  "recorded_at_utc": "2026-10-20T18:18:29.295713+00:00",
+  "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "platforms": [
+    {
+      "architecture": "amd64",
+      "os": "linux",
+      "manifest_digest": "sha256:e391210211fb21abe45cf06848c51a9af95bd15ec4a27ebfcf92ae3802ec2d85",
+      "config_digest": "sha256:554ed3d2f0762323f4bfcbc99b84b4fa54924ccb0bd234ab23e5c3a2adb9d9d9",
+      "oci_revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "build_revision_env_matches": true
+    },
+    {
+      "architecture": "arm64",
+      "os": "linux",
+      "manifest_digest": "sha256:fd85627a0968df8e605d9e6ae2eb116a207d45a9924f2b4a53b57ec1df86076f",
+      "config_digest": "sha256:6922ec19e0e3189ca9a1e09390390d9419fa8e1ff925df5ea28430853c57500e",
+      "oci_revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "build_revision_env_matches": true
+    }
+  ],
+  "signature_verified_here": false,
+  "image_available": true,
+  "image_reference": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator@sha256:62ef4b98f4157fb9ffc8465212d109412da98090bbff06614a4ebba93e744dce",
+  "index_digest": "sha256:62ef4b98f4157fb9ffc8465212d109412da98090bbff06614a4ebba93e744dce",
+  "manifest_digest_verified": true,
+  "attestation_manifest_count": 2
+}

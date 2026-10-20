@@ -1,0 +1,33 @@
+{
+  "recorded_at_utc": "2026-10-20T13:46:18.577505+00:00",
+  "commit": "867184d3cbd187912c0ae4255269636c4fc35fdc",
+  "commands": [
+    {
+      "name": "build_first",
+      "exit_code": 0
+    },
+    {
+      "name": "build_second",
+      "exit_code": 0
+    }
+  ],
+  "production_access": false,
+  "reproducible_wheel_sha256": "5e612be2961e9d836ead618839956736e5d5be468bf2f571dffbbe8a4545b1ab",
+  "packaged_migrations": 24,
+  "probe_exit_code": 0,
+  "probe": {
+    "passed": true,
+    "checks": [
+      "/app",
+      "/static/consultorio.js",
+      "/healthz",
+      "/readyz",
+      "unauthenticated denied",
+      "authenticated catalog",
+      "A2A no-store"
+    ],
+    "non_editable_site_packages": true,
+    "migration_head": "0024",
+    "aiohttp": "3.14.5"
+  }
+}

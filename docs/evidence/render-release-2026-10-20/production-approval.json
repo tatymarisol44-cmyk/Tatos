@@ -1,0 +1,13 @@
+{
+  "recorded_at_utc": "2026-10-20T18:21:54.701464+00:00",
+  "run_id": 39439882578,
+  "commit": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "image_reference": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator@sha256:62ef4b98f4157fb9ffc8465212d109412da98090bbff06614a4ebba93e744dce",
+  "production_environment_id": 23894773905,
+  "review_state": "approved",
+  "review_via_normal_github_api": true,
+  "protection_rules_changed": false,
+  "new_production_backup_created": true,
+  "deployment_scope": "container only, unchanged DB schema and migrations",
+  "deploy_not_yet_confirmed_live": true
+}

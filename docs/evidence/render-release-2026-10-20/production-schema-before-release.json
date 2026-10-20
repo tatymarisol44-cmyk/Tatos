@@ -1,0 +1,12 @@
+{
+  "recorded_at_utc": "2026-10-20T13:46:17.646621+00:00",
+  "mode": "read_only_schema_only",
+  "row_export": false,
+  "database_matches_render": true,
+  "tls_certificate_verification": "verify-full",
+  "candidate_schema_head": "0024",
+  "transaction_read_only": "on",
+  "server_version": "17.11",
+  "schema_head": "0024",
+  "schema_matches_candidate": true
+}

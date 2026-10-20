@@ -1,0 +1,22 @@
+{
+  "recorded_at_utc": "2026-10-20T18:17:50.815352+00:00",
+  "database_matches_render": true,
+  "seal_key_matches_render": true,
+  "connection_certificate_verified": true,
+  "production_writes": false,
+  "backup_restored_here": false,
+  "transaction_read_only": "on",
+  "server_version": "17.11",
+  "database_schema_head": "0024",
+  "candidate_schema_head": "0024",
+  "backup_created": true,
+  "backup_file": "pre-release-20261020T181752Z.agbk",
+  "backup_sha256": "be2f4733c4397cf9f365e62e219627f20b66718d0891464ef19667e45acbb80b",
+  "backup_bytes": 10633,
+  "backup_table_count": 51,
+  "carried_secret_names": [
+    "PSEUDONYM_KEY"
+  ],
+  "backup_revision": "0024",
+  "existing_backups_removed": false
+}

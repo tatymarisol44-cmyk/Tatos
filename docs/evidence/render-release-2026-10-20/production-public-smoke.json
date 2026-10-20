@@ -1,0 +1,139 @@
+{
+  "recorded_at_utc": "2026-10-20T18:23:16.147984+00:00",
+  "expected_revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "mode": "public_smoke_with_empty_auth_payload",
+  "authentication_flow_run": false,
+  "business_rows_created": false,
+  "transient_auth_rate_limit_probe": true,
+  "http": [
+    {
+      "path": "/healthz",
+      "status": 200,
+      "expected_status": 200,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "a29ee2b15c494311c52521766e44af56a3ad2248e7a8ab465e5206463c13d288",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": null,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    },
+    {
+      "path": "/readyz",
+      "status": 200,
+      "expected_status": 200,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "de675e30855556c680c27d4435b7510dad6b9a01b1cf0e7c87eab2e6be4797aa",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": null,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    },
+    {
+      "path": "/app",
+      "status": 200,
+      "expected_status": 200,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "57b5149b03dd86aff89d065d2abd79d8c51b10b262bd8d095451e5b2915f3e48",
+      "security_headers": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": null,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    },
+    {
+      "path": "/static/consultorio.js",
+      "status": 200,
+      "expected_status": 200,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "ed8cc3a8c8735e8fa6d52d82b40f761d9309ad909a881fadc3c5fce08ed7c1fa",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": null,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      },
+      "matches_exact_git_revision_asset": true
+    },
+    {
+      "path": "/static/ui.css",
+      "status": 200,
+      "expected_status": 200,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "bff5a12f917040283474745f286eea8b1d620784700a785c91ed01d9672b1f41",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": null,
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    },
+    {
+      "path": "/v1/crm/patients",
+      "status": 401,
+      "expected_status": 401,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "a49c6f3a3f52db601fc44289af281b0f525449240ed0e8b2b2a75f3cd918d9b5",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": "no-store",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    },
+    {
+      "path": "/v1/agenda",
+      "status": 401,
+      "expected_status": 401,
+      "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "content_sha256": "a49c6f3a3f52db601fc44289af281b0f525449240ed0e8b2b2a75f3cd918d9b5",
+      "security_headers": {
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Cache-Control": "no-store",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      }
+    }
+  ],
+  "browser": [
+    {
+      "viewport": [
+        1280,
+        800
+      ],
+      "login_fields_visible": true,
+      "horizontal_overflow": false,
+      "javascript_page_errors": [],
+      "credentials_entered": false
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "login_fields_visible": true,
+      "horizontal_overflow": false,
+      "javascript_page_errors": [],
+      "credentials_entered": false
+    }
+  ],
+  "passed": true,
+  "empty_auth_payload": {
+    "http_status": 422,
+    "expected_status": 422,
+    "revision": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+    "cache_control": "no-store",
+    "credentials_submitted": false
+  }
+}

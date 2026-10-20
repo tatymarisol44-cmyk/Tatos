@@ -1,0 +1,224 @@
+{
+  "recorded_at_utc": "2026-10-20T18:23:36.206529+00:00",
+  "pull": {
+    "number": 32,
+    "draft": false,
+    "state": "closed",
+    "mergeable": null,
+    "mergeable_state": "unknown",
+    "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/pull/32"
+  },
+  "head_sha": "8a69449808f2910de6f271a75f331cd59f8f3f99",
+  "main_sha": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "release_sha": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "runs": [
+    {
+      "id": 39439882578,
+      "name": "Deploy",
+      "head_sha": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39439882578",
+      "event": "workflow_run",
+      "jobs": [
+        {
+          "id": 118686616597,
+          "name": "resolve",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118686729492,
+          "name": "rehearsal",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118686729591,
+          "name": "single-node",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118686729646,
+          "name": "render",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118689051610,
+          "name": "production-render",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118689104622,
+          "name": "staging",
+          "status": "completed",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "id": 118689104627,
+          "name": "production",
+          "status": "completed",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "id": 118689287998,
+          "name": "production-vm",
+          "status": "completed",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "id": 118806004798,
+          "name": "Production deployment result",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        }
+      ]
+    },
+    {
+      "id": 39437142591,
+      "name": "CI",
+      "head_sha": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39437142591",
+      "event": "push",
+      "jobs": [
+        {
+          "id": 118677039135,
+          "name": "Lint & types",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039536,
+          "name": "Tests (py3.13)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039715,
+          "name": "Security scan",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039734,
+          "name": "Validate Kubernetes manifests",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039796,
+          "name": "Tests (py3.12)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039862,
+          "name": "Java A2A agent (tests + live contract)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118677039899,
+          "name": "Routing eval gate",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118680860698,
+          "name": "Build, scan and push images",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        }
+      ]
+    },
+    {
+      "id": 39435373496,
+      "name": "CI",
+      "head_sha": "8a69449808f2910de6f271a75f331cd59f8f3f99",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/tatymarisol44-cmyk/Tatos/actions/runs/39435373496",
+      "event": "pull_request",
+      "jobs": [
+        {
+          "id": 118670877541,
+          "name": "Routing eval gate",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670877893,
+          "name": "Tests (py3.13)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670878045,
+          "name": "Lint & types",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670878120,
+          "name": "Tests (py3.12)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670878276,
+          "name": "Security scan",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670878297,
+          "name": "Validate Kubernetes manifests",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118670878547,
+          "name": "Java A2A agent (tests + live contract)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "id": 118674012574,
+          "name": "Build, scan and push images",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": []
+        }
+      ]
+    }
+  ]
+}

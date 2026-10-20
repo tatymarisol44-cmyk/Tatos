@@ -1,0 +1,254 @@
+{
+  "recorded_at_utc": "2026-10-20T18:18:28.383438+00:00",
+  "run_id": 39437142591,
+  "artifacts": [
+    {
+      "name": "test-results-py3.12",
+      "id": 12272737564,
+      "zip_sha256_verified": true,
+      "digest": "sha256:2985612156d5e107d32a13956883b9914836fc92fd6189862280c27db0465cb7",
+      "tests": {
+        "total": 1125,
+        "failures": 0,
+        "errors": 0,
+        "skips": [
+          {
+            "test": "tests.test_migrations.test_replicas_migrating_together_do_not_collide[sqlite]",
+            "reason": "the advisory lock is a Postgres feature; SQLite is single-process dev"
+          },
+          {
+            "test": "tests.test_remote_live.test_discovers_the_java_agent",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_jvm_questions_are_routed_and_answered_by_java",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_team_mode_mixes_java_and_local_specialists",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_protocol_errors_surface_as_remote_errors",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          }
+        ],
+        "passed": 1120
+      },
+      "line_coverage_pct": 95.34
+    },
+    {
+      "name": "eval-report",
+      "id": 12272681440,
+      "zip_sha256_verified": true,
+      "digest": "sha256:c2dab038abcb6c2f08a44b1ce31592e980566b95d3a6c305721f6de2b8e1e0f7",
+      "offline_routing_eval": {
+        "total": 40,
+        "top1_accuracy": 0.575,
+        "recall_at_k": 0.875,
+        "top1_by_lang": {
+          "en": 0.647,
+          "es": 0.167
+        },
+        "latency_ms_p50": 29.5,
+        "latency_ms_p95": 32.2,
+        "failures": [
+          {
+            "question": "Design a scalable REST API and database schema for a multi-tenant backend service",
+            "expected": [
+              "engineering-api-platform-engineer",
+              "engineering-backend-architect",
+              "engineering-software-architect"
+            ],
+            "got": "design-ui-designer",
+            "recalled": true
+          },
+          {
+            "question": "Our Postgres queries are slow, which indexes should we add?",
+            "expected": [
+              "engineering-database-optimizer",
+              "engineering-database-reliability-engineer"
+            ],
+            "got": "project-management-experiment-tracker",
+            "recalled": true
+          },
+          {
+            "question": "Run a penetration test against our web application",
+            "expected": [
+              "security-appsec-engineer",
+              "security-penetration-tester"
+            ],
+            "got": "testing-api-tester",
+            "recalled": true
+          },
+          {
+            "question": "Rotate leaked API keys and manage secrets in a vault",
+            "expected": [
+              "security-secrets-credential-engineer"
+            ],
+            "got": "gis-web-gis-developer",
+            "recalled": false
+          },
+          {
+            "question": "Build a financial model and forecast revenue for next year",
+            "expected": [
+              "chief-financial-officer",
+              "finance-financial-analyst",
+              "finance-fpa-analyst"
+            ],
+            "got": "sales-pipeline-analyst",
+            "recalled": true
+          },
+          {
+            "question": "How can my company reduce its tax liability legally?",
+            "expected": [
+              "finance-tax-strategist"
+            ],
+            "got": "specialized-codebase-archaeologist",
+            "recalled": true
+          },
+          {
+            "question": "Write a product requirements document and prioritize the roadmap",
+            "expected": [
+              "product-manager",
+              "product-sprint-prioritizer"
+            ],
+            "got": "engineering-prompt-engineer",
+            "recalled": true
+          },
+          {
+            "question": "Build a level for my Unity game",
+            "expected": [
+              "game-designer",
+              "level-designer",
+              "unity-architect"
+            ],
+            "got": "unity-editor-tool-developer",
+            "recalled": true
+          },
+          {
+            "question": "Build an MCP server that exposes our internal tools to Claude",
+            "expected": [
+              "specialized-mcp-builder"
+            ],
+            "got": "engineering-rapid-prototyper",
+            "recalled": true
+          },
+          {
+            "question": "Translate our documentation into French and Spanish",
+            "expected": [
+              "engineering-i18n-engineer",
+              "language-translator"
+            ],
+            "got": "engineering-technical-writer",
+            "recalled": false
+          },
+          {
+            "question": "Build an Apple Vision Pro visionOS spatial app",
+            "expected": [
+              "visionos-spatial-engineer"
+            ],
+            "got": "macos-spatial-metal-engineer",
+            "recalled": true
+          },
+          {
+            "question": "Design a statistical analysis and hypothesis test for my experiment",
+            "expected": [
+              "academic-statistician",
+              "project-management-experiment-tracker"
+            ],
+            "got": "testing-test-results-analyzer",
+            "recalled": true
+          },
+          {
+            "question": "Necesito optimizar el SEO de mi sitio web para Google",
+            "expected": [
+              "marketing-seo-specialist"
+            ],
+            "got": "gis-web-gis-developer",
+            "recalled": false
+          },
+          {
+            "question": "Quiero hacer un pentest de mi aplicaci\u00f3n web",
+            "expected": [
+              "security-appsec-engineer",
+              "security-penetration-tester"
+            ],
+            "got": "gis-web-gis-developer",
+            "recalled": false
+          },
+          {
+            "question": "Dise\u00f1a una estrategia de contenido para TikTok",
+            "expected": [
+              "marketing-tiktok-strategist"
+            ],
+            "got": "paid-media-paid-social-strategist",
+            "recalled": true
+          },
+          {
+            "question": "Crea un contrato inteligente en Solidity",
+            "expected": [
+              "engineering-solidity-smart-contract-engineer"
+            ],
+            "got": "engineering-email-intelligence-engineer",
+            "recalled": true
+          },
+          {
+            "question": "Necesito un modelo financiero y proyecci\u00f3n de ingresos",
+            "expected": [
+              "chief-financial-officer",
+              "finance-financial-analyst",
+              "finance-fpa-analyst"
+            ],
+            "got": "academic-historian",
+            "recalled": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "dependency-audit",
+      "id": 12272631750,
+      "zip_sha256_verified": true,
+      "digest": "sha256:02160515b45387189161906e1554b3023f895e49b54f23c42f69651fe63583b3",
+      "dependency_count": 136,
+      "vulnerability_count": 0,
+      "skipped_dependencies": 0
+    },
+    {
+      "name": "test-results-py3.13",
+      "id": 12272247715,
+      "zip_sha256_verified": true,
+      "digest": "sha256:b526ab805a26ee0080176c783f6fef1e5bd1ef05f34b555317dd6dd11d2b994c",
+      "tests": {
+        "total": 1125,
+        "failures": 0,
+        "errors": 0,
+        "skips": [
+          {
+            "test": "tests.test_migrations.test_replicas_migrating_together_do_not_collide[sqlite]",
+            "reason": "the advisory lock is a Postgres feature; SQLite is single-process dev"
+          },
+          {
+            "test": "tests.test_remote_live.test_discovers_the_java_agent",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_jvm_questions_are_routed_and_answered_by_java",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_team_mode_mixes_java_and_local_specialists",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          },
+          {
+            "test": "tests.test_remote_live.test_protocol_errors_surface_as_remote_errors",
+            "reason": "set TEST_A2A_AGENT_URL to run"
+          }
+        ],
+        "passed": 1120
+      },
+      "line_coverage_pct": 95.31
+    }
+  ]
+}

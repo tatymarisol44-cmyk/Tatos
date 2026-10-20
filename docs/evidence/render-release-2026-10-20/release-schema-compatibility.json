@@ -1,0 +1,11 @@
+{
+  "live_source_commit": "b5db9c3dafa9d3ca3f220fcac7e3c1e19b245250",
+  "release_commit": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "changed_migration_or_schema_model_files": [],
+  "production_schema_revision": "0024",
+  "candidate_schema_revision": "0024",
+  "database_export_performed": false,
+  "production_update_scope": "container image only; existing configuration and seal key preserved",
+  "previous_image_reference": "ghcr.io/tatymarisol44-cmyk/agency-orchestrator@sha256:20a753a5b9eacc5610aca313b7e3f00a7186cb6a89be4ed78f22713e8e3c8b63",
+  "previous_image_layers_pulled_successfully_by_trivy": true
+}

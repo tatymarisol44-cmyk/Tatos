@@ -1,0 +1,25 @@
+{
+  "recorded_at_utc": "2026-10-20T18:27:51.190610+00:00",
+  "release_commit": "c7d3d356fc1675bd894dc829d0be1a1876bb9c5d",
+  "files": {
+    "docs/PRODUCCION_RENDER_2026-10-20.md": "f3f8c88f1f5df712abbd6aa4167c0636bc4afc1231099e5fe3094e9bda55de62",
+    "docs/evidence/render-release-2026-10-20/candidate-image-security-summary.json": "5be386150c69f6ecd964136e8265756c218e9ac6afcfc862e7b77a52650abd20",
+    "docs/evidence/render-release-2026-10-20/candidate-image.json": "0fb9eac3c37db14ba93ff8ac2702996e9cc0f290a5cbb4e00e5d4b9bc269cb00",
+    "docs/evidence/render-release-2026-10-20/ci-39437142591-summary.json": "dbc865bbf6a7797eb53bf588464b23f9af383410d169e0b132cf3edb4ce4c25a",
+    "docs/evidence/render-release-2026-10-20/github-status.json": "d55df2fe80c92e5811c32a5f247646987fca60d2722b5e3b003871e49a1ac4e0",
+    "docs/evidence/render-release-2026-10-20/package-validation.json": "abeaed2024627aaba032b3409808c9c50827a1c549fe5e55427167a429624800",
+    "docs/evidence/render-release-2026-10-20/production-approval.json": "707b259b40ccec3010bbe4523328321c538268fef152326e44b13677e6d8aa29",
+    "docs/evidence/render-release-2026-10-20/production-login-1280.png": "011aef5a5fa3da761cf43df31ad0ad4e6ac4537ba49a063642711a783664b204",
+    "docs/evidence/render-release-2026-10-20/production-login-390.png": "33fce6567efb223e53c927767e5b23746f69c4f36d589a5bf69cf880a8106bef",
+    "docs/evidence/render-release-2026-10-20/production-public-smoke.json": "8bb4b3dd79881e8fc2568f6df1c1de9998ac6a63dc2f8c32f328de2e213d8a88",
+    "docs/evidence/render-release-2026-10-20/production-readonly-backup.json": "65669a1561921972a8d91d50990ad8527260c7273a760cb3238ee0b1cf26a9c9",
+    "docs/evidence/render-release-2026-10-20/production-schema-before-release.json": "7093ba899606bbcd1edd7f930c5b8ae99ba001bece45f0442b2f3202c3844ce0",
+    "docs/evidence/render-release-2026-10-20/production-schema-readonly.json": "ac0400314f655fcc7cc6d42aa3246c5b726a74adcb90b0defa8a5fd2aa959718",
+    "docs/evidence/render-release-2026-10-20/release-evidence-secrets-scan.json": "bc2fa63cb5ba2122741b03d9c636a867962ff31df4fada22b36a073d655519eb",
+    "docs/evidence/render-release-2026-10-20/release-result.json": "7bdd01c9ab13d05f11ac85321fd368b14cf6fd332eff230b92403e71815940d5",
+    "docs/evidence/render-release-2026-10-20/release-schema-compatibility.json": "4cc35d047c92962b5575ad57bbc880121019a43ecefb1cff263b23c2426b2702",
+    "docs/evidence/render-release-2026-10-20/render-current-status.json": "f744a5e24fca880613297fb092ddc1175a15d711fa23bf86844e5b2136296e03",
+    "docs/evidence/render-release-2026-10-20/trivy-tool-provenance.json": "0295aa14123e8a3ef8a98cba0777e4f8f009a2e8549d7db461eaf7022258ab85"
+  },
+  "text_line_endings": "LF, matching Git blob representation"
+}
