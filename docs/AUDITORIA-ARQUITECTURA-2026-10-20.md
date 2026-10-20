@@ -2,7 +2,7 @@
 
 ## Alcance y conclusión
 
-Ampliación de la [auditoría funcional y operativa](AUDITORIA-SAAS-2026-10-19.md). Se revisaron backend, contratos, adaptadores, catálogo, interfaz, pruebas, empaquetado, herramientas locales y workflows. Los cambios se preparan en la revisión #29; no constituyen despliegue en Render ni certificación de ausencia absoluta de errores.
+Ampliación de la [auditoría funcional y operativa](AUDITORIA-SAAS-2026-10-19.md). Se revisaron backend, contratos, adaptadores, catálogo, interfaz, pruebas, empaquetado, herramientas locales y workflows. La ampliación se prepara en la revisión #31, posterior a #29 ya fusionada; no constituyen despliegue en Render ni certificación de ausencia absoluta de errores.
 
 El sistema es un monolito modular con adaptadores y algunos puertos. Esta revisión mejora su inversión de dependencias y corrige fallos reproducidos. No se presenta como una implementación completamente independiente de infraestructura: 31 módulos importan SQLAlchemy, varios combinan reglas de aplicación y persistencia, y el frontend principal sigue siendo un archivo grande.
 
