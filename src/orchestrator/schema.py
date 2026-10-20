@@ -32,6 +32,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     publishing,
     social,
     spend,
+    spend_store,
     staff_login,
     whatsapp_assistant,
     workshops,

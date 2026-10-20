@@ -69,3 +69,9 @@ def test_router_receives_retrieval_ports_without_importing_the_adapters() -> Non
     used = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     assert "orchestrator.retrieval" in used
     assert not used & {"orchestrator.embeddings", "orchestrator.vectorstore"}
+
+
+def test_budget_policy_and_ledger_port_use_only_the_standard_library() -> None:
+    import sys
+
+    assert imports(SRC / "budget.py") <= sys.stdlib_module_names
