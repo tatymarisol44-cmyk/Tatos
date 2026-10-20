@@ -121,12 +121,20 @@ def node(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _posix(path: Path) -> str:
+    """Use Git Bash paths before resolving any simulated executable on Windows."""
+    text = path.as_posix()
+    if len(text) > 1 and text[1] == ":":
+        return f"/{text[0].lower()}{text[2:]}"
+    return text
+
+
 def deploy(node: Path, image: str, **fail: str) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "PATH": f"{node / 'bin'}{os.pathsep}{os.environ['PATH']}",
-        "CALLS": str(node / "calls"),
-        "RUNNING": str(node / "running"),
+        "CALLS": _posix(node / "calls"),
+        "RUNNING": _posix(node / "running"),
         "UNSIGNED": fail.get("unsigned", "__none__"),
         "MISSING": fail.get("missing", "__none__"),
         "UNHEALTHY": fail.get("unhealthy", "__none__"),
@@ -136,7 +144,19 @@ def deploy(node: Path, image: str, **fail: str) -> subprocess.CompletedProcess[s
     bash = _bash()
     assert bash
     return subprocess.run(
-        [bash, str(node / "deploy.sh"), image, "5"],
+        [
+            bash,
+            "-c",
+            'export PATH="$1:$PATH"; '
+            'test "$(command -v curl)" = "$1/curl" || exit 97; '
+            'test "$(command -v docker)" = "$1/docker" || exit 97; '
+            'exec bash "$2" "$3" "$4"',
+            "isolated-deploy-test",
+            _posix(node / "bin"),
+            _posix(node / "deploy.sh"),
+            image,
+            "5",
+        ],
         env=env,
         capture_output=True,
         text=True,

@@ -1,0 +1,404 @@
+{
+  "openapi_operations": 157,
+  "modules": [
+    {
+      "module": "Acceso, equipo y roles",
+      "matched_test_files": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oidc": {
+          "passed": 19,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_saas_audit": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_staff_login": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Consultorio, historial, navegación y accesibilidad",
+      "matched_test_files": {
+        "tests.test_console_e2e": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_consultorio_e2e": {
+          "passed": 28,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_session": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Agenda y pacientes",
+      "matched_test_files": {
+        "tests.test_agenda": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_crm": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db_postgres": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_postgres_concurrency": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Historia, documentos, recetas e instrumentos",
+      "matched_test_files": {
+        "tests.test_clinical_files": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_clinical_records": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_instruments": {
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_prescriptions": {
+          "passed": 27,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_scales": {
+          "passed": 23,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Bandeja, guardias y derechos",
+      "matched_test_files": {
+        "tests.test_governance": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbox": {
+          "passed": 18,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oncall": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_privacy_cases": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Campañas, recordatorios y canales",
+      "matched_test_files": {
+        "tests.test_campaigns": {
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbound": {
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_reminders": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_whatsapp_assistant": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Publicaciones, creatividades y talleres",
+      "matched_test_files": {
+        "tests.test_creatives": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publication_calendar": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publishing": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_social": {
+          "passed": 20,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_workshops": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Catálogo, agentes, equipos y evaluación",
+      "matched_test_files": {
+        "tests.test_answer_eval": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_catalog": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote": {
+          "passed": 34,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_chaos": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_live": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 4
+        },
+        "tests.test_retrieval": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_router": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_team": {
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Conocimiento, memoria, consentimientos y evidencia",
+      "matched_test_files": {
+        "tests.test_knowledge": {
+          "passed": 33,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_memory": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    },
+    {
+      "module": "Persistencia, límites, recuperación y despliegue",
+      "matched_test_files": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backpressure": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup": {
+          "passed": 11,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup_restore": {
+          "passed": 1,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_checkpoint": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db_postgres": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_deploy_config": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_postgres_concurrency": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_render_profile": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_render_setup": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_resilience": {
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_rollout_script": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_single_node": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_spend": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "limitation": "Groups overlap. Matching files is evidence mapping, not every edge case or production acceptance."
+    }
+  ],
+  "browser_suites": {
+    "tests.test_console_e2e": {
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "tests.test_consultorio_e2e": {
+      "passed": 28,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "groups_overlap": true
+}

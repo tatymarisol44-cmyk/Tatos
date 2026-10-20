@@ -46,6 +46,7 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
+    case,
     delete,
     func,
     insert,
@@ -645,22 +646,39 @@ class StaffLogins:
             await self.audit.record(tenant, pid, "auth.sign_in.locked", f"principal/{pid}")
             raise SignInError()
         if not good:
-            failures = int(row["failed_attempts"]) + 1
-            values: dict[str, Any] = {"failed_attempts": failures}
-            if failures >= LOCK_AFTER:
-                values = {
-                    "failed_attempts": 0,
-                    "locked_until": utcnow() + timedelta(minutes=LOCK_MINUTES),
-                }
+            failed_at = utcnow()
+            failures = staff_logins.c.failed_attempts + 1
+            threshold = failures >= LOCK_AFTER
             async with self.db.engine.begin() as conn:
-                await conn.execute(update(staff_logins).where(where).values(**values))
+                # Increment the stored counter while holding the database's write
+                # lock. Concurrent password checks must not overwrite one another
+                # or clear a lock established since they read the account.
+                result = await conn.execute(
+                    update(staff_logins)
+                    .where(
+                        where,
+                        or_(
+                            staff_logins.c.locked_until.is_(None),
+                            staff_logins.c.locked_until <= failed_at,
+                        ),
+                    )
+                    .values(
+                        failed_attempts=case((threshold, 0), else_=failures),
+                        locked_until=case(
+                            (threshold, failed_at + timedelta(minutes=LOCK_MINUTES)),
+                            else_=None,
+                        ),
+                    )
+                    .returning(staff_logins.c.locked_until)
+                )
+                changed = result.first()
                 await self.audit.record_in(
                     conn,
                     tenant,
                     pid,
-                    "auth.password.wrong",
+                    "auth.password.wrong" if changed is not None else "auth.sign_in.locked",
                     f"principal/{pid}",
-                    details={"locked": "locked_until" in values},
+                    details={"locked": changed is None or changed.locked_until is not None},
                 )
             raise SignInError()
         async with self.db.engine.begin() as conn:

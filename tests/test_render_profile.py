@@ -161,6 +161,14 @@ def stage(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _posix(path: Path) -> str:
+    """Use Git Bash paths before resolving any simulated executable on Windows."""
+    text = path.as_posix()
+    if len(text) > 1 and text[1] == ":":
+        return f"/{text[0].lower()}{text[2:]}"
+    return text
+
+
 def deploy(
     stage: Path, image: str, statuses: tuple[str, ...] = ("live",), timeout: int = 5, **env: str
 ) -> subprocess.CompletedProcess[str]:
@@ -168,8 +176,8 @@ def deploy(
     run_env = {
         **os.environ,
         "PATH": f"{stage / 'bin'}{os.pathsep}{os.environ['PATH']}",
-        "CALLS": str(stage / "calls"),
-        "STATUSES": str(stage / "statuses"),
+        "CALLS": _posix(stage / "calls"),
+        "STATUSES": _posix(stage / "statuses"),
         "RENDER_API_KEY": "rnd_test",
         "RENDER_SERVICE_ID": "srv-test",
         "POLL_SECONDS": "0",
@@ -182,7 +190,19 @@ def deploy(
     bash = _bash()
     assert bash
     return subprocess.run(
-        [bash, str(stage / "render" / "deploy.sh"), image, str(timeout)],
+        [
+            bash,
+            "-c",
+            'export PATH="$1:$PATH"; '
+            'test "$(command -v curl)" = "$1/curl" || exit 97; '
+            'test "$(command -v docker)" = "$1/docker" || exit 97; '
+            'exec bash "$2" "$3" "$4"',
+            "isolated-deploy-test",
+            _posix(stage / "bin"),
+            _posix(stage / "render" / "deploy.sh"),
+            image,
+            str(timeout),
+        ],
         env=run_env,
         capture_output=True,
         text=True,

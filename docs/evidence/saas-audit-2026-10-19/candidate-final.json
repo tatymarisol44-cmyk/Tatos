@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "wheel_sha256": "b6c02006cbe9534367e1ed194935ff876366b20c99712734ec01e2338e3a047b",
+  "final_staff_login_source_sha256": "71e2d73a2e08484be8556994b162f0da8365da010ffcde374bbfa854f957faf8",
+  "exact_final_staff_login_packaged": true,
+  "non_editable_reinstall": true,
+  "commands": [
+    [
+      "uv",
+      "sync",
+      "--frozen",
+      "--offline",
+      "--no-editable",
+      "--reinstall-package",
+      "agency-orchestrator"
+    ],
+    [
+      "uv",
+      "build",
+      "--offline",
+      "--out-dir",
+      "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\dist-candidate-final"
+    ]
+  ]
+}

@@ -1,0 +1,321 @@
+{
+  "profile": {
+    "loopback_only": true,
+    "synthetic_only": true,
+    "real_postgres": "17.11",
+    "model": "FakeLLM",
+    "fake_latency_ms_per_call": 80,
+    "per_replica_inflight_cap": 8,
+    "vector_store": "in-memory",
+    "rate_limiter": "in-memory, 100000/min per replica",
+    "api_resource_measurement": "Actual Windows API process CPU and resident working set, excludes venv launcher and PostgreSQL",
+    "traffic": "60% chat, 20% insights, 10% agenda, 10% catalog",
+    "production_claim": false
+  },
+  "runs": [
+    {
+      "replicas": 1,
+      "concurrency": 4,
+      "requests": 200,
+      "elapsed_seconds": 6.195,
+      "requests_per_second": 32.29,
+      "latency_ms": {
+        "p50": 164.75,
+        "p95": 232.39,
+        "p99": 268.41
+      },
+      "statuses": {
+        "200": 200
+      },
+      "api_cpu_seconds": 6.094,
+      "api_cpu_core_percent": 98.37,
+      "api_peak_rss_mb": 180.46,
+      "postgres_peak_connections": 2,
+      "routes": {
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 240.66,
+          "statuses": {
+            "200": 120
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 37.29,
+          "statuses": {
+            "200": 40
+          }
+        },
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 2.92,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 7.17,
+          "statuses": {
+            "200": 20
+          }
+        }
+      }
+    },
+    {
+      "replicas": 1,
+      "concurrency": 16,
+      "requests": 200,
+      "elapsed_seconds": 1.107,
+      "requests_per_second": 180.6,
+      "latency_ms": {
+        "p50": 4.19,
+        "p95": 139.95,
+        "p99": 973.75
+      },
+      "statuses": {
+        "503": 112,
+        "200": 88
+      },
+      "api_cpu_seconds": 0.953,
+      "api_cpu_core_percent": 86.07,
+      "api_peak_rss_mb": 182.77,
+      "postgres_peak_connections": 5,
+      "routes": {
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 942.77,
+          "statuses": {
+            "200": 8,
+            "503": 112
+          }
+        },
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 11.62,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 48.21,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 139.95,
+          "statuses": {
+            "200": 40
+          }
+        }
+      }
+    },
+    {
+      "replicas": 1,
+      "concurrency": 40,
+      "requests": 200,
+      "elapsed_seconds": 1.11,
+      "requests_per_second": 180.26,
+      "latency_ms": {
+        "p50": 33.92,
+        "p95": 581.23,
+        "p99": 1072.79
+      },
+      "statuses": {
+        "503": 112,
+        "200": 88
+      },
+      "api_cpu_seconds": 1.047,
+      "api_cpu_core_percent": 94.35,
+      "api_peak_rss_mb": 184.54,
+      "postgres_peak_connections": 6,
+      "routes": {
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 1059.41,
+          "statuses": {
+            "200": 8,
+            "503": 112
+          }
+        },
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 68.97,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 176.4,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 581.23,
+          "statuses": {
+            "200": 40
+          }
+        }
+      }
+    },
+    {
+      "replicas": 2,
+      "concurrency": 4,
+      "requests": 200,
+      "elapsed_seconds": 4.351,
+      "requests_per_second": 45.97,
+      "latency_ms": {
+        "p50": 122.35,
+        "p95": 156.25,
+        "p99": 179.47
+      },
+      "statuses": {
+        "200": 200
+      },
+      "api_cpu_seconds": 6.812,
+      "api_cpu_core_percent": 156.58,
+      "api_peak_rss_mb": 363.44,
+      "postgres_peak_connections": 8,
+      "routes": {
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 158.59,
+          "statuses": {
+            "200": 120
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 29.32,
+          "statuses": {
+            "200": 40
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 5.76,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 3.18,
+          "statuses": {
+            "200": 20
+          }
+        }
+      }
+    },
+    {
+      "replicas": 2,
+      "concurrency": 16,
+      "requests": 200,
+      "elapsed_seconds": 3.325,
+      "requests_per_second": 60.16,
+      "latency_ms": {
+        "p50": 378.72,
+        "p95": 514.55,
+        "p99": 542.92
+      },
+      "statuses": {
+        "200": 188,
+        "503": 12
+      },
+      "api_cpu_seconds": 6.453,
+      "api_cpu_core_percent": 194.11,
+      "api_peak_rss_mb": 365.52,
+      "postgres_peak_connections": 9,
+      "routes": {
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 6.99,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 12.69,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 83.97,
+          "statuses": {
+            "200": 40
+          }
+        },
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 523.14,
+          "statuses": {
+            "200": 108,
+            "503": 12
+          }
+        }
+      }
+    },
+    {
+      "replicas": 2,
+      "concurrency": 40,
+      "requests": 200,
+      "elapsed_seconds": 0.869,
+      "requests_per_second": 230.04,
+      "latency_ms": {
+        "p50": 22.22,
+        "p95": 784.55,
+        "p99": 814.23
+      },
+      "statuses": {
+        "200": 96,
+        "503": 104
+      },
+      "api_cpu_seconds": 1.609,
+      "api_cpu_core_percent": 185.11,
+      "api_peak_rss_mb": 366.27,
+      "postgres_peak_connections": 12,
+      "routes": {
+        "/v1/agents": {
+          "requests": 20,
+          "p95_ms": 42.01,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/crm/appointments": {
+          "requests": 20,
+          "p95_ms": 95.33,
+          "statuses": {
+            "200": 20
+          }
+        },
+        "/v1/chat": {
+          "requests": 120,
+          "p95_ms": 792.32,
+          "statuses": {
+            "200": 16,
+            "503": 104
+          }
+        },
+        "/v1/insights/summary": {
+          "requests": 40,
+          "p95_ms": 233.3,
+          "statuses": {
+            "200": 40
+          }
+        }
+      }
+    }
+  ],
+  "tenant_patient_isolation_after_load": true,
+  "local_api_processes_stopped": true
+}

@@ -270,6 +270,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve.outputs.sha }}
+      - name: Require the public production URL
+        env:
+          PUBLIC_URL: ${{ vars.RENDER_PUBLIC_URL }}
+        run: test -n "$PUBLIC_URL" || { echo "::error::Set production variable RENDER_PUBLIC_URL to verify the deployed app"; exit 1; }
       - name: Signature verified, deployed by digest, followed until live and serving
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -310,3 +314,19 @@ jobs:
       contents: read
       packages: read  # crane copies the images from GHCR into Artifact Registry
       id-token: write
+
+
+  deployment-result:
+    name: Production deployment result
+    if: always()
+    needs: [resolve, production-vm, production-render, production]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Distinguish production from rehearsals
+        env:
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+          VM_RESULT: ${{ needs.production-vm.result }}
+          RENDER_RESULT: ${{ needs.production-render.result }}
+          GKE_RESULT: ${{ needs.production.result }}
+        run: python scripts/ci/deploy_summary.py

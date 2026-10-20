@@ -1,0 +1,33 @@
+{
+  "base_commit": "3d290bca94a7bcd69a01fb914db7c41be382a8d7",
+  "archive_sha256": "47fd90d1cf273126e3bcf8489542fa33ae868f010e51129d2593ef538b177d45",
+  "clean_worktree_excludes_uncommitted_changes": true,
+  "submodule_not_in_archive": true,
+  "commands": [
+    {
+      "command": [
+        "uv",
+        "sync",
+        "--frozen",
+        "--offline",
+        "--python",
+        "C:\\Users\\momoy\\Desktop\\VS CODE\\AGENTES\\agency-orchestrator\\.venv\\Scripts\\python.exe"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 14.63,
+      "output_tail": "ngchain-core==1.6.5\n + langchain-protocol==0.0.19\n + langgraph==1.2.13\n + langgraph-checkpoint==4.2.0\n + langgraph-checkpoint-postgres==3.1.2\n + langgraph-prebuilt==1.1.0\n + langgraph-sdk==0.4.5\n + langsmith==0.14.1\n + librt==0.16.0\n + litellm==1.104.2\n + lupa==2.8\n + mako==1.4.3\n + markupsafe==3.0.3\n + mcp==2.3.0\n + mcp-types==2.3.0\n + multidict==6.9.1\n + mypy==2.4.0\n + mypy-extensions==1.1.0\n + nodeenv==1.11.0\n + numpy==2.5.3\n + openai==2.54.0\n + opentelemetry-api==1.45.0\n + opentelemetry-exporter-http-transport==0.66b0\n + opentelemetry-exporter-otlp-common==0.66b0\n + opentelemetry-exporter-otlp-proto-common==1.45.0\n + opentelemetry-exporter-otlp-proto-http==1.45.0\n + opentelemetry-exporter-prometheus==0.66b0\n + opentelemetry-instrumentation==0.66b0\n + opentelemetry-instrumentation-asgi==0.66b0\n + opentelemetry-instrumentation-fastapi==0.66b0\n + opentelemetry-proto==1.45.0\n + opentelemetry-sdk==1.45.0\n + opentelemetry-semantic-conventions==0.66b0\n + opentelemetry-util-http==0.66b0\n + orjson==3.12.0\n + ormsgpack==1.12.2\n + packaging==26.3\n + pathspec==1.1.1\n + pillow==12.3.0\n + platformdirs==4.12.1\n + playwright==1.63.0\n + pluggy==1.6.0\n + portalocker==3.2.0\n + pre-commit==4.6.2\n + prometheus-client==0.26.0\n + propcache==0.5.4\n + proto-plus==1.29.0\n + protobuf==7.36.2\n + psycopg==3.3.6\n + psycopg-binary==3.3.6\n + psycopg-pool==3.3.3\n + pyasn1==0.6.4\n + pyasn1-modules==0.4.2\n + pycparser==3.0\n + pydantic==2.13.5\n + pydantic-core==2.46.5\n + pydantic-settings==2.15.0\n + pyee==13.0.1\n + pygments==2.21.0\n + pyjwt==2.15.1\n + pytest==9.1.1\n + pytest-asyncio==1.4.0\n + pytest-cov==7.1.0\n + python-dateutil==2.9.0.post0\n + python-discovery==1.6.1\n + python-dotenv==1.2.3\n + python-multipart==0.0.32\n + pywin32==312\n + pyyaml==6.0.3\n + qdrant-client==1.19.1\n + redis==8.1.0\n + referencing==0.37.0\n + regex==2026.9.10\n + requests==2.34.2\n + requests-toolbelt==1.0.0\n + rpds-py==2026.6.3\n + ruff==0.16.10\n + s3transfer==0.19.2\n + segno==1.6.6\n + six==1.17.0\n + sniffio==1.3.1\n + sortedcontainers==2.4.0\n + sqlalchemy==2.1.1\n + sse-starlette==3.5.0\n + starlette==1.7.0\n + tenacity==9.1.4\n + tiktoken==0.14.0\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + truststore==0.10.4\n + types-pyyaml==6.0.12.20260906\n + typing-extensions==4.16.0\n + typing-inspection==0.4.4\n + tzdata==2026.4\n + urllib3==2.8.0\n + uuid-utils==0.17.1\n + uvicorn==0.54.0\n + virtualenv==21.13.0\n + watchfiles==1.3.0\n + websockets==16.1.1\n + wrapt==2.5.0\n + xxhash==4.0.1\n + yarl==1.25.1\n + zipp==4.1.0\n + zstandard==0.25.0\n"
+    },
+    {
+      "command": [
+        "uv",
+        "build",
+        "--offline",
+        "--out-dir",
+        "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\dist-clean"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 7.69,
+      "output_tail": "Building source distribution...\nBuilding wheel from source distribution...\nSuccessfully built C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\dist-clean\\agency_orchestrator-0.1.0.tar.gz\nSuccessfully built C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19\\dist-clean\\agency_orchestrator-0.1.0-py3-none-any.whl\n"
+    }
+  ]
+}

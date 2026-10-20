@@ -1,0 +1,27 @@
+{
+  "source_root": "C:\\Users\\momoy\\Desktop\\VS CODE\\AGENTES\\agency-orchestrator",
+  "artifact_root": "C:\\Users\\momoy\\Desktop\\VS CODE\\MIA\\.tools\\agency-audit-2026-10-19",
+  "test_launcher_source": "procedures/run-agency-tests.py.txt",
+  "focused_before": "python .tools/run-agency-tests.py password-before tests/test_audit_auth_concurrency.py --no-cov (initial three SQLite cases)",
+  "focused_after": "python .tools/run-agency-tests.py postgres-auth-final tests/test_audit_auth_concurrency.py tests/test_staff_login.py --no-cov",
+  "postgres": "python .tools/run-agency-tests.py postgres-baseline tests/test_db_postgres.py tests/test_postgres_concurrency.py tests/test_checkpoint.py tests/test_backup_restore.py --no-cov",
+  "shells": "python .tools/run-agency-tests.py postgres-scripts-fixed tests/test_rollout_script.py tests/test_single_node.py tests/test_render_profile.py tests/test_saas_audit.py --no-cov",
+  "final": "python .tools/run-agency-tests.py final-verification-v2 --cov-report=json:<audit-root>/final-v2-coverage.json",
+  "lint": [
+    "python -m ruff check --no-cache .",
+    "python -m ruff format --check --no-cache .",
+    "python -m mypy --cache-dir <audit-root>/mypy-cache",
+    "node --check <each src/orchestrator/web/static/*.js>",
+    "git diff --check"
+  ],
+  "reproduction": [
+    "uv sync --frozen --offline --no-editable --python <Python-3.12.14>",
+    "uv build --offline --out-dir <separate-dist-directory>"
+  ],
+  "load": "python .tools/agency-audit-load.py",
+  "load_sources": [
+    "procedures/agency-audit-load.py.txt",
+    "procedures/agency_audit_load_server.py.txt"
+  ],
+  "scope": "Executed on Windows; source copies preserve exact local procedure paths. PostgreSQL was dedicated loopback-only with synthetic data. Do not substitute a production URL."
+}

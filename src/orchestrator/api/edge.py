@@ -17,8 +17,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 class SecurityHeaders:
-    def __init__(self, app: ASGIApp, hsts_max_age_seconds: int = 0) -> None:
+    def __init__(self, app: ASGIApp, hsts_max_age_seconds: int = 0, revision: str = "dev") -> None:
         self.app = app
+        self.revision = revision
         self.hsts = (
             f"max-age={hsts_max_age_seconds}; includeSubDomains" if hsts_max_age_seconds else None
         )
@@ -27,11 +28,12 @@ class SecurityHeaders:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        api = scope["path"].startswith("/v1/")
+        api = scope["path"].startswith("/v1/") or scope["path"] == "/a2a"
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
+                headers.setdefault("X-App-Revision", self.revision)
                 headers.setdefault("X-Content-Type-Options", "nosniff")
                 headers.setdefault("Referrer-Policy", "no-referrer")
                 headers.setdefault("X-Frame-Options", "DENY")

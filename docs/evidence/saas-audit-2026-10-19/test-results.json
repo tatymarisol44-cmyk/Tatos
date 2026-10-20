@@ -1,0 +1,1438 @@
+{
+  "recorded_at_utc": "2026-10-19T23:12:00.750286+00:00",
+  "source_drift_during_final_suite": [],
+  "runs": {
+    "baseline": {
+      "total": 1104,
+      "passed": 1071,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 33,
+      "by_file": {
+        "tests.test_agenda": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_answer_eval": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_api": {
+          "passed": 35,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_architecture": {
+          "passed": 78,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_audit_regressions": {
+          "passed": 67,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backpressure": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup": {
+          "passed": 11,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup_restore": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1
+        },
+        "tests.test_briefing": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_business_api": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_campaigns": {
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_catalog": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_checkpoint": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1
+        },
+        "tests.test_classification": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_clinical_files": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_clinical_records": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_console_e2e": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_consultorio_e2e": {
+          "passed": 28,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_creatives": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_crm": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db_postgres": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 2
+        },
+        "tests.test_demo": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_deploy_config": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_edge": {
+          "passed": 11,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_engagement": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_establishment": {
+          "passed": 8,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_followup": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_governance": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_guardrails": {
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbound": {
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbox": {
+          "passed": 18,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_instruments": {
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_integrations": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_judge": {
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_knowledge": {
+          "passed": 33,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_limits_and_retention": {
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_loyalty": {
+          "passed": 10,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_media_urls": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_memory": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_metrics": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_migrations": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1
+        },
+        "tests.test_monthly_report": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_need_to_know": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_observability": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oidc": {
+          "passed": 19,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oncall": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_pathways": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_patient_app": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_postgres_concurrency": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 6
+        },
+        "tests.test_prescriptions": {
+          "passed": 27,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_privacy_cases": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_profession_packs": {
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publication_calendar": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publishing": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_reidentification": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_reminders": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote": {
+          "passed": 34,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_chaos": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_live": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 4
+        },
+        "tests.test_render_profile": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 8
+        },
+        "tests.test_render_setup": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_resilience": {
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_retrieval": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_rollout_script": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 3
+        },
+        "tests.test_router": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_saas_audit": {
+          "passed": 20,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_scales": {
+          "passed": 23,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_schema": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_self_report": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_service": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_session": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_single_node": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 7
+        },
+        "tests.test_social": {
+          "passed": 20,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_spend": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_staff_login": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_stats": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_surfaces": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_team": {
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_tenant_isolation_matrix": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_usage": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_whatsapp_assistant": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_workshops": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [
+        {
+          "test": "tests.test_backup_restore.test_backup_restores_whole_and_verified",
+          "reason": "set TEST_POSTGRES_URL and put pg_dump/pg_restore on PATH (or PG_BIN)"
+        },
+        {
+          "test": "tests.test_checkpoint.test_postgres_thread_survives_a_new_instance",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_db_postgres.test_full_business_flow_on_postgres",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_db_postgres.test_every_session_carries_the_server_side_limits",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_migrations.test_replicas_migrating_together_do_not_collide[sqlite]",
+          "reason": "the advisory lock is a Postgres feature; SQLite is single-process dev"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_monthly_cap_holds_across_replicas",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_one_campaign_is_sent_once",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_appointment_transition_race",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_audit_chain_has_no_gaps_under_concurrency",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_two_reviewers_one_decision",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_postgres_concurrency.test_concurrent_document_replacement_leaves_one_version",
+          "reason": "set TEST_POSTGRES_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_discovers_the_java_agent",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_jvm_questions_are_routed_and_answered_by_java",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_team_mode_mixes_java_and_local_specialists",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_protocol_errors_surface_as_remote_errors",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_release_is_followed_until_live",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_failed_release_fails_the_deploy[update_failed]",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_failed_release_fails_the_deploy[build_failed]",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_failed_release_fails_the_deploy[canceled]",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_release_that_never_goes_live_times_out",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_an_unsigned_image_never_reaches_render",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_a_rejected_request_or_a_silent_entrance_fails",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_render_profile.test_only_a_digest_is_deployed",
+          "reason": "needs bash and jq"
+        },
+        {
+          "test": "tests.test_rollout_script.test_healthy_release_stays",
+          "reason": "needs bash"
+        },
+        {
+          "test": "tests.test_rollout_script.test_release_that_never_gets_ready_is_rolled_back",
+          "reason": "needs bash"
+        },
+        {
+          "test": "tests.test_rollout_script.test_release_that_fails_the_smoke_test_is_rolled_back",
+          "reason": "needs bash"
+        },
+        {
+          "test": "tests.test_single_node.test_a_healthy_release_is_recorded",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_any_failure_rolls_back_to_the_running_image[failure0]",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_any_failure_rolls_back_to_the_running_image[failure1]",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_any_failure_rolls_back_to_the_running_image[failure2]",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_any_failure_rolls_back_to_the_running_image[failure3]",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_any_failure_rolls_back_to_the_running_image[failure4]",
+          "reason": "no bash"
+        },
+        {
+          "test": "tests.test_single_node.test_only_a_digest_is_deployed",
+          "reason": "no bash"
+        }
+      ],
+      "execution": {
+        "name": "baseline",
+        "exit_code": 0,
+        "elapsed_seconds": 502.8
+      }
+    },
+    "password-before": {
+      "total": 3,
+      "passed": 0,
+      "failed": 3,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 0,
+          "failed": 3,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "password-before",
+        "exit_code": 1,
+        "elapsed_seconds": 12.69
+      }
+    },
+    "password-after": {
+      "total": 17,
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_staff_login": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "password-after",
+        "exit_code": 0,
+        "elapsed_seconds": 64.94
+      }
+    },
+    "postgres-baseline": {
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_db_postgres": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_postgres_concurrency": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_checkpoint": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup_restore": {
+          "passed": 1,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-baseline",
+        "exit_code": 0,
+        "elapsed_seconds": 11.96
+      }
+    },
+    "postgres-auth": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-auth",
+        "exit_code": 0,
+        "elapsed_seconds": 17.13
+      }
+    },
+    "postgres-scripts": {
+      "total": 53,
+      "passed": 46,
+      "failed": 7,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_rollout_script": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_single_node": {
+          "passed": 11,
+          "failed": 1,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_render_profile": {
+          "passed": 7,
+          "failed": 6,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_saas_audit": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-scripts",
+        "exit_code": 1,
+        "elapsed_seconds": 51.49
+      }
+    },
+    "postgres-scripts-fixed": {
+      "total": 53,
+      "passed": 53,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_rollout_script": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_single_node": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_render_profile": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_saas_audit": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-scripts-fixed",
+        "exit_code": 0,
+        "elapsed_seconds": 25.04
+      }
+    },
+    "postgres-expired-lock-before": {
+      "total": 6,
+      "passed": 4,
+      "failed": 2,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 4,
+          "failed": 2,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-expired-lock-before",
+        "exit_code": 1,
+        "elapsed_seconds": 17.06
+      }
+    },
+    "postgres-auth-final": {
+      "total": 26,
+      "passed": 26,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "by_file": {
+        "tests.test_audit_auth_concurrency": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_staff_login": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [],
+      "execution": {
+        "name": "postgres-auth-final",
+        "exit_code": 0,
+        "elapsed_seconds": 72.68
+      }
+    },
+    "final-verification-v2": {
+      "total": 1125,
+      "passed": 1120,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 5,
+      "by_file": {
+        "tests.test_agenda": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_answer_eval": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_api": {
+          "passed": 35,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_architecture": {
+          "passed": 78,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_audit_auth_concurrency": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_audit_regressions": {
+          "passed": 67,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backpressure": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup": {
+          "passed": 11,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_backup_restore": {
+          "passed": 1,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_briefing": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_business_api": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_campaigns": {
+          "passed": 15,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_catalog": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_checkpoint": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_classification": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_clinical_files": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_clinical_records": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_console_e2e": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_consultorio_e2e": {
+          "passed": 28,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_creatives": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_crm": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_db_postgres": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_demo": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_deploy_config": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_edge": {
+          "passed": 11,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_engagement": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_establishment": {
+          "passed": 8,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_followup": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_governance": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_guardrails": {
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbound": {
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_inbox": {
+          "passed": 18,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_instruments": {
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_integrations": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_judge": {
+          "passed": 17,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_knowledge": {
+          "passed": 33,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_limits_and_retention": {
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_loyalty": {
+          "passed": 10,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_media_urls": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_memory": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_metrics": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_migrations": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 1
+        },
+        "tests.test_monthly_report": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_need_to_know": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_observability": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oidc": {
+          "passed": 19,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_oncall": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_pathways": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_patient_app": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_postgres_concurrency": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_prescriptions": {
+          "passed": 27,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_privacy_cases": {
+          "passed": 6,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_profession_packs": {
+          "passed": 30,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publication_calendar": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_publishing": {
+          "passed": 21,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_reidentification": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_reminders": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote": {
+          "passed": 34,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_chaos": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_remote_live": {
+          "passed": 0,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 4
+        },
+        "tests.test_render_profile": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_render_setup": {
+          "passed": 16,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_resilience": {
+          "passed": 9,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_retrieval": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_rollout_script": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_router": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_saas_audit": {
+          "passed": 25,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_scales": {
+          "passed": 23,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_schema": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_self_report": {
+          "passed": 5,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_service": {
+          "passed": 7,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_session": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_single_node": {
+          "passed": 12,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_social": {
+          "passed": 20,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_spend": {
+          "passed": 3,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_staff_login": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_stats": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_surfaces": {
+          "passed": 13,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_team": {
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_tenant_isolation_matrix": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_usage": {
+          "passed": 2,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_whatsapp_assistant": {
+          "passed": 14,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "tests.test_workshops": {
+          "passed": 4,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "omissions": [
+        {
+          "test": "tests.test_migrations.test_replicas_migrating_together_do_not_collide[sqlite]",
+          "reason": "the advisory lock is a Postgres feature; SQLite is single-process dev"
+        },
+        {
+          "test": "tests.test_remote_live.test_discovers_the_java_agent",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_jvm_questions_are_routed_and_answered_by_java",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_team_mode_mixes_java_and_local_specialists",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        },
+        {
+          "test": "tests.test_remote_live.test_protocol_errors_surface_as_remote_errors",
+          "reason": "set TEST_A2A_AGENT_URL to run"
+        }
+      ],
+      "execution": {
+        "name": "final-verification-v2",
+        "exit_code": 0,
+        "elapsed_seconds": 463.22
+      }
+    }
+  },
+  "final_python_coverage_percent": 95.31441583464705,
+  "final_python_statements": 11418,
+  "aborted_run": {
+    "name": "final-verification",
+    "reason": "Stopped deliberately before completion to add expired-lock regression and rerun whole suite. Not counted passed."
+  },
+  "tools": {
+    "ruff": "global check and format plus targeted changed tests PASS",
+    "mypy": "124 source files PASS",
+    "javascript": "all static JavaScript node --check PASS",
+    "git_diff_check": "PASS"
+  }
+}

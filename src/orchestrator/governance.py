@@ -18,9 +18,12 @@ customer number), never by name or e-mail."""
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import hashlib
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -677,6 +680,73 @@ class ThreadLeases:
             if (await conn.execute(takeover)).rowcount == 1:
                 return
         raise ThreadBusyError(f"thread {thread_id} has a run in progress")
+
+    async def renew(self, tenant: str, thread_id: str, holder: str) -> bool:
+        now = utcnow()
+        async with self.db.engine.begin() as conn:
+            changed = await conn.execute(
+                update(thread_leases)
+                .where(
+                    and_(
+                        thread_leases.c.tenant == tenant,
+                        thread_leases.c.thread_id == thread_id,
+                        thread_leases.c.holder == holder,
+                        thread_leases.c.expires_at > now,
+                    )
+                )
+                .values(expires_at=now + self.ttl)
+            )
+            return changed.rowcount == 1
+
+    async def active(self, tenant: str, thread_id: str) -> bool:
+        async with self.db.engine.connect() as conn:
+            return (
+                await conn.execute(
+                    select(thread_leases.c.holder).where(
+                        and_(
+                            thread_leases.c.tenant == tenant,
+                            thread_leases.c.thread_id == thread_id,
+                            thread_leases.c.expires_at > utcnow(),
+                        )
+                    )
+                )
+            ).first() is not None
+
+    @asynccontextmanager
+    async def keepalive(self, tenant: str, thread_id: str, holder: str) -> AsyncIterator[None]:
+        """Renew while a run is alive; cancel it if ownership or the database is lost."""
+        if not await self.renew(tenant, thread_id, holder):
+            raise ThreadBusyError("conversation lease expired before the run started")
+        owner = asyncio.current_task()
+        assert owner is not None
+        interval = max(0.01, self.ttl.total_seconds() / 3)
+        lost = False
+
+        async def heartbeat() -> None:
+            nonlocal lost
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    async with asyncio.timeout(interval):
+                        renewed = await self.renew(tenant, thread_id, holder)
+                except Exception:
+                    renewed = False
+                if not renewed:
+                    lost = True
+                    owner.cancel()
+                    return
+
+        renewal = asyncio.create_task(heartbeat())
+        try:
+            yield
+        except asyncio.CancelledError as exc:
+            if lost:
+                raise ThreadBusyError("conversation lease lost; retry the run") from exc
+            raise
+        finally:
+            renewal.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal
 
     async def release(self, tenant: str, thread_id: str, holder: str) -> None:
         query = delete(thread_leases).where(
