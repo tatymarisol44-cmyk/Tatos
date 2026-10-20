@@ -5,10 +5,11 @@ ChunkStore, MemoryStore). Domain and application code receive the ports."""
 from __future__ import annotations
 
 from orchestrator.config import Settings
-from orchestrator.embeddings import Embedder, HashingEmbedder, LiteLLMEmbedder
-from orchestrator.knowledge import ChunkStore, InMemoryChunkStore, QdrantChunkStore
-from orchestrator.memory import InMemoryMemoryStore, MemoryStore, QdrantMemoryStore
-from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore, VectorStore
+from orchestrator.embeddings import HashingEmbedder, LiteLLMEmbedder
+from orchestrator.knowledge import InMemoryChunkStore, QdrantChunkStore
+from orchestrator.memory import InMemoryMemoryStore, QdrantMemoryStore
+from orchestrator.retrieval import ChunkStore, Embedder, MemoryStore, VectorStore
+from orchestrator.vectorstore import InMemoryVectorStore, QdrantVectorStore
 
 
 def build_embedder(settings: Settings) -> Embedder:

@@ -16,7 +16,7 @@ import re
 import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
-from typing import Any, Protocol
+from typing import Any
 
 from sqlalchemy import (
     Column,
@@ -36,25 +36,14 @@ from sqlalchemy.exc import IntegrityError
 
 from orchestrator.config import Settings
 from orchestrator.db import Database, metadata, utcnow
-from orchestrator.embeddings import Embedder
 from orchestrator.guardrails import detect_injection
+from orchestrator.retrieval import Chunk as Chunk
+from orchestrator.retrieval import ChunkStore as ChunkStore
+from orchestrator.retrieval import Embedder
 from orchestrator.telemetry import tracer
 from orchestrator.vectorstore import ensure_tenant_collection, qdrant_client
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Chunk:
-    doc_id: str
-    title: str
-    index: int
-    text: str
-    score: float = 0.0
-    version: str = ""  # which upload of the document this chunk belongs to
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -95,25 +84,6 @@ def chunk_text(text: str, size: int = 800, overlap: int = 150) -> list[str]:
     if current:
         chunks.append(current)
     return chunks
-
-
-class ChunkStore(Protocol):
-    """Vector storage of chunks. It holds every version of a document side by side; which
-    one is live is decided by the SQL pointer in KnowledgeBase, never by the store."""
-
-    async def ensure(self, name: str, dim: int) -> None: ...
-
-    def attach(self, name: str) -> None:
-        """Use an existing collection without creating it (maintenance jobs)."""
-        ...
-
-    async def upsert(
-        self, tenant: str, chunks: list[Chunk], vectors: list[list[float]]
-    ) -> None: ...
-
-    async def search(self, tenant: str, vector: list[float], k: int) -> list[Chunk]: ...
-
-    async def delete(self, tenant: str, doc_id: str, version: str | None = None) -> int: ...
 
 
 class InMemoryChunkStore:
