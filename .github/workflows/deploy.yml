@@ -109,7 +109,7 @@ jobs:
     env:
       SMOKE_API_KEY: ci-key
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           submodules: recursive
@@ -156,7 +156,7 @@ jobs:
     env:
       API: ${{ needs.resolve.outputs.api }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Install with the real installer (image signed by CI is verified)
@@ -222,7 +222,7 @@ jobs:
       VM: ${{ vars.VM_USER }}@${{ vars.VM_HOST }}
       VM_DIR: ${{ vars.VM_DIR || '/opt/agency' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
       - name: SSH identity (host key pinned, never trust-on-first-use)
@@ -251,7 +251,7 @@ jobs:
     env:
       API: ${{ needs.resolve.outputs.api }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: The free Render profile under its limits, every demo flow, memory budget
@@ -267,7 +267,7 @@ jobs:
     environment: production # required reviewers approve here
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
       - name: Require the public production URL
@@ -322,7 +322,7 @@ jobs:
     needs: [resolve, production-vm, production-render, production]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Distinguish production from rehearsals
         env:
           DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
