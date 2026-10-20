@@ -26,7 +26,17 @@ LABEL org.opencontainers.image.title="agency-orchestrator" \
       org.opencontainers.image.licenses="MIT"
 # ffmpeg renders the marketing videos (orchestrator.creatives): MP4 with H.264, as TikTok
 # requires. It runs as a separate program, never linked into the Python process.
-RUN apt-get update \
+# Reproducible APT inputs, including security upgrades of the pinned base image.
+# Refresh this date deliberately alongside vulnerability reports; signatures stay required.
+ARG DEBIAN_SNAPSHOT=20261019T000000Z
+RUN . /etc/os-release \
+    && rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
+    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian/%s/\nSuites: %s %s-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n' \
+         "$DEBIAN_SNAPSHOT" "$VERSION_CODENAME" "$VERSION_CODENAME" > /etc/apt/sources.list.d/debian.sources \
+    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian-security/%s/\nSuites: %s-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n' \
+         "$DEBIAN_SNAPSHOT" "$VERSION_CODENAME" >> /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 app

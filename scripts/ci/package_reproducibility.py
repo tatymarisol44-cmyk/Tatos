@@ -31,8 +31,12 @@ def main() -> None:
     with ZipFile(first) as wheel:
         for source in sources:
             name = source.relative_to(root / "src").as_posix()
-            if wheel.read(name) != source.read_bytes():
+            content = wheel.read(name)
+            if content != source.read_bytes():
                 raise SystemExit(f"Missing or changed packaged resource: {name}")
+            installed_resource = installed.parent.parent / name
+            if not installed_resource.is_file() or installed_resource.read_bytes() != content:
+                raise SystemExit(f"Installed package differs from the candidate wheel: {name}")
     print(f"Identical wheels: sha256:{digest}; {len(sources)} source resources verified")
     print(f"Non-editable import: {installed}")
 
