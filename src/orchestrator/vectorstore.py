@@ -3,27 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
+
+from orchestrator.retrieval import Hit as Hit
+from orchestrator.retrieval import VectorStore as VectorStore
 
 if TYPE_CHECKING:
     from qdrant_client import AsyncQdrantClient
-
-
-@dataclass(frozen=True)
-class Hit:
-    agent_id: str
-    score: float
-
-
-class VectorStore(Protocol):
-    async def ensure(self, name: str, dim: int) -> bool:
-        """Point the store at collection `name`. Returns True if it already holds data."""
-        ...
-
-    async def upsert(self, ids: list[str], vectors: list[list[float]]) -> None: ...
-
-    async def search(self, vector: list[float], k: int) -> list[Hit]: ...
 
 
 def qdrant_client(url: str, api_key: str | None = None) -> AsyncQdrantClient:
@@ -36,6 +22,24 @@ def qdrant_client(url: str, api_key: str | None = None) -> AsyncQdrantClient:
     return AsyncQdrantClient(url=url, api_key=api_key)
 
 
+async def ensure_collection(client: AsyncQdrantClient, name: str, dim: int) -> bool:
+    """Create once across replicas; only an observed create conflict is recoverable."""
+    from qdrant_client.http.exceptions import UnexpectedResponse
+    from qdrant_client.models import Distance, VectorParams
+
+    if await client.collection_exists(name):
+        return False
+    try:
+        await client.create_collection(
+            name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
+        )
+    except UnexpectedResponse as exc:
+        if exc.status_code != 409 or not await client.collection_exists(name):
+            raise
+        return False
+    return True
+
+
 async def ensure_tenant_collection(
     client: AsyncQdrantClient,
     name: str,
@@ -46,29 +50,30 @@ async def ensure_tenant_collection(
     """One collection for all tenants, partitioned by a `tenant` payload index
     (`is_tenant=True` lets Qdrant co-locate each tenant's points): it scales to many
     tenants far better than one collection per tenant. Indexes `keyword_fields` and
-    `float_fields` for filtering. Does nothing if the collection exists."""
+    `float_fields` for filtering. Repairs missing indexes on an existing collection."""
     from qdrant_client.models import (
-        Distance,
         KeywordIndexParams,
         KeywordIndexType,
         PayloadSchemaType,
-        VectorParams,
     )
 
-    if await client.collection_exists(name):
-        return
-    await client.create_collection(
-        name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
-    )
+    await ensure_collection(client, name, dim)
+    # A prior process may have stopped between collection creation and indexing.
+    # These operations are idempotent, including when another replica does them too.
     await client.create_payload_index(
         name,
         "tenant",
         field_schema=KeywordIndexParams(type=KeywordIndexType.KEYWORD, is_tenant=True),
+        wait=True,
     )
     for field in keyword_fields:
-        await client.create_payload_index(name, field, field_schema=PayloadSchemaType.KEYWORD)
+        await client.create_payload_index(
+            name, field, field_schema=PayloadSchemaType.KEYWORD, wait=True
+        )
     for field in float_fields:
-        await client.create_payload_index(name, field, field_schema=PayloadSchemaType.FLOAT)
+        await client.create_payload_index(
+            name, field, field_schema=PayloadSchemaType.FLOAT, wait=True
+        )
 
 
 class InMemoryVectorStore:
@@ -104,16 +109,10 @@ class QdrantVectorStore:
         self._active = ""
 
     async def ensure(self, name: str, dim: int) -> bool:
-        from qdrant_client.models import Distance, VectorParams
-
         self._active = name
-        if await self._client.collection_exists(name):
-            info = await self._client.get_collection(name)
-            return bool(info.points_count)
-        await self._client.create_collection(
-            name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
-        )
-        return False
+        await ensure_collection(self._client, name, dim)
+        info = await self._client.get_collection(name)
+        return bool(info.points_count)
 
     async def upsert(self, ids: list[str], vectors: list[list[float]]) -> None:
         from qdrant_client.models import PointStruct

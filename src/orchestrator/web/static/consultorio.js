@@ -58,7 +58,10 @@ async function api(path, options = {}) {
 /** A file from the API, saved by the browser (the key travels in a header, so a plain
  *  link cannot fetch it). */
 async function download(path, filename) {
+  const session = state.session;
   const blob = await (await request(path)).blob();
+  // Reading the response body can outlive a sign-out or an account switch.
+  if (!session || session !== state.session) throw new ApiError(0, "");
   const url = URL.createObjectURL(blob);
   const a = el("a", { href: url, download: filename });
   document.body.append(a);

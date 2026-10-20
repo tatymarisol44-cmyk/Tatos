@@ -8,17 +8,22 @@ repos:
         args: [--allow-multiple-documents]
       - id: check-added-large-files
       - id: detect-private-key
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
   - repo: local
     hooks:
+      # Use the same locked Ruff as CI instead of a second, older installation.
+      - id: ruff
+        name: ruff (locked)
+        entry: uv run --frozen ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format (locked)
+        entry: uv run --frozen ruff format
+        language: system
+        types_or: [python, pyi]
       - id: mypy
         name: mypy
-        entry: uv run mypy
+        entry: uv run --frozen mypy
         language: system
         types: [python]
         pass_filenames: false

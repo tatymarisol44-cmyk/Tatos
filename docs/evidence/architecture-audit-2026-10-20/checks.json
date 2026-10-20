@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-20",
+  "first_regression_run": {
+    "failed": 8,
+    "scope": "embedding identity and collection creation/index recovery"
+  },
+  "second_regression_run": {
+    "failed": 3,
+    "scope": "duplicate catalog id and pending downloads across session changes"
+  },
+  "focused_retrieval_suite": {
+    "passed": 158
+  },
+  "focused_architecture_and_browser_suite": {
+    "passed": 130
+  },
+  "focused_suites_overlap": true,
+  "ruff": "passed",
+  "ruff_format_files": 291,
+  "mypy_source_files": 125,
+  "pre_commit_configuration": "valid",
+  "javascript_syntax": "passed",
+  "full_catalog_agents": 260,
+  "full_catalog_version": "caa9980a3d00",
+  "wheel": {
+    "identical_builds": true,
+    "resources_checked": 144,
+    "sha256": "ba23fdd49be708d031b8641030c1c3ceefe634a283db42a2f4247ebb967f18c7",
+    "installer": "uv 0.12.24",
+    "python": "3.12.14",
+    "editable": false
+  },
+  "final_suite": "passed: 1144 tests, 5 skipped, 95.31% coverage; isolated PostgreSQL and Bash enabled; source drift absent",
+  "production_deployed": false,
+  "gitleaks_candidate": "passed"
+}

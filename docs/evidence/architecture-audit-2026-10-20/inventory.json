@@ -1,0 +1,720 @@
+{
+  "modules": 125,
+  "direct_top_level_import_cycles": [],
+  "sqlalchemy_coupled_modules": [
+    "orchestrator.agenda",
+    "orchestrator.auth",
+    "orchestrator.backup",
+    "orchestrator.campaigns",
+    "orchestrator.clinical_files",
+    "orchestrator.clinical_records",
+    "orchestrator.crm",
+    "orchestrator.db",
+    "orchestrator.engagement",
+    "orchestrator.establishment",
+    "orchestrator.followup",
+    "orchestrator.governance",
+    "orchestrator.inbound",
+    "orchestrator.inbox",
+    "orchestrator.insights",
+    "orchestrator.instruments",
+    "orchestrator.knowledge",
+    "orchestrator.loyalty",
+    "orchestrator.migrate",
+    "orchestrator.monthly_report",
+    "orchestrator.oncall",
+    "orchestrator.privacy_cases",
+    "orchestrator.publishing",
+    "orchestrator.reminders",
+    "orchestrator.self_report",
+    "orchestrator.service",
+    "orchestrator.social",
+    "orchestrator.spend",
+    "orchestrator.staff_login",
+    "orchestrator.whatsapp_assistant",
+    "orchestrator.workshops"
+  ],
+  "largest_functions": [
+    {
+      "module": "orchestrator.graph",
+      "function": "build_graph",
+      "lines": 525
+    },
+    {
+      "module": "orchestrator.api.app",
+      "function": "create_app",
+      "lines": 450
+    },
+    {
+      "module": "orchestrator.cli",
+      "function": "main",
+      "lines": 203
+    },
+    {
+      "module": "orchestrator.migrations.versions.0001_baseline",
+      "function": "upgrade",
+      "lines": 199
+    },
+    {
+      "module": "orchestrator.campaigns",
+      "function": "results",
+      "lines": 133
+    },
+    {
+      "module": "orchestrator.followup",
+      "function": "patient",
+      "lines": 116
+    },
+    {
+      "module": "orchestrator.service",
+      "function": "__init__",
+      "lines": 104
+    },
+    {
+      "module": "orchestrator.monthly_report",
+      "function": "metrics",
+      "lines": 103
+    },
+    {
+      "module": "orchestrator.insights",
+      "function": "summary",
+      "lines": 99
+    },
+    {
+      "module": "orchestrator.crm",
+      "function": "alerts",
+      "lines": 95
+    },
+    {
+      "module": "orchestrator.publishing",
+      "function": "create",
+      "lines": 94
+    },
+    {
+      "module": "orchestrator.engagement",
+      "function": "for_patient",
+      "lines": 91
+    }
+  ],
+  "import_graph": {
+    "orchestrator.agenda": [
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.establishment",
+      "orchestrator.governance"
+    ],
+    "orchestrator.answers": [],
+    "orchestrator.answer_eval": [
+      "orchestrator.judge",
+      "orchestrator.knowledge",
+      "orchestrator.service"
+    ],
+    "orchestrator.auth": [
+      "orchestrator.db",
+      "orchestrator.governance"
+    ],
+    "orchestrator.auto_reply": [
+      "orchestrator.crisis"
+    ],
+    "orchestrator.backup": [
+      "orchestrator.db"
+    ],
+    "orchestrator.briefing": [
+      "orchestrator.auth",
+      "orchestrator.clinical_records",
+      "orchestrator.config",
+      "orchestrator.followup",
+      "orchestrator.governance",
+      "orchestrator.inbox",
+      "orchestrator.instruments"
+    ],
+    "orchestrator.campaigns": [
+      "orchestrator.auth",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.insights",
+      "orchestrator.llm",
+      "orchestrator.packs",
+      "orchestrator.risk",
+      "orchestrator.stats"
+    ],
+    "orchestrator.catalog": [],
+    "orchestrator.checkpoint": [
+      "orchestrator.config"
+    ],
+    "orchestrator.classification": [],
+    "orchestrator.cli": [
+      "orchestrator.config"
+    ],
+    "orchestrator.clinical_files": [
+      "orchestrator.auth",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance"
+    ],
+    "orchestrator.clinical_records": [
+      "orchestrator.auth",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.establishment",
+      "orchestrator.governance",
+      "orchestrator.packs"
+    ],
+    "orchestrator.config": [],
+    "orchestrator.creatives": [
+      "orchestrator.config",
+      "orchestrator.packs",
+      "orchestrator.risk",
+      "orchestrator.social"
+    ],
+    "orchestrator.crisis": [
+      "orchestrator.campaigns",
+      "orchestrator.risk"
+    ],
+    "orchestrator.crm": [
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.packs"
+    ],
+    "orchestrator.db": [
+      "orchestrator.config"
+    ],
+    "orchestrator.demo": [],
+    "orchestrator.embeddings": [
+      "orchestrator.retrieval"
+    ],
+    "orchestrator.engagement": [
+      "orchestrator.campaigns",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.instruments",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.establishment": [
+      "orchestrator.auth",
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.packs"
+    ],
+    "orchestrator.evals": [
+      "orchestrator.service"
+    ],
+    "orchestrator.evidence": [],
+    "orchestrator.factories": [
+      "orchestrator.config",
+      "orchestrator.embeddings",
+      "orchestrator.knowledge",
+      "orchestrator.memory",
+      "orchestrator.retrieval",
+      "orchestrator.vectorstore"
+    ],
+    "orchestrator.followup": [
+      "orchestrator.campaigns",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.instruments"
+    ],
+    "orchestrator.governance": [
+      "orchestrator.db"
+    ],
+    "orchestrator.graph": [
+      "orchestrator.catalog",
+      "orchestrator.config",
+      "orchestrator.governance",
+      "orchestrator.guardrails",
+      "orchestrator.knowledge",
+      "orchestrator.llm",
+      "orchestrator.memory",
+      "orchestrator.packs",
+      "orchestrator.remote",
+      "orchestrator.risk",
+      "orchestrator.router",
+      "orchestrator.team",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.guardrails": [],
+    "orchestrator.inbound": [
+      "orchestrator.auto_reply",
+      "orchestrator.config",
+      "orchestrator.crisis",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.publishers",
+      "orchestrator.social"
+    ],
+    "orchestrator.inbox": [
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.inbound",
+      "orchestrator.publishers",
+      "orchestrator.sealing",
+      "orchestrator.social"
+    ],
+    "orchestrator.insights": [
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.guardrails",
+      "orchestrator.llm",
+      "orchestrator.packs"
+    ],
+    "orchestrator.instruments": [
+      "orchestrator.auth",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.scales"
+    ],
+    "orchestrator.judge": [
+      "orchestrator.config",
+      "orchestrator.llm",
+      "orchestrator.router"
+    ],
+    "orchestrator.knowledge": [
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.guardrails",
+      "orchestrator.retrieval",
+      "orchestrator.telemetry",
+      "orchestrator.vectorstore"
+    ],
+    "orchestrator.llm": [
+      "orchestrator.config",
+      "orchestrator.resilience",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.loyalty": [
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.mcp_server": [
+      "orchestrator.config",
+      "orchestrator.service"
+    ],
+    "orchestrator.media_store": [
+      "orchestrator.config"
+    ],
+    "orchestrator.memory": [
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.llm",
+      "orchestrator.retrieval",
+      "orchestrator.telemetry",
+      "orchestrator.vectorstore"
+    ],
+    "orchestrator.migrate": [],
+    "orchestrator.monthly_report": [
+      "orchestrator.campaigns",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.inbox",
+      "orchestrator.instruments",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.oidc": [
+      "orchestrator.auth",
+      "orchestrator.config"
+    ],
+    "orchestrator.oncall": [
+      "orchestrator.campaigns",
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.inbound",
+      "orchestrator.publishers",
+      "orchestrator.social"
+    ],
+    "orchestrator.packs": [
+      "orchestrator.classification",
+      "orchestrator.config"
+    ],
+    "orchestrator.portal": [
+      "orchestrator.answers",
+      "orchestrator.campaigns",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.governance"
+    ],
+    "orchestrator.prescriptions": [
+      "orchestrator.guardrails"
+    ],
+    "orchestrator.privacy_cases": [
+      "orchestrator.db",
+      "orchestrator.governance"
+    ],
+    "orchestrator.publishers": [],
+    "orchestrator.publishing": [
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.establishment",
+      "orchestrator.governance",
+      "orchestrator.media_store",
+      "orchestrator.packs",
+      "orchestrator.publishers",
+      "orchestrator.risk",
+      "orchestrator.social"
+    ],
+    "orchestrator.reminders": [
+      "orchestrator.campaigns",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.publishers",
+      "orchestrator.social"
+    ],
+    "orchestrator.remote": [
+      "orchestrator.catalog",
+      "orchestrator.config"
+    ],
+    "orchestrator.resilience": [
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.retrieval": [],
+    "orchestrator.risk": [
+      "orchestrator.packs"
+    ],
+    "orchestrator.router": [
+      "orchestrator.catalog",
+      "orchestrator.config",
+      "orchestrator.llm",
+      "orchestrator.retrieval",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.scales": [],
+    "orchestrator.schema": [
+      "orchestrator.db"
+    ],
+    "orchestrator.sealing": [],
+    "orchestrator.self_report": [
+      "orchestrator.auto_reply",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.inbound",
+      "orchestrator.instruments",
+      "orchestrator.oncall"
+    ],
+    "orchestrator.service": [
+      "orchestrator.agenda",
+      "orchestrator.answers",
+      "orchestrator.auth",
+      "orchestrator.briefing",
+      "orchestrator.campaigns",
+      "orchestrator.catalog",
+      "orchestrator.checkpoint",
+      "orchestrator.clinical_files",
+      "orchestrator.clinical_records",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.engagement",
+      "orchestrator.establishment",
+      "orchestrator.factories",
+      "orchestrator.followup",
+      "orchestrator.governance",
+      "orchestrator.graph",
+      "orchestrator.guardrails",
+      "orchestrator.inbound",
+      "orchestrator.inbox",
+      "orchestrator.insights",
+      "orchestrator.instruments",
+      "orchestrator.knowledge",
+      "orchestrator.llm",
+      "orchestrator.loyalty",
+      "orchestrator.media_store",
+      "orchestrator.memory",
+      "orchestrator.monthly_report",
+      "orchestrator.oncall",
+      "orchestrator.portal",
+      "orchestrator.privacy_cases",
+      "orchestrator.publishing",
+      "orchestrator.reminders",
+      "orchestrator.remote",
+      "orchestrator.router",
+      "orchestrator.self_report",
+      "orchestrator.social",
+      "orchestrator.spend",
+      "orchestrator.staff_login",
+      "orchestrator.subject_rights",
+      "orchestrator.telemetry",
+      "orchestrator.whatsapp_assistant",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.social": [
+      "orchestrator.db",
+      "orchestrator.establishment",
+      "orchestrator.governance"
+    ],
+    "orchestrator.spend": [
+      "orchestrator.config",
+      "orchestrator.db"
+    ],
+    "orchestrator.staff_login": [
+      "orchestrator.auth",
+      "orchestrator.config",
+      "orchestrator.db",
+      "orchestrator.governance",
+      "orchestrator.sealing"
+    ],
+    "orchestrator.stats": [],
+    "orchestrator.subject_rights": [
+      "orchestrator.auth",
+      "orchestrator.campaigns",
+      "orchestrator.clinical_files",
+      "orchestrator.clinical_records",
+      "orchestrator.crm",
+      "orchestrator.governance",
+      "orchestrator.inbox",
+      "orchestrator.instruments",
+      "orchestrator.memory",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.surfaces": [
+      "orchestrator.classification",
+      "orchestrator.packs"
+    ],
+    "orchestrator.team": [
+      "orchestrator.catalog",
+      "orchestrator.config",
+      "orchestrator.llm",
+      "orchestrator.router",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.telemetry": [
+      "orchestrator.config",
+      "orchestrator.guardrails"
+    ],
+    "orchestrator.usage": [],
+    "orchestrator.vectorstore": [
+      "orchestrator.retrieval"
+    ],
+    "orchestrator.whatsapp_assistant": [
+      "orchestrator.agenda",
+      "orchestrator.config",
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.knowledge",
+      "orchestrator.llm",
+      "orchestrator.risk",
+      "orchestrator.spend"
+    ],
+    "orchestrator.workshops": [
+      "orchestrator.crm",
+      "orchestrator.db",
+      "orchestrator.governance"
+    ],
+    "orchestrator.__init__": [],
+    "orchestrator.api.a2a": [
+      "orchestrator.api.schemas",
+      "orchestrator.api.security",
+      "orchestrator.governance",
+      "orchestrator.service"
+    ],
+    "orchestrator.api.agenda": [
+      "orchestrator.agenda",
+      "orchestrator.api.security",
+      "orchestrator.auth"
+    ],
+    "orchestrator.api.app": [
+      "orchestrator.api.backpressure",
+      "orchestrator.api.body_limit",
+      "orchestrator.api.edge",
+      "orchestrator.api.metrics",
+      "orchestrator.api.schemas",
+      "orchestrator.api.security",
+      "orchestrator.api.views",
+      "orchestrator.auth",
+      "orchestrator.config",
+      "orchestrator.governance",
+      "orchestrator.guardrails",
+      "orchestrator.knowledge",
+      "orchestrator.llm",
+      "orchestrator.media_store",
+      "orchestrator.packs",
+      "orchestrator.service",
+      "orchestrator.spend",
+      "orchestrator.surfaces",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.api.backpressure": [
+      "orchestrator.api.body_limit",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.api.body_limit": [],
+    "orchestrator.api.business": [
+      "orchestrator.api.schemas",
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.campaigns",
+      "orchestrator.crm",
+      "orchestrator.governance",
+      "orchestrator.insights",
+      "orchestrator.monthly_report",
+      "orchestrator.service"
+    ],
+    "orchestrator.api.channels": [
+      "orchestrator.service"
+    ],
+    "orchestrator.api.clinical": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.clinical_files",
+      "orchestrator.clinical_records"
+    ],
+    "orchestrator.api.edge": [],
+    "orchestrator.api.establishment": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.establishment"
+    ],
+    "orchestrator.api.inbox": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.inbox"
+    ],
+    "orchestrator.api.instruments": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.instruments"
+    ],
+    "orchestrator.api.metrics": [
+      "orchestrator.api.body_limit",
+      "orchestrator.telemetry"
+    ],
+    "orchestrator.api.oncall": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.oncall"
+    ],
+    "orchestrator.api.patients": [
+      "orchestrator.agenda",
+      "orchestrator.api.schemas",
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.crm",
+      "orchestrator.governance",
+      "orchestrator.instruments",
+      "orchestrator.service",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.api.privacy": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.privacy_cases"
+    ],
+    "orchestrator.api.publications": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.creatives",
+      "orchestrator.db",
+      "orchestrator.publishing"
+    ],
+    "orchestrator.api.schemas": [
+      "orchestrator.auth",
+      "orchestrator.packs"
+    ],
+    "orchestrator.api.security": [
+      "orchestrator.auth",
+      "orchestrator.config"
+    ],
+    "orchestrator.api.session": [
+      "orchestrator.api.security",
+      "orchestrator.auth"
+    ],
+    "orchestrator.api.social": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.establishment",
+      "orchestrator.inbound",
+      "orchestrator.service",
+      "orchestrator.social"
+    ],
+    "orchestrator.api.staff_login": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.staff_login"
+    ],
+    "orchestrator.api.views": [
+      "orchestrator.auth"
+    ],
+    "orchestrator.api.workshops": [
+      "orchestrator.api.security",
+      "orchestrator.auth",
+      "orchestrator.workshops"
+    ],
+    "orchestrator.api.__init__": [],
+    "orchestrator.migrations.env": [],
+    "orchestrator.migrations.versions.0001_baseline": [],
+    "orchestrator.migrations.versions.0002_campaign_mode_knowledge_versions": [],
+    "orchestrator.migrations.versions.0003_channel_accounts": [],
+    "orchestrator.migrations.versions.0004_publications": [],
+    "orchestrator.migrations.versions.0005_inbound_messages": [],
+    "orchestrator.migrations.versions.0006_professionals": [],
+    "orchestrator.migrations.versions.0007_clinical_documents": [],
+    "orchestrator.migrations.versions.0008_on_call": [],
+    "orchestrator.migrations.versions.0009_knowledge_text": [],
+    "orchestrator.migrations.versions.0010_principal_not_before": [],
+    "orchestrator.migrations.versions.0011_instruments": [],
+    "orchestrator.migrations.versions.0012_clinical_files": [],
+    "orchestrator.migrations.versions.0013_channel_auto_replies": [],
+    "orchestrator.migrations.versions.0014_agenda": [],
+    "orchestrator.migrations.versions.0015_whatsapp_offers": [],
+    "orchestrator.migrations.versions.0016_model_spend": [],
+    "orchestrator.migrations.versions.0017_appointment_reminders": [],
+    "orchestrator.migrations.versions.0018_privacy_cases": [],
+    "orchestrator.migrations.versions.0019_inbox": [],
+    "orchestrator.migrations.versions.0020_test_assignments": [],
+    "orchestrator.migrations.versions.0021_publication_schedule": [],
+    "orchestrator.migrations.versions.0022_workshops": [],
+    "orchestrator.migrations.versions.0023_marketing_goals": [],
+    "orchestrator.migrations.versions.0024_staff_email_sign_in": []
+  },
+  "reference_documents": [
+    {
+      "filename": "519473692-Atomic-Design-Spanish.pdf",
+      "sha256": "4a62e2be58dc9006bb4f6d4b07894ed1ef2a31f17bc99a5fc31c842132a6cb57"
+    },
+    {
+      "filename": "Arquitectura Limpia - Español.pdf",
+      "sha256": "e2c1af7240f1bbac6753aff9283dc0bcdfcd1e8820869c009d7ab7fddee26229"
+    },
+    {
+      "filename": "Atomic Design.pdf",
+      "sha256": "dfd7754c2a723ce361c2e1f1fd6cb172d3bac70d72ab349534b0e825cec04cde"
+    },
+    {
+      "filename": "Clean Architecture A Craftsman Guide to Software Structure and Design.pdf",
+      "sha256": "eb3885d72fdb7c27a6a3531b06d69ae71c90f4c9c7a0e79f517654bad402baf5"
+    },
+    {
+      "filename": "Clean.Code.A.Handbook.of.Agile.Software.Craftsmanship.pdf",
+      "sha256": "034292d5e0a2e27bc3444ff41216139537b4e0729661c79ee0a8ad3298db3857"
+    },
+    {
+      "filename": "Codigo limpio - Robert Cecil Martin.pdf",
+      "sha256": "92876e0f2bc22b150756f0845f9945fd3291df3067791627d0392bc34603e67d"
+    },
+    {
+      "filename": "el-libro-negro-del-programador.pdf",
+      "sha256": "4a25feaea0c7399847c3970533fa710b771c5bdf5869e04eecdf3c24e5b0955c"
+    },
+    {
+      "filename": "typescript-handbook.pdf",
+      "sha256": "4510ad31c2743a52b308d697b861bd3724b2be979fae300319ef7c9491d21d42"
+    }
+  ],
+  "limitations": "Top-level static imports only; deferred, relative, dynamic and TYPE_CHECKING imports are not runtime dependency edges here. Function length is a review signal, not a defect by itself."
+}
