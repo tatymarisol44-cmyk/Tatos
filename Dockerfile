@@ -31,9 +31,9 @@ LABEL org.opencontainers.image.title="agency-orchestrator" \
 ARG DEBIAN_SNAPSHOT=20261019T000000Z
 RUN . /etc/os-release \
     && rm -f /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
-    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian/%s/\nSuites: %s %s-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n' \
+    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian/%s/\nSuites: %s %s-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n\n' \
          "$DEBIAN_SNAPSHOT" "$VERSION_CODENAME" "$VERSION_CODENAME" > /etc/apt/sources.list.d/debian.sources \
-    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian-security/%s/\nSuites: %s-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n' \
+    && printf 'Types: deb\nURIs: https://snapshot.debian.org/archive/debian-security/%s/\nSuites: %s-security\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n\n' \
          "$DEBIAN_SNAPSHOT" "$VERSION_CODENAME" >> /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get upgrade -y --no-install-recommends \
