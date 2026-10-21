@@ -117,6 +117,16 @@ class Agenda:
             professional_hours.c.professional_id == professional_id,
         )
         async with self.db.engine.begin() as conn:
+            await conn.execute(
+                select(professionals.c.professional_id)
+                .where(
+                    and_(
+                        professionals.c.tenant == tenant,
+                        professionals.c.professional_id == professional_id,
+                    )
+                )
+                .with_for_update()
+            )
             await conn.execute(delete(professional_hours).where(key))
             for b in blocks:
                 await conn.execute(
@@ -233,8 +243,12 @@ class Agenda:
     async def is_free_slot(self, tenant: str, professional_id: str, starts_at: datetime) -> int:
         """The slot's length if `starts_at` is a free slot of the professional, else raise."""
         start = starts_at.astimezone(UTC)
-        days = max(1, (start.astimezone(self.tz).date() - datetime.now(self.tz).date()).days + 1)
-        for slot in await self.free_slots(tenant, professional_id, days=min(days, 120)):
+        days = (start.astimezone(self.tz).date() - datetime.now(self.tz).date()).days
+        if start <= datetime.now(UTC) or days >= 120:
+            raise AgendaError("that time is outside the booking horizon")
+        for slot in await self.free_slots(
+            tenant, professional_id, days=2, now=start - timedelta(microseconds=1)
+        ):
             if datetime.fromisoformat(slot["starts_at"]) == start:
                 return int(slot["minutes"])
         raise AgendaError("that time is not a free slot of the professional")

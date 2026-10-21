@@ -28,6 +28,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     migrate,
     monthly_report,
     oncall,
+    patient_login,
     privacy_cases,
     publishing,
     social,

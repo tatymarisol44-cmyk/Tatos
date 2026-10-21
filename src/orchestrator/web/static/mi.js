@@ -58,14 +58,18 @@ class ApiError extends Error {
   constructor(status, detail) { super(detail || String(status)); this.status = status; this.detail = detail; }
 }
 
+class StaleSessionError extends Error {}
+
 async function api(path, { method = "GET", body } = {}) {
-  const headers = { "X-API-Key": store.get() || "" };
+  const requestKey = store.get();
+  const headers = { "X-API-Key": requestKey || "" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let resp;
   try {
     resp = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch { throw new ApiError(0, ""); }
-  if (resp.status === 401 || (resp.status === 403 && path.startsWith("/v1/me"))) {
+  if (requestKey !== store.get()) throw new StaleSessionError();
+  if ([401, 403].includes(resp.status) && path.startsWith("/v1/me")) {
     store.clear();
     noAccess("Tu enlace venció o fue reemplazado. Pide uno nuevo al consultorio.");
     throw new ApiError(resp.status, "");
@@ -75,7 +79,9 @@ async function api(path, { method = "GET", body } = {}) {
     try { const data = await resp.json(); detail = typeof data.detail === "string" ? data.detail : ""; } catch { /* none */ }
     throw new ApiError(resp.status, detail);
   }
-  return resp.status === 204 ? null : resp.json();
+  const result = resp.status === 204 ? null : await resp.json();
+  if (requestKey !== store.get()) throw new StaleSessionError();
+  return result;
 }
 function humanError(err) {
   if (!(err instanceof ApiError) || err.status >= 500) return "Algo salió mal. Inténtalo de nuevo en un momento.";
@@ -113,14 +119,21 @@ function takeKeyFromLink() {
 }
 
 function noAccess(message) {
+  state.me = null;
+  ++turn; // Invalidate in-flight screens before rendering the access message.
   $("#tabs").hidden = true;
   $("#view").replaceChildren(el("section", { class: "card" },
     el("h1", { class: "title", text: "Mi consultorio" }),
     el("p", { text: message || "Para entrar, abre el enlace personal que te envió tu consultorio por WhatsApp." }),
-    el("p", { class: "muted", text: "Ese enlace es solo tuyo: no lo compartas." })));
+    el("p", { class: "muted", text: "Ese enlace es solo tuyo: no lo compartas." }),
+    el("h2", { text: "Entrar con mi cuenta" }),
+    credentialsForm({ onSuccess: () => { history.replaceState(null, "", "/mi/#inicio"); boot(); } }),
+    el("p", { class: "muted", text: "Para crear tu cuenta o recuperar tu contraseña, pide un enlace personal al consultorio." })));
+  $("#who").textContent = "";
 }
 
 async function boot() {
+  ++turn;
   takeKeyFromLink();
   if (!store.get()) return noAccess();
   try {
@@ -136,6 +149,7 @@ async function boot() {
     route();
     refreshTestsBadge();
   } catch (err) {
+    if (err instanceof StaleSessionError) return;
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return;
     $("#view").replaceChildren(el("p", { class: "status error", text: humanError(err) }));
   }
@@ -197,6 +211,7 @@ VIEWS.inicio = async (main) => {
   state.me = me;
   const next = me.upcoming_appointments.sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0];
   main.append(el("h1", { class: "title", text: `Hola, ${firstName(me.profile.display_name)}` }));
+  main.append(el("a", { href: "#cuenta", class: "btn", text: "Mi correo y contraseña" }));
   main.append(next
     ? el("section", { class: "next-appt", "aria-label": "Tu próxima cita" },
       el("span", { text: "Tu próxima cita" }), el("span", { class: "big", text: when(next.starts_at) }),
@@ -243,11 +258,39 @@ async function bookingCard() {
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const area = el("div", { class: "stack" });
   const pick = el("select", { "aria-label": "Profesional" }, ...team.map((t) => el("option", { value: t.professional_id, text: t.display_name })));
+  const screen = turn;
+  const sessionKey = store.get();
+  let loadGeneration = 0;
+  let submitting = false;
+  const active = () => screen === turn && sessionKey === store.get() && state.me !== null;
   const load = async () => {
+    if (!active()) return;
+    const generation = ++loadGeneration;
+    const professionalId = pick.value;
+    const current = () => active() && generation === loadGeneration && professionalId === pick.value;
     area.replaceChildren(el("p", { class: "muted", text: "Buscando horarios libres…" }));
-    const slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(pick.value)}&days=60`);
+    let slots;
+    try {
+      slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(professionalId)}&days=60`);
+    } catch (err) {
+      if (!current()) return;
+      area.replaceChildren(el("p", { class: "status error", text: humanError(err) }),
+        button("Reintentar horarios", () => { say(status, ""); load(); }));
+      return;
+    }
+    if (!current()) return;
     const days = [...new Set(slots.map((s) => s.local.slice(0, 10)))];
-    if (!days.length) { area.replaceChildren(el("p", { class: "empty", text: "No hay horarios libres en los próximos días. Escribe al consultorio." })); return; }
+    if (!days.length) {
+      let configured = true;
+      try { configured = (await api(`/v1/me/booking-status?professional_id=${encodeURIComponent(professionalId)}`)).hours_configured; }
+      catch { /* Keep the generic availability message if the diagnostic is unavailable. */ }
+      if (!current()) return;
+      area.replaceChildren(el("p", { class: "empty", text: configured
+        ? "No hay horarios libres en los próximos días. Prueba con otro profesional o escribe al consultorio."
+        : "Este profesional todavía no ha publicado sus horarios de atención. Pide al consultorio que los configure o selecciona otro profesional." }),
+        button("Actualizar horarios", () => load()));
+      return;
+    }
     let chosenDay = days[0];
     let chosen = null;
     const pills = el("div", { class: "day-pills", role: "group", "aria-label": "Día" });
@@ -257,6 +300,7 @@ async function bookingCard() {
       times.replaceChildren(...slots.filter((s) => s.local.startsWith(chosenDay)).map((s) => {
         const b = el("button", { class: "time-btn", type: "button", "aria-pressed": String(chosen === s), text: s.local.slice(11) });
         b.addEventListener("click", () => {
+          if (submitting || !current()) return;
           chosen = s;
           drawTimes();
           confirm.disabled = false;
@@ -270,25 +314,35 @@ async function bookingCard() {
         const p = parts(`${d}T17:00:00Z`);
         const b = el("button", { class: "pill", type: "button", "aria-pressed": String(d === chosenDay) },
           el("span", { text: DAY_NAMES[p.dow].slice(0, 3) }), el("strong", { text: String(Number(d.slice(8))) }));
-        b.addEventListener("click", () => { chosenDay = d; chosen = null; confirm.disabled = true; confirm.textContent = "Elige una hora"; drawDays(); drawTimes(); });
+        b.addEventListener("click", () => { if (submitting || !current()) return; chosenDay = d; chosen = null; confirm.disabled = true; confirm.textContent = "Elige una hora"; drawDays(); drawTimes(); });
         return b;
       }));
     };
     confirm.addEventListener("click", async () => {
-      if (!chosen) return;
+      if (!chosen || submitting || !current()) return;
+      submitting = true;
+      pick.disabled = true;
+      for (const control of area.querySelectorAll("button")) control.disabled = true;
       confirm.disabled = true;
       say(status, "Reservando…");
       try {
-        await api("/v1/me/appointments", { method: "POST", body: { professional_id: pick.value, starts_at: chosen.starts_at } });
-        say(status, "¡Listo! Tu cita quedó reservada. Te recordaremos el día anterior.", "done");
-        setTimeout(route, 1500);
-      } catch (err) { say(status, humanError(err), "error"); load(); }
+        await api("/v1/me/appointments", { method: "POST", body: { professional_id: professionalId, starts_at: chosen.starts_at } });
+        if (!current()) return;
+        say(status, "¡Listo! Tu cita quedó reservada.", "done");
+        setTimeout(() => { if (current()) route(); }, 1500);
+      } catch (err) {
+        if (!current()) return;
+        say(status, humanError(err), "error");
+        submitting = false;
+        pick.disabled = false;
+        await load();
+      }
     });
     drawDays();
     drawTimes();
     area.replaceChildren(pills, times, confirm);
   };
-  pick.addEventListener("change", () => load().catch((err) => say(status, humanError(err), "error")));
+  pick.addEventListener("change", () => { say(status, ""); load(); });
   if (team.length > 1) box.append(el("label", { class: "field" }, "Con quién", pick));
   box.append(area, status);
   await load();
@@ -437,12 +491,68 @@ VIEWS.perfil = async (main) => {
       flip);
   });
   main.append(el("section", { class: "card" }, el("h2", { text: "Lo que aceptas" }), ...rows, status, el("p", { class: "muted", text: prompt.footer })));
-  const out = button("Salir de este celular", () => {
+  main.append(el("a", { href: "#cuenta", class: "btn", text: "Mi correo y contraseña" }));
+  const out = button("Salir de este celular", async () => {
     if (!sure(out, "Sí, salir de este celular")) return;
-    store.clear(); state.me = null; noAccess("Saliste. Para volver, abre de nuevo el enlace que te envió el consultorio.");
+    out.disabled = true;
+    try { await api("/v1/patient-auth/sign-out", { method: "POST" }); }
+    catch (err) { say(status, humanError(err), "error"); out.disabled = false; return; }
+    store.clear(); state.me = null; noAccess("Saliste. Puedes volver con tu correo y contraseña o con un enlace vigente del consultorio.");
   });
   main.append(out);
 };
+
+// Account creation requires the private link; sign-in itself needs no patient key.
+function credentialsForm({ activation = false, email = "", onSuccess }) {
+  const mail = el("input", { type: "email", autocomplete: "username", required: true, maxlength: 254, value: email });
+  const password = el("input", { type: "password", autocomplete: activation ? "new-password" : "current-password", required: true, maxlength: 200, minlength: activation ? 10 : 1 });
+  const repeat = activation ? el("input", { type: "password", autocomplete: "new-password", required: true, maxlength: 200 }) : null;
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const submit = el("button", { type: "submit", class: "btn primary", text: activation ? "Guardar correo y contraseña" : "Entrar" });
+  const form = el("form", { class: "stack" },
+    el("label", { class: "field" }, "Correo electrónico", mail),
+    el("label", { class: "field" }, activation ? "Contraseña nueva (mínimo 10 caracteres)" : "Contraseña", password),
+    repeat ? el("label", { class: "field" }, "Repite la contraseña", repeat) : null, submit, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    if (repeat && password.value !== repeat.value) { say(status, "Las contraseñas no coinciden.", "error"); return; }
+    const originalKey = store.get();
+    submit.disabled = true;
+    try {
+      const result = await api(activation ? "/v1/me/account" : "/v1/patient-auth/sign-in", {
+        method: "POST", body: { email: mail.value, password: password.value },
+      });
+      if (!form.isConnected || store.get() !== originalKey) return;
+      password.value = "";
+      if (repeat) repeat.value = "";
+      store.set(result.key);
+      onSuccess();
+    } catch (err) {
+      if (!form.isConnected) return;
+      say(status, err instanceof ApiError && [401, 422, 429].includes(err.status)
+        ? (err.status === 429 ? "Demasiados intentos. Espera un minuto." : err.detail || "Revisa tu correo y contraseña.")
+        : humanError(err), "error");
+      submit.disabled = false;
+    }
+  });
+  return form;
+}
+
+VIEWS.cuenta = async (main) => {
+  const account = await api("/v1/me/account");
+  main.append(el("h1", { class: "title", text: "Tu cuenta" }), el("a", { href: "#inicio", class: "btn", text: "Volver al inicio" }));
+  if (account.can_activate) {
+    main.append(el("p", { text: "Crea tu acceso con correo y contraseña. Se cerrarán tus sesiones anteriores y dejarán de funcionar tus enlaces antiguos." }),
+      credentialsForm({ activation: true, email: account.email || state.me.profile.email || "", onSuccess: () => {
+        history.replaceState(null, "", "/mi/#inicio"); boot();
+      } }));
+  } else {
+    main.append(el("p", { text: account.email ? `Tu correo de acceso: ${account.email}` : "Pide al consultorio un enlace para activar tu cuenta." }));
+  }
+  main.append(el("p", { class: "muted", text: "¿Olvidaste tu contraseña o necesitas cambiar tu correo? Pide al consultorio un enlace de recuperación. El consultorio verificará tu identidad antes de entregártelo." }));
+};
+
 
 // --- start ---------------------------------------------------------------------------------------------
 window.addEventListener("hashchange", () => {

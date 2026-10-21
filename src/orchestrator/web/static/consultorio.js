@@ -1294,10 +1294,13 @@ async function openAccessDialog(patient) {
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const make = el("button", { class: "btn primary", type: "button", text: "Generar su enlace personal" });
   const area = el("div", { class: "stack" });
-  make.addEventListener("click", async () => {
+  const recover = el("button", { class: "btn", type: "button", text: "Crear enlace para recuperar contraseña" });
+  const generate = async (recovery = false) => {
+    if (recovery && !sure(recover, "Identidad verificada: generar enlace")) return;
+    recover.disabled = true;
     make.disabled = true;
     try {
-      const access = await api(`/v1/crm/patients/${encodeURIComponent(patient.id)}/access`, { method: "POST" });
+      const access = await api(`/v1/crm/patients/${encodeURIComponent(patient.id)}/${recovery ? "login-link" : "access"}`, { method: "POST" });
       const url = `${location.origin}/mi/#k=${encodeURIComponent(access.key)}`;
       const field = el("input", { type: "text", readonly: true, value: url, "aria-label": "Enlace personal" });
       const copy = el("button", { class: "btn", type: "button", text: "Copiar enlace" });
@@ -1310,14 +1313,16 @@ async function openAccessDialog(patient) {
       const number = digits.startsWith("0") ? `593${digits.slice(1)}` : digits;
       area.replaceChildren(field, el("div", { class: "row tight" }, copy,
         number ? el("a", { class: "btn primary", href: `https://wa.me/${number}?text=${encodeURIComponent(message)}`, target: "_blank", rel: "noopener noreferrer", text: "Enviar por WhatsApp" }) : null),
-        el("p", { class: "muted", text: `Vence en 90 días. Si lo pierde, genera uno nuevo.` }));
-      make.hidden = true;
-    } catch (err) { say(status, humanError(err), "error"); make.disabled = false; }
-  });
+        el("p", { class: "muted", text: `Vence en ${recovery ? 3 : 90} días. El paciente puede crear su correo y contraseña desde Mi correo y contraseña.` }));
+      make.hidden = true; recover.hidden = true;
+    } catch (err) { say(status, humanError(err), "error"); make.disabled = false; recover.disabled = false; }
+  };
+  make.addEventListener("click", () => generate(false));
+  recover.addEventListener("click", () => generate(true));
   dialog("Acceso a su app",
     el("p", { text: `Con este enlace, ${patient.display_name} ve sus citas, reserva en tus horarios libres y responde los tests que le envíes.` }),
     el("p", { class: "muted", text: "Envíaselo solo a ella: quien tenga el enlace entra a su app. No muestra su historia clínica." }),
-    make, area, status);
+    make, recover, area, status);
 }
 
 async function tabResumen(patient) {

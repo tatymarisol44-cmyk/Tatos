@@ -58,6 +58,7 @@ from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.monthly_report import MonthlyReport
 from orchestrator.oncall import OnCall
+from orchestrator.patient_login import PatientLogins
 from orchestrator.portal import PatientPortal
 from orchestrator.privacy_cases import PrivacyCases
 from orchestrator.publishing import PublicationService
@@ -178,6 +179,7 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
+        self.patient_logins = PatientLogins(self.db, self.audit, self.principals)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
@@ -216,7 +218,15 @@ class Orchestrator:
             self.db, self.audit, settings, self.campaigns.telegram, self.inbound.is_opted_out
         )
         self.inbound.assistant = WhatsAppAssistant(
-            self.db, self.llm, self.knowledge, self.agenda, self.crm, settings, self.spend
+            self.db,
+            self.llm,
+            self.knowledge,
+            self.agenda,
+            self.crm,
+            settings,
+            self.spend,
+            self.memory,
+            self.consents,
         )
         # The inbox (ADR 0023): channels record into it; the assistant drafts for it.
         self.inbox = InboxService(self.db, self.audit, settings)
@@ -410,6 +420,7 @@ class Orchestrator:
             "inbox_messages": await self.inbox.purge(
                 timedelta(days=self.settings.inbox_retention_days), dry_run=dry_run
             ),
+            "patient_sessions": await self.patient_logins.purge(dry_run=dry_run),
             "sign_in_leftovers": await self.staff_logins.purge(dry_run=dry_run),
         }
 

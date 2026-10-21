@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
     JSON,
@@ -313,6 +314,7 @@ class CrmService:
         price: float,
         actor: str,
         professional_id: str | None = None,
+        require_available_slot: bool = False,
     ) -> dict[str, Any]:
         await self._require_active(tenant, patient_id)
         aid = uuid.uuid4().hex[:12]
@@ -321,6 +323,10 @@ class CrmService:
         async with self.db.engine.begin() as conn:
             if professional_id is not None:
                 await self._claim_time(conn, tenant, professional_id, start, duration_min)
+                if require_available_slot:
+                    await self._require_slot_in(conn, tenant, professional_id, start, duration_min)
+            elif require_available_slot:
+                raise CrmError("a professional is required for a self-service booking")
             await conn.execute(
                 insert(appointments).values(
                     tenant=tenant,
@@ -382,6 +388,34 @@ class CrmService:
             other = _utc(other_start)
             if other < end and other + timedelta(minutes=other_minutes) > start:
                 raise SlotTaken("the professional already has a visit at that time")
+
+    async def _require_slot_in(
+        self, conn: Any, tenant: str, professional_id: str, start: datetime, minutes: int
+    ) -> None:
+        """After locking the professional: working hours and time are still valid."""
+        from orchestrator.agenda import professional_hours
+
+        local = start.astimezone(ZoneInfo(self.settings.clinic_timezone))
+        minute = local.hour * 60 + local.minute
+        rows = await conn.execute(
+            select(professional_hours).where(
+                and_(
+                    professional_hours.c.tenant == tenant,
+                    professional_hours.c.professional_id == professional_id,
+                    professional_hours.c.weekday == local.weekday(),
+                )
+            )
+        )
+        if start > utcnow() and not (local.second or local.microsecond):
+            for row in rows:
+                if (
+                    row.slot_minutes == minutes
+                    and row.start_minute <= minute
+                    and minute + minutes <= row.end_minute
+                    and (minute - row.start_minute) % row.slot_minutes == 0
+                ):
+                    return
+        raise CrmError("that time is no longer a working slot")
 
     async def get_appointment(self, tenant: str, appointment_id: str) -> dict[str, Any]:
         query = select(appointments).where(
@@ -743,6 +777,14 @@ class CrmService:
                 erased_at=utcnow(),
             )
         )
+        from orchestrator.patient_login import patient_logins, patient_sessions
+
         async with self.db.engine.begin() as conn:
             await conn.execute(query)
+            for table in (patient_sessions, patient_logins):
+                await conn.execute(
+                    table.delete().where(
+                        and_(table.c.tenant == tenant, table.c.patient_id == patient_id)
+                    )
+                )
         return {"patient": "restricted", "clinical_record": "retained"}

@@ -33,6 +33,7 @@ from orchestrator.api import (
     inbox,
     instruments,
     oncall,
+    patient_login,
     patients,
     privacy,
     publications,
@@ -212,6 +213,7 @@ def create_app(
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(patients.router)
+    app.include_router(patient_login.router)
     app.include_router(channels.router)
     app.include_router(inbox.router)
     app.include_router(session.router)

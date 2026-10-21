@@ -224,7 +224,10 @@ async def authenticate(
         principal = service_principal(tenant)
     elif x_api_key:
         store: PrincipalStore = request.app.state.orchestrator.principals
-        principal = await store.resolve(x_api_key)
+        if x_api_key.startswith("ps_"):
+            principal = await request.app.state.orchestrator.patient_logins.resolve(x_api_key)
+        else:
+            principal = await store.resolve(x_api_key)
     else:
         principal = None
     if principal is None:
