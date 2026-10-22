@@ -225,3 +225,21 @@ def test_alerts_templates_privacy_and_roles(client: TestClient) -> None:
         headers=vera,
     )
     assert bad.status_code == 422
+
+
+def test_phq9_template_cannot_lose_its_immediate_safety_alert(client: TestClient) -> None:
+    vera = staff(client, "dra.phq", "reviewer")
+    made = client.post(
+        "/v1/clinical/instruments/from-template", json={"template": "phq9"}, headers=vera
+    ).json()
+    edited = made["spec"]
+    edited["scoring"]["alerts"] = []
+
+    response = client.put(
+        f"/v1/clinical/instruments/{made['instrument_id']}",
+        json={"spec": edited},
+        headers=vera,
+    )
+
+    assert response.status_code == 422
+    assert "self-harm alert cannot be removed" in response.json()["detail"]

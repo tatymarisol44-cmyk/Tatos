@@ -1,6 +1,6 @@
 """The patient's app (/mi/, a PWA): served under the strict policy, installable, and the
 whole path in a browser: the personal link, the consents asked once, booking a free slot,
-and a test whose alert answer gives the emergency lines at once and alerts the team.
+and answering a synthetic questionnaire without clinical alert rules.
 The browser part needs Playwright and Chromium; skipped otherwise. Synthetic data only."""
 
 from __future__ import annotations
@@ -142,7 +142,7 @@ def _practice(server: str) -> str:
         headers=SERVICE,
     )
     made = httpx.post(
-        f"{server}/v1/clinical/instruments/from-template", json={"template": "phq9"}, headers=dra
+        f"{server}/v1/clinical/instruments/from-template", json={"template": "gad7"}, headers=dra
     ).json()
     spec = made["spec"]
     for n, item in enumerate(spec["items"], 1):
@@ -195,21 +195,21 @@ def test_the_whole_path_on_a_phone(server: str, browser: Any) -> None:
     visits = httpx.get(f"{server}/v1/crm/appointments?patient_id=p-sol", headers=SERVICE).json()
     assert len(visits) == 1 and visits[0]["status"] == "scheduled"
 
-    # The test: an answer above zero on item 9 gives the lines at once and alerts the team.
+    # Synthetic questions must not inherit PHQ-9 crisis rules.
     page.click("a[data-nav=tests]")
     page.click("text=Responder")
-    page.wait_for_selector("text=Pregunta sintética 9")
+    page.wait_for_selector("text=Pregunta sintética 7")
     page.click("text=Enviar mis respuestas")
-    page.wait_for_selector("text=Faltan 9 preguntas")
-    for n in range(9):
+    page.wait_for_selector("text=Faltan 7 preguntas")
+    for n in range(7):
         group = page.locator(".answers").nth(n)
-        group.locator(".answer").nth(2 if n == 8 else 0).click()
+        group.locator(".answer").nth(0).click()
     page.click("text=Enviar mis respuestas")
     page.wait_for_selector("text=¡Gracias!")
-    assert "ECU 911" in page.inner_text(".alert")
+    assert page.locator(".alert").count() == 0
     assert "puntaje" not in page.inner_text("#view").lower()  # never the score
     alerts = httpx.get(f"{server}/v1/social/alerts", headers=SERVICE).json()
-    assert [(a["kind"], a["subject_id"]) for a in alerts] == [("crisis", "p-sol")]
+    assert alerts == []
 
     # Mi perfil, and leaving this phone.
     page.click("a[data-nav=perfil]")

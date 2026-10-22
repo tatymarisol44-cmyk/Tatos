@@ -62,6 +62,8 @@ UNSCOPED = {
     ("POST", "/v1/auth/code"),
     ("POST", "/v1/auth/link"),
     ("POST", "/v1/auth/enroll"),
+    ("POST", "/v1/patient-auth/sign-in"),
+    ("POST", "/v1/patient-auth/sign-out"),
 }
 
 
@@ -515,6 +517,11 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             "/v1/auth/sign-in",
             {"email": i["member_email"], "password": "adivinanza-123"},
         ),
+        ("POST", "/v1/patient-auth/sign-in"): (
+            "/v1/patient-auth/sign-in",
+            {"email": "absent@example.test", "password": "synthetic-unmatched-password"},
+        ),
+        ("POST", "/v1/patient-auth/sign-out"): ("/v1/patient-auth/sign-out", None),
         ("POST", "/v1/auth/code"): ("/v1/auth/code", {"challenge": "0" * 32, "code": "123456"}),
         ("POST", "/v1/auth/link"): (
             "/v1/auth/link",
@@ -532,6 +539,10 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
         ),
         ("POST", "/v1/crm/patients/{patient_id}/access"): (
             f"/v1/crm/patients/{p}/access",
+            None,
+        ),
+        ("POST", "/v1/crm/patients/{patient_id}/login-link"): (
+            f"/v1/crm/patients/{p}/login-link",
             None,
         ),
         ("POST", "/v1/crm/patients"): (
@@ -746,6 +757,16 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/clinical/instrument-results/{i['instrument_result']}",
             None,
         ),
+
+                ("GET", "/v1/clinical/patients/{patient_id}/metrics"): (
+            f"/v1/clinical/patients/{p}/metrics",
+            None,
+        ),
+        ("POST", "/v1/clinical/patients/{patient_id}/metrics"): (
+            f"/v1/clinical/patients/{p}/metrics",
+            {},
+        ),
+
         ("POST", "/v1/clinical/patients/{patient_id}/files"): (
             f"/v1/clinical/patients/{p}/files",
             {"__multipart__": True, "label": "intruso"},
@@ -887,6 +908,7 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
     t = acme.ids["thread"]
     return {
         ("GET", "/v1/me"): ("/v1/me", None),
+        ("GET", "/v1/me/account"): ("/v1/me/account", None),
         ("GET", "/v1/me/appointments"): ("/v1/me/appointments", None),
         ("GET", "/v1/me/treatments"): ("/v1/me/treatments", None),
         ("GET", "/v1/me/loyalty"): ("/v1/me/loyalty", None),
@@ -896,6 +918,10 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
         ("POST", "/v1/me/chat"): ("/v1/me/chat", {"question": "¿Qué dije?", "thread_id": t}),
         ("GET", "/v1/me/chat/{thread_id}"): (f"/v1/me/chat/{t}", None),
         ("GET", "/v1/me/slots"): ("/v1/me/slots?professional_id=dra-acme", None),
+        ("GET", "/v1/me/booking-status"): (
+            "/v1/me/booking-status?professional_id=dra-acme",
+            None,
+        ),
         ("POST", "/v1/me/appointments"): (
             "/v1/me/appointments",
             {"professional_id": "dra-acme", "starts_at": "2030-01-07T14:00:00+00:00"},
@@ -916,6 +942,13 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
             f"/v1/me/tests/{acme.ids['assignment']}",
             {"answers": {"a": 1}},
         ),
+        ("POST", "/v1/me/account"): (
+            "/v1/me/account",
+            {
+                "email": "matrix-globex@example.test",
+                "password": "Synthetic-Password-42!",
+            },
+        ),
     }
 
 
@@ -932,6 +965,7 @@ ADDRESSED = {
         ("POST", "/v1/admin/team/{principal_id}/link"),
         ("DELETE", "/v1/admin/team/{principal_id}"),
         ("POST", "/v1/crm/patients/{patient_id}/access"),
+        ("POST", "/v1/crm/patients/{patient_id}/login-link"),
         ("GET", "/v1/crm/patients/{patient_id}"),
         ("PATCH", "/v1/crm/patients/{patient_id}"),
         ("POST", "/v1/crm/appointments"),
@@ -1011,6 +1045,9 @@ NAMESPACED = {
     ("GET", "/v1/threads/{thread_id}"),
     ("PUT", "/v1/subjects/{subject_id}/consents/{purpose}"),
     ("GET", "/v1/subjects/{subject_id}/export"),
+    ("GET", "/v1/me/account"),
+    ("GET", "/v1/me/booking-status"),
+    ("POST", "/v1/me/account"),
 }
 REFUSED = {403, 404, 409, 422}
 
@@ -1035,6 +1072,16 @@ def world(
             )
         )
         access = _ok(c.post("/v1/crm/patients/p-globex-0/access", headers=GLOBEX))
+        account = _ok(
+            c.post(
+                "/v1/me/account",
+                headers={"X-API-Key": access["key"]},
+                json={
+                    "email": "matrix-globex@example.test",
+                    "password": "Synthetic-Password-42!",
+                },
+            )
+        )
         doctor = _ok(
             c.post(
                 "/v1/admin/staff",
@@ -1042,7 +1089,7 @@ def world(
                 headers=GLOBEX,
             )
         )
-        yield c, acme, ({"X-API-Key": doctor["key"]}, {"X-API-Key": access["key"]})
+        yield c, acme, ({"X-API-Key": doctor["key"]}, {"X-API-Key": account["key"]})
 
 
 def schema_operations(client: TestClient) -> set[tuple[str, str]]:
@@ -1162,6 +1209,8 @@ GLOBAL_KEYS = {
     # the principal is then read with it.
     "staff_sessions": None,
     "login_challenges": None,
+    # Patient sessions are found by the secret hash before their tenant is known.
+    "patient_sessions": ("key_hash",),
 }
 
 

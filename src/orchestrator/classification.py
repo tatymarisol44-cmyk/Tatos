@@ -110,6 +110,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "channel_optouts": DataClass.PERSONAL,
     "clinical_documents": DataClass.PSYCHOTHERAPY,  # holds psychotherapy notes among others
     "clinical_files": DataClass.PSYCHOTHERAPY,  # may hold an author-only document
+    "clinical_metrics": DataClass.HEALTH,  # clinician-recorded patient measurements
     "consents": DataClass.PERSONAL,
     "contact_budget": DataClass.PERSONAL,
     "crm_appointments": DataClass.HEALTH,
@@ -128,6 +129,8 @@ TABLE_CLASS: dict[str, DataClass] = {
     "marketing_goals": DataClass.INTERNAL,  # a metric, a target, a month: no patient
     "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
+    "patient_logins": DataClass.CREDENTIAL,  # email, password and recovery hashes
+    "patient_sessions": DataClass.CREDENTIAL,  # hashed patient session keys
     "principals": DataClass.CREDENTIAL,
     # A rights request or a breach names a clinic's patient: the fact is health data.
     "privacy_case_steps": DataClass.HEALTH,

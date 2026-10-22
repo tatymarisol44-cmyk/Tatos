@@ -844,8 +844,9 @@ function openVisitActions(visit) {
 // --- AJUSTES: profile and hours ------------------------------------------------------------------
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
+  if (section === "redes") return socialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
-  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia")];
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
   if (canReadCare()) parts.push(await onCallCard());
@@ -853,6 +854,120 @@ VIEWS.ajustes = async (main, section, which) => {
   parts.push(accountCard());
   main.replaceChildren(...parts);
 };
+
+// Account setup uses credential names only (ADR 0015); tokens stay on the server.
+const SOCIAL_CONNECTIONS = {
+  whatsapp: { name: "WhatsApp", id: "ID del número de WhatsApp Business", ref: "WA_MAIN" },
+  instagram: { name: "Instagram", id: "ID de la cuenta profesional de Instagram", ref: "IG_MAIN" },
+  facebook: { name: "Facebook", id: "ID de la página de Facebook", ref: "FB_MAIN" },
+  tiktok: { name: "TikTok", id: "ID de la cuenta de TikTok", ref: "TT_MAIN" },
+  telegram: { name: "Telegram", id: "ID del bot de Telegram", ref: "TG_MAIN" },
+};
+
+function connectSocialButton() {
+  return isAdmin() ? link("#ajustes/redes", "Conectar redes sociales", "btn primary") : null;
+}
+
+async function socialAccountsView(main) {
+  const head = page("Redes sociales", "Cuentas del consultorio para mensajes y publicaciones.", link("#ajustes", "Volver a Ajustes"));
+  if (!isAdmin()) {
+    main.replaceChildren(head, empty("Pide a la administración del consultorio que conecte las redes sociales."));
+    return;
+  }
+  // A failed read must remain an error, rather than looking like no accounts exist.
+  const accounts = await api("/v1/social/accounts");
+  const list = el("div", { class: "stack", "aria-live": "polite" });
+  const renderAccounts = () => {
+    const active = accounts.filter((a) => a.active !== false);
+    list.replaceChildren(...(active.length ? active.map((account) => {
+      const status = el("p", { class: "status", role: "status" });
+      const disconnect = el("button", { class: "btn small", type: "button", text: "Desconectar" });
+      disconnect.addEventListener("click", async () => {
+        if (!sure(disconnect, "Sí, desconectar")) return;
+        disconnect.disabled = true;
+        try {
+          await api(`/v1/social/accounts/${encodeURIComponent(account.account_id)}`, { method: "DELETE" });
+          account.active = false;
+          renderAccounts();
+        } catch (err) {
+          say(status, humanError(err), "error");
+          disconnect.disabled = false;
+        }
+      });
+      const name = SOCIAL_CONNECTIONS[account.network]?.name || account.network;
+      return el("article", { class: "doc social-account" },
+        el("div", { class: "what" }, el("strong", { text: `${name} · ${account.handle}` }),
+          el("p", { class: "muted", text: account.secret_configured
+            ? "La autorización está configurada en el consultorio."
+            : "Falta preparar la autorización de esta cuenta para poder enviar o publicar." }), status),
+        el("span", { class: `chip ${account.secret_configured ? "ok" : "wait"}`, text: account.secret_configured ? "Configuración lista" : "Pendiente de autorización" }),
+        disconnect);
+    }) : [empty("Todavía no hay cuentas vinculadas. Agrega la primera aquí.")]));
+  };
+  renderAccounts();
+
+  const network = el("select", { "aria-label": "Red social" }, ...Object.entries(SOCIAL_CONNECTIONS).map(([value, item]) => el("option", { value, text: item.name })));
+  const handle = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: @consultorio" });
+  const externalId = el("input", { type: "text", maxlength: "128", required: true, autocomplete: "off", spellcheck: "false" });
+  const idLabel = el("span", { text: SOCIAL_CONNECTIONS.whatsapp.id });
+  const secretRef = el("input", { type: "text", maxlength: "64", value: SOCIAL_CONNECTIONS.whatsapp.ref, autocomplete: "off", spellcheck: "false" });
+  const details = el("details", {}, el("summary", { text: "Configuración de la conexión" }),
+    el("label", { class: "field" }, "Nombre de conexión", secretRef),
+    el("p", { class: "muted", text: "Usa el nombre de conexión preparado por la administración para esta cuenta. La autorización se guarda en el servidor." }));
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Vincular cuenta" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Red social", network),
+    el("label", { class: "field" }, "Nombre de la cuenta", handle),
+    el("label", { class: "field" }, idLabel, externalId),
+    details, save, status);
+  network.addEventListener("change", () => {
+    const selected = SOCIAL_CONNECTIONS[network.value];
+    idLabel.textContent = selected.id;
+    externalId.value = "";
+    secretRef.value = selected.ref;
+    say(status, "");
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (save.disabled) return;
+    if (!handle.value.trim()) {
+      say(status, "Escribe el nombre de la cuenta.", "error");
+      handle.focus();
+      return;
+    }
+    if (!/^[\w.:@+-]{1,128}$/.test(externalId.value.trim())) {
+      say(status, "Escribe el identificador que te proporciona la red para esta cuenta.", "error");
+      externalId.focus();
+      return;
+    }
+    if (!/^[A-Z][A-Z0-9_]{2,63}$/.test(secretRef.value.trim())) {
+      say(status, "Revisa el nombre de conexión con la administración.", "error");
+      details.open = true;
+      secretRef.focus();
+      return;
+    }
+    save.disabled = true;
+    say(status, "Guardando cuenta…");
+    try {
+      const account = await api("/v1/social/accounts", { method: "POST", body: {
+        network: network.value, external_id: externalId.value.trim(), handle: handle.value.trim(), secret_ref: secretRef.value.trim(),
+      } });
+      accounts.push(account);
+      renderAccounts();
+      handle.value = "";
+      externalId.value = "";
+      say(status, account.secret_configured ? "Cuenta guardada. Su autorización está configurada."
+        : "Cuenta guardada. Falta preparar su autorización antes de enviar o publicar.", account.secret_configured ? "done" : "");
+    } catch (err) {
+      say(status, err.status === 409 ? "Esta cuenta ya está vinculada. Revísala en la lista."
+        : err.status === 422 ? "Revisa los datos de la cuenta y el nombre de conexión." : humanError(err), "error");
+    } finally {
+      save.disabled = false;
+    }
+  });
+  main.replaceChildren(head, card("Cuentas vinculadas", "", list), card("Agregar cuenta", "", form));
+}
 
 const ROLE_NAMES = {
   admin: "administración", owner: "dueña", reviewer: "psicóloga (datos clínicos)", reception: "recepción",
@@ -1015,48 +1130,233 @@ async function testsCard() {
       missing
         ? el("span", { class: "chip wait", text: `Faltan ${missing} textos oficiales` })
         : el("span", { class: "chip ok", text: t.spec.administration === "self_report" ? "Lista para enviar" : "Para aplicar en sesión" }),
-      link(`#ajustes/test/${encodeURIComponent(t.instrument_id)}`, "Editar textos", "btn small"));
+      link(`#ajustes/test/${encodeURIComponent(t.instrument_id)}`, "Editar test", "btn small"));
   });
   return card("Tus tests", "",
     ...(rows.length ? rows : [empty("Aún no tienes tests. Empieza con una plantilla de dominio público.")]),
     el("div", { class: "row tight" }, add("phq9", "Agregar PHQ-9 (depresión)"), add("gad7", "Agregar GAD-7 (ansiedad)")),
+    link("#ajustes/test/nuevo", "Crear test propio", "btn"),
     status,
-    el("p", { class: "muted", text: "Por derechos de autor, las plantillas no traen el texto de las preguntas: cópialo del formulario oficial publicado. Hasta entonces el test no se puede enviar a las pacientes." }));
+    el("p", { class: "muted", text: "Las bandas y alertas de PHQ-9/GAD-7 vienen de la plantilla estándar. Solo el equipo clínico las ve. Los tests propios no tendrán bandas ni alertas hasta que las configures. Por derechos de autor, las plantillas no traen el texto de las preguntas: cópialo del formulario oficial publicado." }));
+}
+
+function itemEditor(item, index, onRemove) {
+  const id = el("input", { type: "text", required: true, maxlength: "32", value: item.id || `q${index + 1}` });
+  const text = el("textarea", { rows: "2", required: true, maxlength: "1000" });
+  text.value = item.text?.includes(PLACEHOLDER) ? "" : item.text || "";
+  const type = el("select", {},
+    el("option", { value: "choice", text: "Opciones de respuesta" }),
+    el("option", { value: "number", text: "Número" }),
+    el("option", { value: "text", text: "Respuesta abierta" }));
+  type.value = item.type || "choice";
+  const options = el("textarea", { rows: "3" });
+  options.value = (item.options || []).map((option) => `${option.label}=${option.value}`).join("\n");
+  const min = el("input", { type: "number", step: "any", value: item.min ?? "" });
+  const max = el("input", { type: "number", step: "any", value: item.max ?? "" });
+  const required = el("input", { type: "checkbox", checked: item.required !== false });
+  const scored = el("input", { type: "checkbox", checked: item.scored !== false });
+  const reverse = el("input", { type: "checkbox", checked: item.reverse === true });
+  const optionsField = el("label", { class: "field" }, "Opciones (una por línea: texto=valor numérico)", options);
+  const rangeFields = el("div", { class: "fields" },
+    el("label", { class: "field" }, "Número mínimo", min),
+    el("label", { class: "field" }, "Número máximo", max));
+  const reverseField = el("label", { class: "check" }, reverse, "Puntuar al revés");
+  const remove = el("button", { class: "btn small", type: "button", text: "Quitar pregunta" });
+  const node = el("div", { class: "stack card" },
+    el("div", { class: "head" }, el("strong", { text: `Pregunta ${index + 1}` }), remove),
+    el("label", { class: "field" }, "ID interno", id),
+    el("label", { class: "field" }, "Enunciado", text),
+    el("label", { class: "field" }, "Tipo de respuesta", type),
+    optionsField, rangeFields,
+    el("div", { class: "row tight" },
+      el("label", { class: "check" }, required, "Respuesta obligatoria"),
+      el("label", { class: "check" }, scored, "Incluir en la puntuación"),
+      reverseField));
+  const sync = () => {
+    optionsField.hidden = type.value !== "choice";
+    rangeFields.hidden = type.value !== "number";
+    reverseField.hidden = type.value !== "choice";
+    if (type.value === "text") {
+      scored.checked = false;
+      scored.disabled = true;
+    } else scored.disabled = false;
+  };
+  type.addEventListener("change", sync);
+  remove.addEventListener("click", () => onRemove(node));
+  sync();
+  return {
+    node,
+    id,
+    read() {
+      const out = {
+        id: id.value.trim(),
+        text: text.value.trim(),
+        type: type.value,
+        required: required.checked,
+        scored: scored.checked,
+      };
+      if (type.value === "choice") {
+        out.options = options.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+          const split = line.lastIndexOf("=");
+          const value = Number(line.slice(split + 1).trim());
+          if (split < 1 || !Number.isFinite(value)) throw new Error(`Revisa las opciones de ${out.id}: usa texto=valor.`);
+          return { label: line.slice(0, split).trim(), value };
+        });
+        out.reverse = reverse.checked;
+      } else if (type.value === "number") {
+        out.min = min.value === "" ? null : Number(min.value);
+        out.max = max.value === "" ? null : Number(max.value);
+      } else out.scored = false;
+      return out;
+    },
+  };
+}
+
+function parseMetricLines(value, parse, label) {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line, i) => {
+    try { return parse(line); }
+    catch (err) { throw new Error(`${label}, línea ${i + 1}: ${err.message}`); }
+  });
 }
 
 async function testEditor(main, id) {
-  const test = await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`);
-  const spec = test.spec;
-  const instructions = el("textarea", { rows: "3" });
+  const creating = id === "nuevo";
+  const test = creating ? null : await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`);
+  const spec = test?.spec || {
+    name: "",
+    description: "",
+    instructions: "",
+    administration: "professional",
+    items: [{ id: "q1", text: "", type: "choice", options: [{ label: "No", value: 0 }, { label: "Sí", value: 1 }], required: true, scored: true }],
+    scoring: { method: "sum", subscales: {}, bands: [], alerts: [] },
+    licence: { source: "propio", public_domain: false, attestation: false, note: "" },
+  };
+  const name = el("input", { type: "text", required: true, maxlength: "120", value: spec.name || "" });
+  const instructions = el("textarea", { rows: "3", maxlength: "2000" });
   instructions.value = spec.instructions || "";
-  const fields = spec.items.map((item, i) => {
-    const area = el("textarea", { rows: "2", required: true });
-    area.value = item.text.includes(PLACEHOLDER) ? "" : item.text;
-    return { item, area, node: el("label", { class: "field" }, `Pregunta ${i + 1}`, area) };
+  const administration = el("select", {},
+    el("option", { value: "professional", text: "La doctora lo aplica en sesión" }),
+    el("option", { value: "self_report", text: "La paciente lo responde en su app" }));
+  administration.value = spec.administration || "professional";
+  const description = el("textarea", { rows: "2", maxlength: "2000" });
+  description.value = spec.description || "";
+  const itemList = el("div", { class: "stack" });
+  const items = [];
+  const addItem = (item) => {
+    if (items.length >= 200) return;
+    const entry = itemEditor(item, items.length, (node) => {
+      const index = items.findIndex((value) => value.node === node);
+      if (index >= 0) items.splice(index, 1);
+      node.remove();
+    });
+    items.push(entry);
+    itemList.append(entry.node);
+  };
+  for (const item of spec.items) addItem(item);
+  const addQuestion = el("button", { class: "btn small", type: "button", text: "Agregar pregunta" });
+  addQuestion.addEventListener("click", () => {
+    let n = 1;
+    while (items.some((entry) => entry.id.value === `q${n}`)) n += 1;
+    addItem({
+      id: `q${n}`, text: "", type: "choice",
+      options: [{ label: "No", value: 0 }, { label: "Sí", value: 1 }], required: true, scored: true,
+    });
   });
+  const method = el("select", {},
+    el("option", { value: "sum", text: "Sumar las respuestas" }),
+    el("option", { value: "mean", text: "Promediar las respuestas" }),
+    el("option", { value: "none", text: "Sin puntuación total" }));
+  method.value = spec.scoring?.method || "sum";
+  const subscales = el("textarea", { rows: "3" });
+  subscales.value = Object.entries(spec.scoring?.subscales || {}).map(([key, members]) => `${key}: ${members.join(", ")}`).join("\n");
+  const bands = el("textarea", { rows: "4" });
+  bands.value = (spec.scoring?.bands || []).map((band) => `${band.min}|${band.max}|${band.label}|${band.severity}`).join("\n");
+  const alerts = el("textarea", { rows: "3" });
+  alerts.value = (spec.scoring?.alerts || []).map((rule) => `${rule.item}|${rule.op}|${rule.value}|${rule.message}`).join("\n");
+  const licenceSource = el("input", { type: "text", required: true, maxlength: "300", value: spec.licence?.source || "propio" });
+  const publicDomain = el("input", { type: "checkbox", checked: spec.licence?.public_domain === true });
+  const attestation = el("input", { type: "checkbox", checked: spec.licence?.attestation === true });
+  const licenceNote = el("textarea", { rows: "2", maxlength: "500" });
+  licenceNote.value = spec.licence?.note || "";
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
-  const save = el("button", { class: "btn primary", type: "submit", text: "Guardar textos" });
+  const save = el("button", { class: "btn primary", type: "submit", text: creating ? "Crear test" : "Guardar test" });
   const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Nombre del test", name),
     el("label", { class: "field" }, "Instrucciones para la paciente", instructions),
-    ...fields.map((f) => f.node),
-    el("p", { class: "muted", text: `Opciones de respuesta: ${spec.items[0]?.options.map((o) => o.label).join(" · ") || "—"}` }),
+    el("label", { class: "field" }, "Aplicación", administration),
+    el("label", { class: "field" }, "Descripción interna (opcional)", description),
+    el("h3", { text: "Preguntas" }), itemList, addQuestion,
+    el("h3", { text: "Puntuación y métricas calculadas" }),
+    el("label", { class: "field" }, "Método de puntuación", method),
+    el("label", { class: "field" }, "Subescalas (una por línea: nombre: q1, q2)", subscales),
+    el("label", { class: "field" }, "Bandas (una por línea: mínimo|máximo|nombre|none/low/moderate/high)", bands),
+    el("label", { class: "field" }, "Alertas (una por línea: id_pregunta|gte/lte/eq|valor|mensaje)", alerts),
+    el("p", { class: "muted", text: "Una puntuación total puede mostrarse sin banda. Las bandas solo aparecen en la consola clínica y son una ayuda, no un diagnóstico. No escribas una banda ni una alerta si no la has definido." }),
+    el("h3", { text: "Uso y licencia" }),
+    el("label", { class: "field" }, "Fuente o titular de derechos", licenceSource),
+    el("label", { class: "check" }, publicDomain, "La licencia es de dominio público"),
+    el("label", { class: "check" }, attestation, "Confirmo que el consultorio tiene derecho a usar el texto de este test"),
+    el("label", { class: "field" }, "Nota de licencia (opcional)", licenceNote),
     save, status);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const empties = fields.filter((f) => !f.area.value.trim()).length;
-    if (empties) return say(status, `Faltan ${empties} preguntas por completar.`, "error");
+    if (!name.value.trim() || !licenceSource.value.trim()) return say(status, "Escribe el nombre del test y la fuente de licencia.", "error");
+    if (!attestation.checked) return say(status, "Confirma que el consultorio tiene derecho a usar el texto de este test.", "error");
+    if (!items.length) return say(status, "Agrega al menos una pregunta.", "error");
     save.disabled = true;
-    const revised = { ...spec, instructions: instructions.value.trim(),
-      items: fields.map((f) => ({ ...f.item, text: f.area.value.trim() })) };
+    let revised;
     try {
-      await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, { method: "PUT", body: { spec: revised } });
-      for (const area of form.querySelectorAll("textarea[data-dirty]")) delete area.dataset.dirty;
-      say(status, "Textos guardados. Ya puedes enviar este test a tus pacientes.", "done");
+      const ids = new Set();
+      const newItems = items.map((entry) => entry.read());
+      for (const item of newItems) {
+        if (ids.has(item.id)) throw new Error("Cada pregunta necesita un ID distinto.");
+        ids.add(item.id);
+      }
+      const newSubscales = {};
+      for (const line of subscales.value.split(/\r?\n/).map((part) => part.trim()).filter(Boolean)) {
+        const split = line.indexOf(":");
+        if (split < 1) throw new Error("Usa nombre: id_pregunta, id_pregunta en cada subescala.");
+        newSubscales[line.slice(0, split).trim()] = line.slice(split + 1).split(",").map((item) => item.trim()).filter(Boolean);
+      }
+      const newBands = parseMetricLines(bands.value, (line) => {
+        const [minText, maxText, label, severity, ...extra] = line.split("|").map((part) => part.trim());
+        const min = Number(minText), max = Number(maxText);
+        if (extra.length || !Number.isFinite(min) || !Number.isFinite(max) || !label || !["none", "low", "moderate", "high"].includes(severity)) {
+          throw new Error("usa mínimo|máximo|nombre|none/low/moderate/high");
+        }
+        return { min, max, label, severity };
+      }, "Banda");
+      const newAlerts = parseMetricLines(alerts.value, (line) => {
+        const [item, op, rawValue, ...message] = line.split("|").map((part) => part.trim());
+        const value = Number(rawValue);
+        if (message.length !== 1 || !item || !["gte", "lte", "eq"].includes(op) || !Number.isFinite(value) || !message[0]) {
+          throw new Error("usa id_pregunta|gte/lte/eq|valor|mensaje");
+        }
+        return { item, op, value, message: message[0] };
+      }, "Alerta");
+      revised = {
+        ...spec,
+        name: name.value.trim(),
+        description: description.value.trim(),
+        instructions: instructions.value.trim(),
+        administration: administration.value,
+        items: newItems,
+        scoring: { method: method.value, subscales: newSubscales, bands: newBands, alerts: newAlerts },
+        licence: { source: licenceSource.value.trim(), public_domain: publicDomain.checked, attestation: true, note: licenceNote.value.trim() },
+      };
+      if (creating) {
+        const made = await api("/v1/clinical/instruments", { method: "POST", body: { spec: revised, visibility: "establishment" } });
+        location.hash = `#ajustes/test/${encodeURIComponent(made.instrument_id)}`;
+      } else {
+        await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, { method: "PUT", body: { spec: revised } });
+        say(status, "Test guardado como una nueva versión; los resultados anteriores conservan su versión original.", "done");
+      }
     } catch (err) { say(status, humanError(err), "error"); }
-    save.disabled = false;
+    finally { save.disabled = false; }
   });
-  main.replaceChildren(page(test.name, "Pega el texto oficial de cada pregunta", link("#ajustes", "Volver a Ajustes")),
-    card("Textos del test", "", form));
+  const subtitle = creating ? "Crea preguntas y configura solo las métricas que hayas definido" : `Versión ${test.version}; al guardar se crea una nueva versión`;
+  main.replaceChildren(page(creating ? "Crear test propio" : test.name, subtitle, link("#ajustes", "Volver a Ajustes")),
+    card(creating ? "Definición del test" : "Preguntas, puntuación y alertas", "", form));
 }
 
 // On call: who is told at once about a crisis, by WhatsApp, Telegram or e-mail (ADR 0017).
@@ -1327,9 +1627,11 @@ async function openAccessDialog(patient) {
 
 async function tabResumen(patient) {
   if (!state.session.clinician) return [empty("El resumen clínico es solo para el rol de psicóloga.")];
-  const [briefing, engagement] = await Promise.all([
-    api(`/v1/clinical/patients/${encodeURIComponent(patient.id)}/briefing`),
-    api(`/v1/crm/patients/${encodeURIComponent(patient.id)}/engagement`).catch(() => null),
+  const pid = encodeURIComponent(patient.id);
+  const [briefing, engagement, metrics] = await Promise.all([
+    api(`/v1/clinical/patients/${pid}/briefing`),
+    api(`/v1/crm/patients/${pid}/engagement`).catch(() => null),
+    api(`/v1/clinical/patients/${pid}/metrics`),
   ]);
   const [title, ...lines] = briefing.lines;
   return [card("Resumen antes de la sesión", "",
@@ -1337,7 +1639,22 @@ async function tabResumen(patient) {
     el("p", { class: "muted", text: title }),
     el("ul", {}, ...lines.map((line) => el("li", { text: line }))),
     el("p", { class: "muted", text: "Se arma con fechas y números de la ficha. No lee tus notas ni usa inteligencia artificial." })),
-    engagementCard(engagement)].filter(Boolean);
+    engagementCard(engagement),
+    metricsSummaryCard(metrics, patient.id)].filter(Boolean);
+}
+
+function metricsSummaryCard(metrics, patientId) {
+  const latest = new Map();
+  for (const metric of metrics) {
+    const key = `${metric.name}\u0000${metric.unit}`;
+    if (!latest.has(key)) latest.set(key, metric);
+  }
+  const rows = [...latest.values()].map((metric) => el("li", {
+    text: `${metric.name}: ${metric.value}${metric.unit ? ` ${metric.unit}` : ""} · ${longDate(metric.measured_on)}`,
+  }));
+  return card("Métricas de seguimiento", "",
+    ...(rows.length ? [el("ul", {}, ...rows)] : [empty("Aún no hay métricas registradas.")]),
+    link(`#paciente/${encodeURIComponent(patientId)}/tests`, "Ver historial y registrar métrica", "btn small"));
 }
 
 function engagementCard(e) {
@@ -1407,11 +1724,61 @@ async function tabHistoria(patient) {
 
 async function tabTests(patient) {
   const pid = encodeURIComponent(patient.id);
-  const [results, sent, available] = await Promise.all([
+  const [results, sent, available, metrics] = await Promise.all([
     api(`/v1/clinical/patients/${pid}/instrument-results`),
     api(`/v1/clinical/patients/${pid}/assignments`),
     api("/v1/clinical/instruments"),
+    api(`/v1/clinical/patients/${pid}/metrics`),
   ]);
+  const metricName = el("input", { type: "text", required: true, maxlength: "120" });
+  const metricValue = el("input", { type: "number", required: true, step: "any" });
+  const metricUnit = el("input", { type: "text", maxlength: "40", placeholder: "Ej.: puntos, horas, sobre 10" });
+  const now = new Date();
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const measuredOn = el("input", { type: "date", required: true, value: localToday });
+  const metricNote = el("textarea", { rows: "2", maxlength: "2000" });
+  const metricStatus = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const metricSave = el("button", { class: "btn primary", type: "submit", text: "Guardar métrica" });
+  const metricForm = el("form", { class: "stack", novalidate: true },
+    el("div", { class: "fields" },
+      el("label", { class: "field" }, "Métrica", metricName),
+      el("label", { class: "field" }, "Valor numérico", metricValue)),
+    el("div", { class: "fields" },
+      el("label", { class: "field" }, "Unidad (opcional)", metricUnit),
+      el("label", { class: "field" }, "Fecha de medición", measuredOn)),
+    el("label", { class: "field" }, "Nota opcional", metricNote),
+    metricSave, metricStatus,
+    el("p", { class: "muted", text: "Registro clínico para el equipo tratante. Las métricas se guardan con autor y fecha; no se muestran a la paciente." }));
+  metricForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!metricName.value.trim() || metricValue.value === "" || !measuredOn.value) {
+      return say(metricStatus, "Completa la métrica, el valor y la fecha.", "error");
+    }
+    const value = Number(metricValue.value);
+    if (!Number.isFinite(value)) return say(metricStatus, "El valor debe ser un número válido.", "error");
+    metricSave.disabled = true;
+    try {
+      await api(`/v1/clinical/patients/${pid}/metrics`, {
+        method: "POST",
+        body: {
+          name: metricName.value.trim(),
+          value,
+          unit: metricUnit.value.trim(),
+          measured_on: measuredOn.value,
+          note: metricNote.value.trim() || null,
+        },
+      });
+      route();
+    } catch (err) {
+      say(metricStatus, humanError(err), "error");
+      metricSave.disabled = false;
+    }
+  });
+  const metricRows = metrics.map((metric) => el("div", { class: "doc" },
+    el("span", { class: "what" },
+      el("strong", { text: `${metric.name}: ${metric.value}${metric.unit ? ` ${metric.unit}` : ""}` }),
+      el("br"),
+      el("span", { class: "muted", text: `${longDate(metric.measured_on)} · ${metric.author_id}${metric.note ? ` · ${metric.note}` : ""}` }))));
   const choice = el("select", {},
     el("option", { value: "", text: available.length ? "Elige un test" : "Aún no tienes tests: créalos desde una plantilla" }),
     ...available.map((t) => el("option", { value: t.instrument_id, text: t.name })));
@@ -1444,12 +1811,20 @@ async function tabTests(patient) {
     });
     return el("div", { class: "doc" }, el("span", { class: "what", text: `${a.name} · enviado el ${longDate(a.assigned_at.slice(0, 10))}` }), el("span", { class: "chip wait", text: "Esperando respuesta" }), cancel);
   });
-  const done = [...results].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => el("article", { class: "card" },
-    el("div", { class: "head" },
-      el("div", {}, el("strong", { text: r.instrument_name }), el("p", { class: "muted", text: `${longDate(r.created_at.slice(0, 10))}${r.note === "self-report" ? " · respondido en su app" : ""}` })),
-      el("span", { class: `chip ${r.severity === "high" ? "bad" : r.severity === "moderate" ? "wait" : "ok"}`, text: r.band ? `${r.total} · ${bandName(r.band)}` : String(r.total ?? "—") })),
-    ...r.alerts.map((a) => el("p", { class: "status error", text: `⚠ ${a.message}` }))));
+  const done = [...results].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => {
+    const definition = available.find((t) => t.instrument_id === r.instrument_id);
+    const standardBands = definition?.spec.description?.startsWith("Plantilla de dominio público");
+    return el("article", { class: "card" },
+      el("div", { class: "head" },
+        el("div", {}, el("strong", { text: r.instrument_name }), el("p", { class: "muted", text: `${longDate(r.created_at.slice(0, 10))}${r.note === "self-report" ? " · respondido en su app" : ""}` })),
+        el("span", { class: `chip ${r.severity === "high" ? "bad" : r.severity === "moderate" ? "wait" : "ok"}`, text: r.band ? `${r.total} · ${bandName(r.band)}` : String(r.total ?? "—") })),
+      standardBands ? el("p", { class: "muted", text: "Banda predefinida por la plantilla estándar; visible solo para el equipo clínico." }) : null,
+      ...Object.entries(r.subscales || {}).filter(([, value]) => value != null).map(([label, value]) => el("p", { class: "muted", text: `${label}: ${value}` })),
+      ...r.alerts.map((a) => el("p", { class: "status error", text: `⚠ ${a.message}` })));
+  });
   return [
+    card("Registrar métrica", "", metricForm),
+    card("Historial de métricas", "", ...(metricRows.length ? metricRows : [empty("Aún no hay métricas registradas.")])),
     card("Enviar un test a su app", "", form),
     card("Esperando respuesta", "", ...(pending.length ? pending : [empty("No hay tests pendientes.")])),
     card("Resultados", "", ...(done.length ? done : [empty("Aún no hay resultados.")]),
@@ -1552,7 +1927,7 @@ VIEWS.marketing = async (main, tab, arg = "") => {
     body = [empty(ROLE_NOTES[tab] || ROLE_NOTES.marketing)];
   }
   main.replaceChildren(
-    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú."),
+    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú.", connectSocialButton()),
     tabs, ...body);
 };
 

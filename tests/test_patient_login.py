@@ -130,6 +130,7 @@ def test_patient_account_and_booking_in_mobile_browser(server: str, browser: Any
     for _ in range(3):
         page.get_by_text("Antes de empezar, una pregunta").wait_for()
         page.locator(".choice .answer").nth(1).click()
+    page.get_by_text("Hola, Sol").wait_for()
     held: list[Any] = []
     page.route("**/v1/me/tests", lambda route: held.append(route), times=1)
     with page.expect_request(lambda request: request.url.endswith("/v1/me/tests")):

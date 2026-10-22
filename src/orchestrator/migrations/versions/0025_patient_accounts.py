@@ -24,10 +24,11 @@ def upgrade() -> None:
     op.create_index("ix_patient_logins_email", "patient_logins", ["email"], unique=True)
     op.create_table(
         "patient_sessions",
+        sa.Column("tenant", sa.String(64), nullable=False, primary_key=True),
         sa.Column("key_hash", sa.String(64), nullable=False, primary_key=True),
-        sa.Column("tenant", sa.String(64), nullable=False, primary_key=False),
         sa.Column("patient_id", sa.String(64), nullable=False, primary_key=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False, primary_key=False),
+        sa.UniqueConstraint("key_hash", name="uq_patient_sessions_key_hash"),
     )
     op.create_index(
         "ix_patient_sessions_expires_at", "patient_sessions", ["expires_at"], unique=False

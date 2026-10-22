@@ -17,6 +17,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     auth,
     campaigns,
     clinical_files,
+    clinical_metrics,
     clinical_records,
     crm,
     establishment,

@@ -277,6 +277,110 @@ def _signed_in(browser: Any, server: str, key: str) -> tuple[Any, list[str]]:
     return page, problems
 
 
+def test_social_connections_register_show_readiness_and_disconnect(
+    server: str, browser: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    monkeypatch.delenv("SOCIAL_SECRET_WA_MAIN", raising=False)
+    monkeypatch.setenv("SOCIAL_SECRET_IG_MAIN", "test-social")
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.click("a[data-nav=ajustes]")
+    page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
+    page.get_by_role("heading", name="Redes sociales", exact=True).wait_for()
+    page.get_by_label("Nombre de la cuenta", exact=True).fill("WhatsApp del consultorio")
+    page.get_by_label("ID del número de WhatsApp Business", exact=True).fill("wa-demo")
+    page.get_by_role("button", name="Vincular cuenta", exact=True).click()
+    whatsapp = page.locator(".social-account").filter(has_text="WhatsApp del consultorio")
+    whatsapp.get_by_text("Pendiente de autorización", exact=True).wait_for()
+    assert "Falta preparar su autorización" in page.locator("form .status").inner_text()
+
+    # Only the credential's name crosses the API; the actual value stays on the server.
+    page.get_by_label("Red social", exact=True).select_option("instagram")
+    handle = "@demo <img src=x onerror=alert(1)>"
+    page.get_by_label("Nombre de la cuenta", exact=True).fill(handle)
+    page.get_by_label("ID de la cuenta profesional de Instagram", exact=True).fill("ig-demo")
+    with page.expect_response(
+        lambda response: response.url.endswith("/v1/social/accounts")
+        and response.request.method == "POST"
+    ) as response:
+        page.get_by_role("button", name="Vincular cuenta", exact=True).click()
+    assert response.value.status == 201
+    assert response.value.request.post_data_json == {
+        "network": "instagram",
+        "external_id": "ig-demo",
+        "handle": handle,
+        "secret_ref": "IG_MAIN",
+    }
+    instagram = page.locator(".social-account").filter(has_text=handle)
+    instagram.get_by_text("Configuración lista", exact=True).wait_for()
+    assert instagram.locator("img").count() == 0
+    assert "test-social" not in page.locator("body").inner_text()
+    assert "test-social" not in response.value.text()
+
+    # A duplicate is refused, keeps the existing account and lets the user correct it.
+    page.get_by_label("Nombre de la cuenta", exact=True).fill(handle)
+    page.get_by_label("ID de la cuenta profesional de Instagram", exact=True).fill("ig-demo")
+    page.get_by_role("button", name="Vincular cuenta", exact=True).click()
+    page.get_by_text("Esta cuenta ya está vinculada. Revísala en la lista.", exact=True).wait_for()
+    assert page.locator(".social-account").count() == 2
+    assert page.get_by_role("button", name="Vincular cuenta", exact=True).is_enabled()
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=str(tmp_path / "redes-sociales-movil.png"), full_page=True)
+    whatsapp.get_by_role("button", name="Desconectar", exact=True).click()
+    whatsapp.get_by_role("button", name="Sí, desconectar", exact=True).click()
+    whatsapp.wait_for(state="detached")
+    accounts = httpx.get(f"{server}/v1/social/accounts", headers=SERVICE).json()
+    assert {a["network"]: a["active"] for a in accounts} == {
+        "whatsapp": False,
+        "instagram": True,
+    }
+    page.click("a[data-nav=marketing]")
+    page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
+    instagram.get_by_text("Configuración lista", exact=True).wait_for()
+    assert not problems, problems
+
+
+def test_social_connections_remain_admin_only(server: str, browser: Any) -> None:
+    created = httpx.post(
+        f"{server}/v1/admin/staff",
+        json={"name": "marketing.demo", "roles": ["marketing"]},
+        headers=SERVICE,
+    )
+    assert created.status_code == 201
+    page, problems = _signed_in(browser, server, created.json()["key"])
+    page.get_by_role("heading", name="Marketing", exact=True).wait_for()
+    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 0
+    page.click("a[data-nav=ajustes]")
+    page.get_by_role("heading", name="Ajustes", exact=True).wait_for()
+    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 0
+    reads = []
+    page.on("request", lambda request: reads.append(request.url))
+    page.evaluate("location.hash = '#ajustes/redes'")
+    page.get_by_text(
+        "Pide a la administración del consultorio que conecte las redes sociales.", exact=True
+    ).wait_for()
+    assert page.get_by_role("button", name="Vincular cuenta", exact=True).count() == 0
+    assert not any(url.endswith("/v1/social/accounts") for url in reads)
+    assert not problems, problems
+
+
+def test_social_account_read_failure_is_not_shown_as_an_empty_list(
+    server: str, browser: Any
+) -> None:
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.route(
+        "**/v1/social/accounts",
+        lambda route: route.fulfill(status=503, json={"detail": "temporarily unavailable"}),
+    )
+    page.click("a[data-nav=ajustes]")
+    page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
+    page.locator("main [role=alert]").wait_for()
+    assert page.get_by_role("button", name="Vincular cuenta", exact=True).count() == 0
+    assert page.get_by_text("Todavía no hay cuentas vinculadas.", exact=False).count() == 0
+    assert not problems, problems
+
+
 def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) -> None:
     key = _staff_key(server)
     body = {

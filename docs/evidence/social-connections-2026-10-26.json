@@ -1,0 +1,43 @@
+{
+  "recorded_at_utc": "2026-10-26T15:54:50.966088+00:00",
+  "base_commit": "0a258fd09478e7a02d3aab034ce81b2d82ff316d",
+  "scope": "Consultorio / Tatos social-account UI using existing API",
+  "new_browser_tests": {
+    "test_social_connections_register_show_readiness_and_disconnect": "passed",
+    "test_social_connections_remain_admin_only": "passed",
+    "test_social_account_read_failure_is_not_shown_as_an_empty_list": "passed"
+  },
+  "regression": {
+    "selected_cases": 53,
+    "passed": 52,
+    "failed": 1,
+    "failed_test": "test_tests_with_official_texts_and_the_on_call_list",
+    "same_failure_reproduced_without_changes": true,
+    "failure_reason": "Existing browser test expects Guardar textos; current editor uses Guardar test",
+    "entire_suite_passed": false
+  },
+  "mobile_viewport": [
+    390,
+    844
+  ],
+  "horizontal_overflow_in_new_view": false,
+  "javascript_syntax_check": "passed",
+  "ruff": "passed",
+  "changed_file_secret_scan": {
+    "scanner": "Gitleaks 8.30.1",
+    "exit_code": 0,
+    "findings": 0,
+    "configuration_changed": false
+  },
+  "real_social_accounts_connected": false,
+  "external_social_api_calls": false,
+  "oauth_flow_added": false,
+  "production_deployment_performed": false,
+  "database_migrations_changed": false,
+  "credentials_collected_in_browser": false,
+  "files": {
+    "src/orchestrator/web/static/consultorio.js": "sha256:612fdddbb5cceaccd969ceaf51575ac31b1790c0516c031a16ea26a96bbee7b4",
+    "src/orchestrator/web/static/ui.css": "sha256:be1d68691a596121603ba6ddd4676bcbf868eabbe909600714a9a60e731274c7",
+    "tests/test_consultorio_e2e.py": "sha256:3249b26a27e97ee5b4aceb64e842c2900fdd4c23f8bd31ac270b393e751767eb"
+  }
+}
