@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRS v2.0 y MVP · Plataforma del Consultorio Psic. Carla Luzuriaga</title>
+<style>
+:root{--text:#17212B;--muted:#56616D;--line:#D9DFE4;--accent:#0E6E6B;--soft:#E3F1F0;--warn:#7A4106;--warnbg:#FFF4E5;--bad:#7A1414;--badbg:#FDECEC;--grey:#EEF1F3}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:14.5px;line-height:1.55}
+.page{max-width:980px;margin:0 auto;padding:40px 28px 64px}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:21px;margin:36px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+h3{font-size:16.5px;margin:24px 0 8px}
+p{margin:6px 0 10px}
+.meta{color:var(--muted);font-size:13.5px}
+.cover{padding:28px;border-radius:14px;background:var(--soft);margin-bottom:24px}
+table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 9px;vertical-align:top;text-align:left}
+th{background:#F5F7F8;font-weight:600}
+td.id{white-space:nowrap;font-weight:600;font-family:Consolas,monospace;font-size:12.5px}
+.st{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.ok{background:var(--soft);color:#0A524F}.proto{background:#E6EEFB;color:#1E3F7A}.todo{background:var(--grey);color:#3E4954}.ext{background:var(--warnbg);color:var(--warn)}.gap{background:var(--badbg);color:var(--bad)}
+.box{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.box.warn{background:var(--warnbg);border-color:#F0C48A}
+.box.note{background:#F5F7F8}
+ul,ol{margin:6px 0 12px;padding-left:22px}
+li{margin:3px 0}
+.toc a{color:var(--accent);text-decoration:none}
+.small{font-size:12.5px;color:var(--muted)}
+.check{width:28px;text-align:center}
+@media print{
+  .page{padding:0 6mm}
+  h2{break-after:avoid} h3{break-after:avoid}
+  table,.box{break-inside:avoid}
+  tr{break-inside:avoid}
+  a{color:inherit;text-decoration:none}
+}
+@page{size:A4;margin:16mm 12mm}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="cover">
+  <p class="meta">Especificación de Requisitos de Software (SRS) · versión 2.0 · 13 de octubre de 2026</p>
+  <h1>Plataforma del Consultorio con IA</h1>
+  <p style="font-size:16px;margin:0">Psic. Carla Luzuriaga · app del consultorio, app del paciente, agentes de IA y marketing</p>
+  <p class="meta" style="margin-top:12px">Reemplaza al SRS v1.0 del 9 de octubre. Incluye lo acordado el 12 y 13 de octubre: despliegue gratuito en producción, auditoría de calidad y seguridad, la nueva app en español (prototipo) y la fase de marketing basada en los artículos aportados por la propietaria.</p>
+</div>
+
+<div class="box note toc">
+<strong>Contenido</strong>
+<ol>
+<li><a href="#s1">Introducción</a></li>
+<li><a href="#s2">Descripción general y arquitectura</a></li>
+<li><a href="#s3">Requisitos funcionales por módulo</a></li>
+<li><a href="#s4">Requisitos no funcionales</a></li>
+<li><a href="#s5">MVP: alcance, criterios y exclusiones</a></li>
+<li><a href="#s6">Plan de pruebas uno por uno</a></li>
+<li><a href="#s7">Estado actual y hoja de ruta</a></li>
+<li><a href="#s8">Pendientes de la propietaria y requisitos legales</a></li>
+</ol>
+<p class="small">Leyenda de estado:
+<span class="st ok">Construido</span> funciona en el servidor y tiene pruebas automáticas ·
+<span class="st proto">Prototipo</span> diseñado, todavía sin programar ·
+<span class="st todo">Pendiente</span> por construir ·
+<span class="st gap">Brecha</span> lo pidió la propietaria y hoy no existe ·
+<span class="st ext">Depende de terceros</span> Meta, abogado, firmas.</p>
+</div>
+
+<h2 id="s1">1. Introducción</h2>
+<h3>1.1 Propósito</h3>
+<p>Definir qué debe hacer la plataforma para que la Psic. Carla Luzuriaga gestione su consultorio de punta a punta (agenda, pacientes, documentos clínicos, tests, mensajes, publicidad y fidelización) con ayuda de agentes de IA, y fijar el MVP con el que se hará la primera prueba real.</p>
+<h3>1.2 Alcance</h3>
+<p>Una plataforma con tres partes: (1) la <strong>app del consultorio</strong> para la profesional, en computadora y celular; (2) la <strong>app del paciente</strong>, instalable en el celular; (3) el <strong>motor</strong> (servidor) con los agentes de IA, los canales (WhatsApp, Instagram, Facebook, Telegram, TikTok) y la base de datos. Ámbito legal: Ecuador (LOPDP), datos de salud mental (categoría especial).</p>
+<h3>1.3 Definiciones</h3>
+<table>
+<tr><th>Término</th><th>Significado</th></tr>
+<tr><td>Agente</td><td>Especialista de IA con un rol definido (por ejemplo, redactor de marketing o analista). El catálogo tiene 260.</td></tr>
+<tr><td>Mini-LLM (enrutador)</td><td>Modelo de lenguaje pequeño y rápido (Claude Haiku) que elige qué agente responde. Solo puede elegir entre los candidatos que encontró la búsqueda; si falla, se usa el mejor candidato.</td></tr>
+<tr><td>LLM principal</td><td>Modelo que redacta las respuestas (Claude Sonnet). Un tercer modelo (Claude Opus) actúa como juez de calidad en las evaluaciones.</td></tr>
+<tr><td>CRM</td><td>Gestión de la relación con los pacientes: fichas, historial, seguimiento.</td></tr>
+<tr><td>PWA</td><td>App web que se instala en el celular como una app normal, sin pasar por la tienda.</td></tr>
+<tr><td>Engagement</td><td>Grado de conexión del paciente con el consultorio, medido en 3 dimensiones (sección 3.10).</td></tr>
+<tr><td>Grupo de control (holdout)</td><td>Parte de los pacientes que no recibe una campaña, para medir su efecto real.</td></tr>
+<tr><td>LOPDP · SPDP · DPO · DPA</td><td>Ley Orgánica de Protección de Datos Personales · Superintendencia que la aplica · Delegado de protección de datos · Contrato de encargo de tratamiento con un proveedor.</td></tr>
+</table>
+<h3>1.4 Referencias</h3>
+<ul>
+<li>LOPDP del Ecuador y resoluciones SPDP-2025-0006, 2025-0028, 2026-0004, 2026-0005 (resumen en <code>docs/legal/</code>).</li>
+<li>Calidad de software: R. C. Martin, <em>Código Limpio</em> y <em>Arquitectura Limpia</em>; R. Gómez Blanco, <em>El libro negro del programador</em>; B. Frost, <em>Atomic Design</em>.</li>
+<li>Marketing: Vera-Martínez y Ornelas-Sánchez (2021), escala de engagement basada en Vivek et al. (2014); Bariha (2020), programas de fidelización y retención; Manic (2015), contenido visual; Onyeke et al. (2024), marketing experiencial; HubSpot y Talkwalker, 5 pasos del marketing basado en datos.</li>
+<li>Decisiones de arquitectura ADR 0001–0022 del repositorio.</li>
+</ul>
+
+<h2 id="s2">2. Descripción general y arquitectura</h2>
+<h3>2.1 Usuarios</h3>
+<table>
+<tr><th>Usuario</th><th>Qué hace</th><th>Dispositivo</th></tr>
+<tr><td>Psic. Carla Luzuriaga (única profesional)</td><td>Todo: agenda, fichas, notas clínicas, mensajes, publicidad, campañas.</td><td>Celular y computadora</td></tr>
+<tr><td>Paciente</td><td>Ve y agenda sus citas, llena tests, lee indicaciones, gestiona sus consentimientos, escribe al consultorio.</td><td>Celular</td></tr>
+<tr><td>Operador de la plataforma</td><td>Despliegues, respaldos, seguridad. No lee datos clínicos.</td><td>Computadora</td></tr>
+</table>
+<h3>2.2 Arquitectura</h3>
+<table>
+<tr><th>Capa</th><th>Componente</th><th>Tecnología</th></tr>
+<tr><td>Presentación</td><td>App del consultorio y app del paciente, en español</td><td>Web adaptable al celular (PWA); hoy, prototipo en <code>Prototipo-Consultorio.html</code></td></tr>
+<tr><td>Motor</td><td>API, agentes, enrutador en 2 etapas, modo equipo, revisión humana, crisis, agenda, CRM, campañas</td><td>Python, FastAPI, LangGraph; 260 agentes; Claude Haiku / Sonnet / Opus vía LiteLLM</td></tr>
+<tr><td>Datos</td><td>Pacientes, citas, auditoría · memoria y conocimiento · límites de uso</td><td>Postgres (Supabase) · Qdrant Cloud · Redis (Upstash)</td></tr>
+<tr><td>Canales</td><td>WhatsApp Business, Telegram, Instagram, Facebook, TikTok</td><td>APIs de Meta, Telegram y TikTok</td></tr>
+<tr><td>Infraestructura</td><td>Producción gratuita: https://agency-api-irim.onrender.com</td><td>Render (plan gratis), UptimeRobot, CI/CD en GitHub con imágenes firmadas</td></tr>
+</table>
+<h3>2.3 Cómo trabajan los agentes</h3>
+<ol>
+<li><strong>Búsqueda:</strong> la petición se compara con el catálogo de 260 agentes y se eligen los 8 candidatos más parecidos (recall@8 = 0,875 en la evaluación).</li>
+<li><strong>Elección con el mini-LLM:</strong> Claude Haiku elige uno de esos 8 (acierto en la primera opción = 0,575; mínimo exigido por CI: 0,50 y 0,80). Si falla, se toma el mejor candidato: el sistema nunca se queda sin respuesta.</li>
+<li><strong>Modo equipo:</strong> para tareas grandes, un planificador reparte el trabajo entre varios agentes, por etapas, y un sintetizador une los resultados.</li>
+<li><strong>Controles:</strong> la respuesta debe apoyarse en evidencia y citar fuentes; las de riesgo clínico van a la revisión humana de la doctora; las crisis nunca las responde un modelo.</li>
+</ol>
+<div class="box warn"><strong>Importante:</strong> en producción la IA está hoy en modo <code>fake</code> (respuestas fijas). Para activar los modelos reales hacen falta una llave de API de Anthropic y su contrato de tratamiento de datos (DPA) firmado, con retención cero.</div>
+<h3>2.4 Restricciones</h3>
+<ul>
+<li>Datos de salud mental: categoría especial (LOPDP). No entran pacientes reales hasta completar los requisitos legales de la sección 8.</li>
+<li>Presupuesto cero: servicios gratuitos, sin tarjeta (ADR 0022). Esto implica límites de disponibilidad (sección 4).</li>
+<li>Idioma: toda la interfaz en español.</li>
+</ul>
+
+<h2 id="s3">3. Requisitos funcionales por módulo</h2>
+<p class="small">"Servidor" = la función existe en el motor y su API. "App" = la pantalla en la nueva interfaz en español.</p>
+
+<h3>3.1 Agenda (AGE)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-AGE-01</td><td>La doctora define su horario semanal de atención.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-AGE-02</td><td>Ver la semana con citas y espacios libres.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-AGE-03</td><td>Crear, reprogramar y cancelar citas sin dobles reservas.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-AGE-04</td><td>Recordatorio el día anterior por WhatsApp, Telegram o la app.</td><td><span class="st ok">Construido</span> <span class="st ext">WhatsApp: plantilla de Meta</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-AGE-05</td><td>Calendario sincronizable (iCalendar) solo con iniciales del paciente.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h3>3.2 Pacientes y CRM (CRM)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-CRM-01</td><td>Alta, edición y búsqueda de pacientes.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRM-02</td><td>Consentimientos por finalidad (tratamiento, recordatorios, marketing, analítica, memoria), visibles en la ficha.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRM-03</td><td>Filtros de seguimiento: sin cita próxima y riesgo de inasistencia (riesgo calculado de forma transparente).</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRM-04</td><td>Ficha única: datos, citas, tests, documentos, notas y mensajes del paciente en un solo lugar.</td><td><span class="st ok">Construido</span> (por partes)</td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRM-05</td><td>Derechos del paciente (LOPDP): exportar y borrar sus datos; registro de solicitudes con plazos (15 días).</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h3>3.3 Gestión documental y clínica (DOC)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-DOC-01</td><td>Subir, listar y descargar documentos del paciente (consentimientos, informes, planes).</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-DOC-02</td><td>Notas clínicas visibles solo para el rol clínico. La llave de administración no puede leerlas, y cada lectura queda auditada.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-DOC-03</td><td>Resumen antes de la sesión, preparado por la IA y marcado como borrador.</td><td><span class="st todo">Pendiente</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-DOC-04</td><td>Plantillas legales en español (aviso de privacidad, contrato de encargo, registro de actividades, evaluación de impacto).</td><td><span class="st ok">Construido</span> <span class="st ext">revisión del abogado</span></td><td>—</td></tr>
+</table>
+
+<h3>3.4 Tests psicológicos (TST)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-TST-01</td><td>PHQ-9 y GAD-7 listos para usar, más instrumentos propios de la profesional; puntaje automático.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-TST-02</td><td>Alerta inmediata si el ítem de autolesión del PHQ-9 es mayor que 0.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-TST-03</td><td>El paciente llena el test desde su app.</td><td><span class="st todo">Pendiente</span> <span class="st ext">textos oficiales</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-TST-04</td><td>Gráfico de evolución de puntajes.</td><td><span class="st ok">Construido</span> (datos)</td><td><span class="st proto">Prototipo</span></td></tr>
+</table>
+
+<h3>3.5 Mensajería (MSG)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-MSG-01</td><td>Recibir y responder WhatsApp.</td><td><span class="st ok">Construido</span> <span class="st ext">verificación de Meta</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-MSG-02</td><td>Asistente de WhatsApp: responde lo cotidiano, nunca da consejo médico y agenda por opciones numeradas.</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-MSG-03</td><td><strong>Recibir mensajes directos de Instagram y de Facebook Messenger.</strong></td><td><span class="st gap">Brecha</span> <span class="st ext">permisos de Meta</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-MSG-04</td><td>Bandeja unificada (WhatsApp, Instagram, Facebook) con filtro por canal.</td><td><span class="st todo">Pendiente</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-MSG-05</td><td>Respuestas sugeridas por la IA que la doctora aprueba antes de enviar.</td><td><span class="st ok">Construido</span> (chat) · <span class="st todo">Pendiente</span> (bandeja)</td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-MSG-06</td><td>Telegram como canal de respaldo para recordatorios.</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+</table>
+
+<h3>3.6 Crisis y seguridad del paciente (CRI)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-CRI-01</td><td>Detección de crisis con reglas fijas, nunca con un modelo de IA.</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-CRI-02</td><td>Mensaje inmediato de contención con ECU 911 y la línea 171, opción 6.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRI-03</td><td>Aviso a la profesional por 3 canales, con escalamiento si no responde en 5 minutos.</td><td><span class="st ok">Construido</span> <span class="st ext">canales reales</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-CRI-04</td><td>Línea de crisis siempre visible en la app del paciente.</td><td>—</td><td><span class="st proto">Prototipo</span></td></tr>
+</table>
+
+<h3>3.7 Agentes e inteligencia artificial (IA)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-IA-01</td><td>Catálogo de 260 agentes especialistas (gestión, marketing, análisis, redacción…).</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-IA-02</td><td>Enrutamiento en 2 etapas: búsqueda de candidatos y elección con el mini-LLM (Claude Haiku), con respaldo si falla.</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-IA-03</td><td>Modo equipo: un planificador reparte la tarea entre varios agentes y un sintetizador une los resultados.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-IA-04</td><td>Revisión humana obligatoria de las respuestas con riesgo clínico.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-IA-05</td><td>Base de conocimiento del consultorio, con citas de las fuentes y separada por consultorio.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-IA-06</td><td>Memoria del paciente solo con su consentimiento.</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-IA-07</td><td>Tope mensual de gasto en IA por consultorio.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-IA-08</td><td>Interoperabilidad con otras herramientas (MCP) y otros agentes (A2A, agente Java).</td><td><span class="st ok">Construido</span></td><td>—</td></tr>
+<tr><td class="id">RF-IA-09</td><td><strong>La IA trabaja dentro de cada pantalla</strong> (resúmenes, borradores, ideas de publicaciones), en vez de una pestaña técnica de "agentes".</td><td><span class="st ok">Construido</span> (API)</td><td><span class="st proto">Prototipo</span></td></tr>
+</table>
+
+<h3>3.8 App del paciente (PAC)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-PAC-01</td><td>Ver sus próximas citas y agregarlas a su calendario.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-PAC-02</td><td>Agendar solo en los espacios libres de la doctora.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-PAC-03</td><td>Ver su plan e indicaciones de tratamiento.</td><td><span class="st ok">Construido</span></td><td><span class="st proto">Prototipo</span></td></tr>
+<tr><td class="id">RF-PAC-04</td><td>Gestionar sus consentimientos.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-PAC-05</td><td>Escribir al asistente del consultorio.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-PAC-06</td><td>Instalable en el celular (PWA).</td><td>—</td><td><span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h3>3.9 Publicidad en redes (PUB)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Servidor</th><th>App</th></tr>
+<tr><td class="id">RF-PUB-01</td><td>Crear piezas visuales (infografías y videos de diapositivas) con pie de salud ("Contenido informativo…").</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-PUB-02</td><td>Aprobar cada publicación antes de salir; bloqueo de afirmaciones prohibidas en publicidad de salud.</td><td><span class="st ok">Construido</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-PUB-03</td><td>Publicar en Instagram, Facebook (fotos) y TikTok.</td><td><span class="st ok">Construido</span> <span class="st ext">verificación Meta / TikTok</span></td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-PUB-04</td><td>Calendario de publicaciones.</td><td><span class="st todo">Pendiente</span></td><td><span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h3>3.10 Marketing de engagement y fidelización (MKT) · Fase 2</h3>
+<p>Basado en los artículos aportados. Regla transversal: <strong>nunca se usan datos clínicos para publicidad</strong>; solo pacientes con consentimiento de marketing o analítica; cada envío lo aprueba la doctora.</p>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Fundamento</th><th>Estado</th></tr>
+<tr><td class="id">RF-MKT-01</td><td>Índice de engagement por paciente en 3 dimensiones: <em>atención consciente</em> (lee mensajes y contenidos), <em>participación entusiasta</em> (asiste, completa tests, usa la app) y <em>conexión social</em> (recomienda, comparte, asiste acompañado a talleres).</td><td>Vivek et al. (2014); Vera-Martínez y Ornelas-Sánchez (2021): escala de 12 ítems, alfa 0,90–0,94; el engagement predice lealtad y satisfacción.</td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-MKT-02</td><td>Programa de fidelización <strong>no monetario</strong> por niveles, adecuado a salud mental: acceso a talleres, material psicoeducativo, prioridad de agenda. Sin descuentos que incentiven sesiones innecesarias.</td><td>Bariha (2020): los sistemas por niveles, puntos y no monetarios aumentan la retención; dar a conocer los beneficios es clave.</td><td><span class="st ok">Base construida</span> (conteo de visitas) · niveles <span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-MKT-03</td><td>Campañas con grupo de control para medir el efecto real (lift).</td><td>Marketing basado en datos (HubSpot: monitorear y reportar).</td><td><span class="st ok">Construido</span> (Telegram) · WhatsApp <span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-MKT-04</td><td>Contenido visual: plantillas de imagen y video corto con la identidad del consultorio.</td><td>Manic (2015): el contenido visual se procesa más rápido y se comparte más.</td><td><span class="st ok">Base construida</span></td></tr>
+<tr><td class="id">RF-MKT-05</td><td>Marketing experiencial: talleres de psicoeducación, charlas y eventos con inscripción desde la app.</td><td>Onyeke et al. (2024): inmersión, autenticidad, personalización y comunidad.</td><td><span class="st todo">Pendiente</span></td></tr>
+<tr><td class="id">RF-MKT-06</td><td>Ciclo basado en datos con informe mensual: evaluar, analizar, fijar objetivos SMART, monitorear e informar.</td><td>HubSpot y Talkwalker, 5 pasos.</td><td><span class="st ok">Base construida</span> (métricas SQL) · informe <span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h3>3.11 Privacidad y cumplimiento (PRV)</h3>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th></tr>
+<tr><td class="id">RF-PRV-01</td><td>Auditoría encadenada (no se puede alterar sin que se note) de accesos y decisiones.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RF-PRV-02</td><td>Registro de casos de privacidad con plazos legales: solicitudes, 15 días; brechas, 2/5/3 días.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RF-PRV-03</td><td>Modelo de inasistencia entre consultorios apagado hasta aprobación de la SPDP.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RF-PRV-04</td><td>Respaldo cifrado fuera del proveedor (Supabase gratuito no permite descargarlos).</td><td><span class="st todo">Pendiente</span></td></tr>
+</table>
+
+<h2 id="s4">4. Requisitos no funcionales</h2>
+<table>
+<tr><th>ID</th><th>Requisito</th><th>Cómo se cumple y verifica</th><th>Estado</th></tr>
+<tr><td class="id">RNF-SEG-01</td><td>Todo el tráfico cifrado y servidores verificados.</td><td>HTTPS + HSTS (1 año); Postgres con <code>verify-full</code> contra la raíz de Supabase (huella fijada por un test); Redis con TLS verificado; Qdrant solo con llave (403 sin ella).</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-SEG-02</td><td>Acceso por llave personal con roles; "necesidad de saber" para datos clínicos.</td><td>Llave de la doctora (administración + clínica + dueña); la llave de servicio no lee lo clínico.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-SEG-03</td><td>Sin inyección SQL, sin fugas en errores ni en registros.</td><td>Consultas siempre con parámetros; 8 ataques simulados en vivo sin fugas; firewall de Render; secretos ocultos con <code>SecretStr</code>.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-SEG-04</td><td>Dependencias sin vulnerabilidades conocidas y sin secretos en el código.</td><td>pip-audit: 0; Trivy y gitleaks en cada cambio.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-SEG-05</td><td>Prueba de penetración independiente.</td><td>Alcance definido en <code>docs/security/pentest-scope.md</code>.</td><td><span class="st ext">Pendiente</span></td></tr>
+<tr><td class="id">RNF-CAL-01</td><td>Código limpio y arquitectura limpia.</td><td>Auditoría del 13/10 con los libros: 0 duplicación, 0 código muerto, 0 ciclos de importación, 0 TODO; la infraestructura no conoce al negocio. Pendiente: partir <code>build_graph</code> (242 instrucciones) y <code>create_app</code> (142).</td><td><span class="st ok">Mayormente</span></td></tr>
+<tr><td class="id">RNF-PRU-01</td><td>Pruebas automáticas en cada cambio.</td><td>943 tests, 95 % de cobertura, tipos estrictos (mypy); 16 verificaciones en CI, incluido un ensayo con los límites de Render.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-REP-01</td><td>Reproducible.</td><td>Versiones exactas (<code>uv.lock</code>), imágenes fijadas por huella y firmadas (cosign), acciones de CI fijadas.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-REN-01</td><td>Cabe en 512 MB y 0,1 CPU.</td><td>Presupuesto de memoria verificado en CI; videos con 92 MB en lugar de 782; la generación de imágenes y videos no bloquea la API.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-DIS-01</td><td>Disponibilidad.</td><td>Plan gratuito: un solo servidor, sin SLA; UptimeRobot evita que se duerma. Se pasa a un plan de pago con el primer ingreso.</td><td><span class="st ext">Limitada</span></td></tr>
+<tr><td class="id">RNF-ESC-01</td><td>Escalable.</td><td>La API no guarda estado: crece agregando servidores. Perfil Kubernetes (GKE) listo y ensayado.</td><td><span class="st ok">Construido</span></td></tr>
+<tr><td class="id">RNF-USA-01</td><td>Interfaz en español, accesible y adaptable al celular.</td><td>Botones de 44 px o más, contraste AA, sistema de diseño con tokens (Atomic Design).</td><td><span class="st proto">Prototipo</span></td></tr>
+</table>
+
+<h2 id="s5">5. MVP: alcance, criterios y exclusiones</h2>
+<div class="box"><strong>Definición del MVP:</strong> la Psic. Carla Luzuriaga atiende a un paciente de principio a fin desde la app, en español: lo agenda, lo recibe con su ficha y sus documentos, aplica un test, escribe su nota, le responde por WhatsApp con ayuda de la IA, y el paciente ve su cita desde el celular. Todo con datos de prueba hasta cumplir lo legal.</div>
+<h3>5.1 Entra en el MVP</h3>
+<ol>
+<li>App del consultorio en español: Hoy, Agenda, Pacientes, Ficha (documentos, tests, notas) y Mensajes (WhatsApp).</li>
+<li>App del paciente (PWA): ver y agendar citas, indicaciones y línea de crisis.</li>
+<li>Agentes dentro de la app: borradores de respuesta y de publicaciones, resumen de la ficha. Requiere activar el LLM real.</li>
+<li>Crisis: detección, contención y aviso.</li>
+<li>Publicidad: crear y aprobar piezas; publicar en Instagram y Facebook cuando Meta lo habilite.</li>
+</ol>
+<h3>5.2 Queda fuera del MVP</h3>
+<table>
+<tr><th>Tema</th><th>Cuándo</th><th>Por qué</th></tr>
+<tr><td>Mensajes directos de Instagram y Facebook (RF-MSG-03)</td><td>Fase 1.5</td><td>Meta exige revisión de la app para los permisos de mensajería; se construye en paralelo a ese trámite.</td></tr>
+<tr><td>Test llenado por el paciente (RF-TST-03)</td><td>Fase 1.5</td><td>Faltan los textos oficiales en español del PHQ-9 y el GAD-7.</td></tr>
+<tr><td>Engagement, fidelización por niveles y talleres (RF-MKT)</td><td>Fase 2</td><td>Acordado: primero la app, después el marketing.</td></tr>
+<tr><td>Pacientes reales</td><td>Al cumplir la sección 8</td><td>Requisito legal (LOPDP).</td></tr>
+</table>
+<h3>5.3 Criterios de aceptación del MVP</h3>
+<ul>
+<li>Los 15 casos de la sección 6 pasan con la doctora presente.</li>
+<li>CI en verde, incluido el ensayo de Render, y servidor en producción respondiendo <code>/readyz</code>.</li>
+<li>Ninguna pantalla en inglés y ninguna pestaña técnica visible para la doctora.</li>
+</ul>
+
+<h2 id="s6">6. Plan de pruebas uno por uno</h2>
+<p>Los haremos juntas, en orden, con datos de prueba. Cada caso dice qué hacer y qué debe pasar. Hoy (13/10), los casos marcados como "Servidor" se pueden probar ya en el servidor en vivo; los de "App" se prueban cuando esté construida la nueva interfaz.</p>
+<table>
+<tr><th class="check">✓</th><th>Caso</th><th>Qué hacemos</th><th>Resultado esperado</th><th>Dónde</th></tr>
+<tr><td></td><td class="id">P-01</td><td>Entrar con la llave personal de la doctora; probar también sin llave.</td><td>Con llave entra; sin llave, "acceso denegado".</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-02</td><td>Configurar el horario semanal (lun–vie 09–18, sáb 09–13).</td><td>Aparecen los espacios libres.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-03</td><td>Crear una paciente de prueba con sus consentimientos.</td><td>Aparece en la lista; los consentimientos quedan registrados.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-04</td><td>Agendar una cita y luego intentar otra en la misma hora.</td><td>La primera se guarda; la segunda se rechaza (sin doble reserva).</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-05</td><td>Subir un documento PDF a la ficha y descargarlo.</td><td>Se descarga idéntico y queda auditado.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-06</td><td>Registrar un PHQ-9 con el ítem de autolesión mayor que 0.</td><td>Calcula el puntaje y genera una alerta.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-07</td><td>Leer una nota clínica con la llave de la doctora y con la llave de servicio.</td><td>La doctora la ve; la llave de servicio, no.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-08</td><td>Simular un mensaje de WhatsApp cotidiano ("¿a qué hora atienden?").</td><td>El asistente responde sin consejo médico.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-09</td><td>Simular un mensaje de crisis.</td><td>Contención con ECU 911 / 171 op. 6 y alerta a la doctora; la IA no responde esa conversación.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-10</td><td>Pedir a la IA "redacta una publicación sobre ansiedad".</td><td>El mini-LLM elige un agente de marketing; la respuesta pide aprobación.</td><td>Servidor (LLM real)</td></tr>
+<tr><td></td><td class="id">P-11</td><td>Crear una infografía y aprobarla para Instagram (modo prueba).</td><td>Se genera con pie de salud; queda lista para publicar.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-12</td><td>Como paciente: ver su cita y agendar en un espacio libre.</td><td>Solo ve espacios libres; la cita aparece en la agenda de la doctora.</td><td>App</td></tr>
+<tr><td></td><td class="id">P-13</td><td>Exportar y luego borrar los datos de la paciente de prueba.</td><td>Exporta todo; el borrado queda registrado.</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-14</td><td>Verificar la cadena de auditoría.</td><td>"Íntegra".</td><td>Servidor</td></tr>
+<tr><td></td><td class="id">P-15</td><td>Recorrer toda la app en el celular.</td><td>Todo en español, legible y usable con el dedo.</td><td>App</td></tr>
+</table>
+
+<h2 id="s7">7. Estado actual y hoja de ruta</h2>
+<h3>7.1 Logros al 13 de octubre de 2026</h3>
+<ul>
+<li>Producción gratuita en vivo: https://agency-api-irim.onrender.com (Render + Supabase + Upstash + Qdrant Cloud, sin tarjeta).</li>
+<li>Seguridad verificada en vivo: cifrado y verificación de los tres servicios, HSTS y rechazo de accesos sin llave.</li>
+<li>Auditoría de calidad con los libros. Bugs reales corregidos: 8 tablas invisibles para las migraciones, videos que tumbaban la API, la API bloqueada mientras se generaba un video, ediciones perdidas en la consola, búsqueda con comodines.</li>
+<li>Prototipo de la nueva app en español: <code>Prototipo-Consultorio.html</code> en el Escritorio.</li>
+</ul>
+<h3>7.2 Hoja de ruta</h3>
+<table>
+<tr><th>Fase</th><th>Qué</th><th>Resultado</th></tr>
+<tr><td>1a</td><td>Ajustar el prototipo con la doctora</td><td>Diseño aprobado</td></tr>
+<tr><td>1b</td><td>Construir la app del consultorio sobre la API existente</td><td>Pruebas P-01 a P-11 desde la app</td></tr>
+<tr><td>1c</td><td>App del paciente (PWA)</td><td>Pruebas P-12 y P-15</td></tr>
+<tr><td>1d</td><td>Activar el LLM real (llave y DPA de Anthropic)</td><td>Agentes y mini-LLM funcionando de verdad</td></tr>
+<tr><td>1.5</td><td>Mensajes de Instagram y Facebook; tests llenados por el paciente</td><td>Bandeja completa</td></tr>
+<tr><td>2</td><td>Marketing: engagement, fidelización, talleres e informe mensual</td><td>Sección 3.10</td></tr>
+</table>
+
+<h2 id="s8">8. Pendientes de la propietaria y requisitos legales</h2>
+<table>
+<tr><th>Tema</th><th>Para qué</th><th>Bloquea</th></tr>
+<tr><td>UptimeRobot (monitor a <code>/healthz</code> cada 5 min)</td><td>Que el servidor no se duerma y avise si se cae</td><td>Uso diario</td></tr>
+<tr><td>Verificación en dos pasos (GitHub primero)</td><td>Evitar el robo de cuentas</td><td>Seguridad</td></tr>
+<tr><td>Llave de API de Anthropic + DPA con retención cero</td><td>Activar los agentes y el mini-LLM reales</td><td>RF-IA en producción</td></tr>
+<tr><td>Meta Business verificado, número de WhatsApp, plantillas, revisión de la app</td><td>WhatsApp en vivo, publicar y recibir mensajes de Instagram y Facebook</td><td>RF-MSG, RF-PUB</td></tr>
+<tr><td>Abogado: revisión de plantillas y 14 preguntas bloqueantes</td><td>Cumplir la LOPDP</td><td>Pacientes reales</td></tr>
+<tr><td>DPO externo registrado en la SPDP</td><td>Obligatorio por tratamiento a gran escala</td><td>Pacientes reales</td></tr>
+<tr><td>DPA con Render, Supabase, Upstash y Qdrant</td><td>Contratos de encargo</td><td>Pacientes reales</td></tr>
+<tr><td>Respaldo cifrado fuera de Supabase</td><td>Poder recuperar los datos</td><td>Pacientes reales</td></tr>
+<tr><td>Prueba de penetración</td><td>Validación independiente de la seguridad</td><td>Pacientes reales</td></tr>
+<tr><td>Textos oficiales del PHQ-9 y el GAD-7 en español</td><td>Que el paciente llene los tests</td><td>RF-TST-03</td></tr>
+</table>
+<p class="small">Documento generado el 13 de octubre de 2026 a partir del estado verificado del repositorio (commit 7e77793) y del servidor en producción.</p>
+</div>
+</body>
+</html>

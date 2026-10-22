@@ -55,3 +55,23 @@ def test_vector_and_embedding_adapters_are_chosen_in_one_place() -> None:
             continue  # the factory, and the adapters' own modules
         text = path.read_text(encoding="utf-8")
         assert not any(b in text for b in builders), f"{path.name} builds an adapter itself"
+
+
+def test_retrieval_contracts_depend_only_on_the_standard_library() -> None:
+    import sys
+
+    used = imports(SRC / "retrieval.py")
+    assert used <= sys.stdlib_module_names, f"Infrastructure leaked into ports: {used}"
+
+
+def test_router_receives_retrieval_ports_without_importing_the_adapters() -> None:
+    tree = ast.parse((SRC / "router.py").read_text(encoding="utf-8"))
+    used = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+    assert "orchestrator.retrieval" in used
+    assert not used & {"orchestrator.embeddings", "orchestrator.vectorstore"}
+
+
+def test_budget_policy_and_ledger_port_use_only_the_standard_library() -> None:
+    import sys
+
+    assert imports(SRC / "budget.py") <= sys.stdlib_module_names

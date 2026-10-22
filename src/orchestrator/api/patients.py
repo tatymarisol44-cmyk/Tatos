@@ -210,6 +210,21 @@ async def my_slots(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc
 
 
+@router.get("/booking-status")
+async def booking_status(
+    request: Request,
+    p: Me,
+    professional_id: Annotated[str, Query(pattern=r"^[\w.@-]{1,64}$")],
+) -> dict[str, bool]:
+    """Distinguish unpublished working hours from a calendar without free slots."""
+    await _profile(request, p)
+    try:
+        hours = await orch(request).agenda.hours(p.tenant, professional_id)
+    except KeyError as exc:
+        raise HTTPException(404, "professional not found") from exc
+    return {"hours_configured": bool(hours)}
+
+
 @router.post("/appointments", status_code=status.HTTP_201_CREATED)
 async def book(body: BookIn, request: Request, p: Me) -> dict[str, Any]:
     """Book one of the free slots (only those: a patient cannot pick an arbitrary time)."""
@@ -225,6 +240,7 @@ async def book(body: BookIn, request: Request, p: Me) -> dict[str, Any]:
             price=0,
             actor=p.id,
             professional_id=body.professional_id,
+            require_available_slot=True,
         )
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc

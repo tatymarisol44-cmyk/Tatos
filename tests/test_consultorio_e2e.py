@@ -846,3 +846,36 @@ def test_each_role_lands_on_an_accessible_screen(
         page.wait_for_selector("section[aria-label='Por publicar']")
     assert not problems, problems
     page.close()
+
+
+@pytest.mark.parametrize("switch_account", [False, True])
+def test_download_body_from_a_previous_session_is_not_saved(
+    server: str, browser: Any, switch_account: bool
+) -> None:
+    page = browser.new_page()
+    page.goto(f"{server}/app")
+    result = page.evaluate(
+        """async (switchAccount) => {
+      const previousFetch = window.fetch;
+      const previousURL = URL.createObjectURL;
+      let saved = 0;
+      state.session = { id: 'old-synthetic-session' };
+      window.fetch = async () => ({ ok: true, status: 200, blob: async () => {
+        state.session = switchAccount ? { id: 'new-synthetic-session' } : null;
+        return new Blob(['synthetic clinical file']);
+      }});
+      URL.createObjectURL = () => { saved += 1; return 'blob:synthetic'; };
+      let rejected = false;
+      try { await download('/synthetic-file', 'synthetic.txt'); }
+      catch { rejected = true; }
+      finally {
+        window.fetch = previousFetch;
+        URL.createObjectURL = previousURL;
+        state.session = null;
+      }
+      return { saved, rejected };
+    }""",
+        switch_account,
+    )
+    assert result == {"saved": 0, "rejected": True}
+    page.close()

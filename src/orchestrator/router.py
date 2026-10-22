@@ -12,10 +12,9 @@ from typing import Any, Literal
 
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
-from orchestrator.embeddings import Embedder
 from orchestrator.llm import LLMClient, LLMResult
+from orchestrator.retrieval import Embedder, VectorStore
 from orchestrator.telemetry import tracer
-from orchestrator.vectorstore import VectorStore
 
 log = logging.getLogger(__name__)
 

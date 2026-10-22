@@ -177,20 +177,21 @@ def test_workflow_actions_are_pinned_to_commit_shas() -> None:
 def test_images_are_scanned_before_anything_is_pushed() -> None:
     ci = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
     steps = ci["jobs"]["image"]["steps"]
-
-    def is_push(step: dict[str, Any]) -> bool:
-        return "build-push-action" in step.get("uses", "") and step["with"].get("push") is True
-
-    def is_scan(step: dict[str, Any]) -> bool:
-        return "trivy-action" in step.get("uses", "")
-
-    first_push = next(i for i, s in enumerate(steps) if is_push(s))
-    scans = [i for i, s in enumerate(steps) if is_scan(s)]
-    assert len(scans) == 2
-    assert all(i < first_push for i in scans)
-    for step in steps[:first_push]:
+    promotions = [i for i, step in enumerate(steps) if step.get("id") in {"push-api", "push-jvm"}]
+    assert len(promotions) == 2
+    first_push = min(promotions)
+    scans = [i for i, step in enumerate(steps) if "trivy-action" in step.get("uses", "")]
+    # API amd64 + arm64 and Java amd64 must all pass before either publication.
+    assert len(scans) == 3 and all(i < first_push for i in scans)
+    for step in steps:
         if "build-push-action" in step.get("uses", ""):
-            assert step["with"]["push"] is False and step["with"]["load"] is True
+            assert not step["with"].get("push", False)
+            assert step["with"]["outputs"].startswith("type=oci,")
+            assert step["with"]["provenance"] is True and step["with"]["sbom"] is True
+    for i in promotions:
+        assert steps[i].get("if") == "env.PUSH == 'true'"
+        assert "promote_oci.py" in steps[i]["run"]
+        assert "--archive-sha256" in steps[i]["run"]
 
 
 def test_retention_runs_on_a_schedule_and_alerts() -> None:

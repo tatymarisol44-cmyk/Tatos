@@ -1,6 +1,6 @@
 """The patient's app (/mi/, a PWA): served under the strict policy, installable, and the
 whole path in a browser: the personal link, the consents asked once, booking a free slot,
-and a test whose alert answer gives the emergency lines at once and alerts the team.
+and answering a synthetic questionnaire without clinical alert rules.
 The browser part needs Playwright and Chromium; skipped otherwise. Synthetic data only."""
 
 from __future__ import annotations
@@ -142,7 +142,7 @@ def _practice(server: str) -> str:
         headers=SERVICE,
     )
     made = httpx.post(
-        f"{server}/v1/clinical/instruments/from-template", json={"template": "phq9"}, headers=dra
+        f"{server}/v1/clinical/instruments/from-template", json={"template": "gad7"}, headers=dra
     ).json()
     spec = made["spec"]
     for n, item in enumerate(spec["items"], 1):
@@ -195,21 +195,21 @@ def test_the_whole_path_on_a_phone(server: str, browser: Any) -> None:
     visits = httpx.get(f"{server}/v1/crm/appointments?patient_id=p-sol", headers=SERVICE).json()
     assert len(visits) == 1 and visits[0]["status"] == "scheduled"
 
-    # The test: an answer above zero on item 9 gives the lines at once and alerts the team.
+    # Synthetic questions must not inherit PHQ-9 crisis rules.
     page.click("a[data-nav=tests]")
     page.click("text=Responder")
-    page.wait_for_selector("text=Pregunta sintética 9")
+    page.wait_for_selector("text=Pregunta sintética 7")
     page.click("text=Enviar mis respuestas")
-    page.wait_for_selector("text=Faltan 9 preguntas")
-    for n in range(9):
+    page.wait_for_selector("text=Faltan 7 preguntas")
+    for n in range(7):
         group = page.locator(".answers").nth(n)
-        group.locator(".answer").nth(2 if n == 8 else 0).click()
+        group.locator(".answer").nth(0).click()
     page.click("text=Enviar mis respuestas")
     page.wait_for_selector("text=¡Gracias!")
-    assert "ECU 911" in page.inner_text(".alert")
+    assert page.locator(".alert").count() == 0
     assert "puntaje" not in page.inner_text("#view").lower()  # never the score
     alerts = httpx.get(f"{server}/v1/social/alerts", headers=SERVICE).json()
-    assert [(a["kind"], a["subject_id"]) for a in alerts] == [("crisis", "p-sol")]
+    assert alerts == []
 
     # Mi perfil, and leaving this phone.
     page.click("a[data-nav=perfil]")
@@ -267,3 +267,117 @@ def test_signing_up_for_a_workshop_with_a_companion(server: str, browser: Any) -
     page.wait_for_selector("text=Inscrita/o")
     assert "Quedan" not in page.inner_text(".card:has-text('manejar la ansiedad')")
     assert not problems, problems
+
+
+def _open_booking(page: Any, server: str, key: str) -> None:
+    page.goto(f"{server}/mi/#k={key}")
+    for _ in range(3):
+        page.wait_for_selector("text=Antes de empezar")
+        page.click(".choice .answer >> nth=1")
+    page.wait_for_selector("text=Hola, Sol")
+    page.click("a[data-nav=citas]")
+
+
+def test_booking_can_retry_when_loading_slots_fails(server: str, browser: Any) -> None:
+    key = _practice(server)
+    page = browser.new_page()
+    page.route("**/v1/me/slots?**", lambda route: route.fulfill(status=503, json={}), times=1)
+    _open_booking(page, server, key)
+    page.get_by_role("button", name="Reintentar horarios").click(timeout=3000)
+    page.locator(".time-btn").first.click()
+    page.get_by_role("button", name="Reservar el", exact=False).click()
+    page.get_by_text("Tu cita quedó reservada", exact=False).wait_for()
+    visits = httpx.get(f"{server}/v1/crm/appointments?patient_id=p-sol", headers=SERVICE).json()
+    assert len(visits) == 1
+
+
+def test_booking_ignores_late_slots_from_a_different_professional(
+    server: str, browser: Any
+) -> None:
+    key = _practice(server)
+    made = httpx.post(
+        f"{server}/v1/admin/professionals",
+        headers=SERVICE,
+        json={
+            "professional_id": "late",
+            "display_name": "Turno tarde",
+            "pack_id": "ec-psychologist",
+        },
+    )
+    assert made.status_code == 201
+    hours = [
+        {"day": day, "hours": "21:00-22:00", "slot_minutes": 60}
+        for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    ]
+    assert (
+        httpx.put(
+            f"{server}/v1/agenda/professionals/late/hours", headers=SERVICE, json={"hours": hours}
+        ).status_code
+        == 200
+    )
+    late_slots = httpx.get(
+        f"{server}/v1/me/slots?professional_id=late&days=60", headers={"X-API-Key": key}
+    ).json()
+    page = browser.new_page()
+    _open_booking(page, server, key)
+    page.locator(".time-btn").first.wait_for()
+    held: list[Any] = []
+    page.route("**/v1/me/slots?professional_id=late&**", lambda route: held.append(route))
+    page.get_by_label("Profesional", exact=True).select_option("late")
+    page.wait_for_timeout(100)
+    assert len(held) == 1
+    page.get_by_label("Profesional", exact=True).select_option("dra.demo")
+    page.locator(".time-btn").first.wait_for()
+    with page.expect_response(lambda response: "professional_id=late&" in response.url):
+        held[0].fulfill(json=late_slots)
+    page.evaluate(
+        "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    )
+    assert page.locator(".time-btn", has_text="21:00").count() == 0
+    page.locator(".time-btn").first.click()
+    page.get_by_role("button", name="Reservar el", exact=False).click()
+    page.get_by_text("Tu cita quedó reservada", exact=False).wait_for()
+    visits = httpx.get(f"{server}/v1/crm/appointments?patient_id=p-sol", headers=SERVICE).json()
+    assert len(visits) == 1 and visits[0]["professional_id"] == "dra.demo"
+
+
+def test_expired_access_during_booking_keeps_the_access_screen(server: str, browser: Any) -> None:
+    key = _practice(server)
+    page = browser.new_page()
+    page.route("**/v1/me/slots?**", lambda route: route.fulfill(status=401, json={}), times=1)
+    _open_booking(page, server, key)
+    page.get_by_text("Tu enlace venció o fue reemplazado", exact=False).wait_for()
+    assert page.locator("#tabs").is_hidden()
+    assert page.locator(".time-btn").count() == 0
+    page.evaluate("location.hash = '#perfil'")
+    page.evaluate(
+        "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    )
+    assert page.locator("#tabs").is_hidden()
+    assert page.locator("text=Tu enlace venció o fue reemplazado").count() == 1
+
+
+def test_booking_cannot_submit_twice_while_waiting(server: str, browser: Any) -> None:
+    key = _practice(server)
+    page = browser.new_page()
+    _open_booking(page, server, key)
+    page.locator(".time-btn").first.click()
+    held: list[Any] = []
+    page.route("**/v1/me/appointments", lambda route: held.append(route))
+    with page.expect_request(lambda request: request.url.endswith("/v1/me/appointments")):
+        page.get_by_role("button", name="Reservar el", exact=False).click()
+    assert page.locator(".time-btn:enabled").count() == 0
+    assert page.locator(".day-pills button:enabled").count() == 0
+    assert page.get_by_role("button", name="Reservar el", exact=False).is_disabled()
+    assert len(held) == 1
+    # Complete the actual server request, then deliver its response to the browser.
+    result = httpx.post(
+        f"{server}/v1/me/appointments",
+        headers={"X-API-Key": key},
+        json=held[0].request.post_data_json,
+    )
+    assert result.status_code == 201
+    held[0].fulfill(status=201, json=result.json())
+    page.get_by_text("Tu cita quedó reservada", exact=False).wait_for()
+    visits = httpx.get(f"{server}/v1/crm/appointments?patient_id=p-sol", headers=SERVICE).json()
+    assert len(visits) == 1

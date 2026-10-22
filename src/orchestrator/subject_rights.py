@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from orchestrator.auth import PrincipalStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.clinical_files import ClinicalFiles
+from orchestrator.clinical_metrics import ClinicalMetrics
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.crm import CrmService
 from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, SubjectThreads
@@ -42,6 +43,7 @@ class SubjectRights:
         crm: CrmService,
         clinical: ClinicalRecords,
         instruments: Instruments,
+        metrics: ClinicalMetrics,
         files: ClinicalFiles,
         campaigns: CampaignService,
         inbox: InboxService,
@@ -57,6 +59,7 @@ class SubjectRights:
         self.crm = crm
         self.clinical = clinical
         self.instruments = instruments
+        self.metrics = metrics
         self.files = files
         self.campaigns = campaigns
         self.inbox = inbox
@@ -91,6 +94,7 @@ class SubjectRights:
             "clinical_record": await self.clinical.export_subject(tenant, subject_id),
             "instrument_results": await self.instruments.export_subject(tenant, subject_id),
             "instrument_assignments": await self.instruments.export_assignments(tenant, subject_id),
+            "clinical_metrics": await self.metrics.export_subject(tenant, subject_id),
             "clinical_files": await self.files.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "inbox_conversations": await self.inbox.export_subject(tenant, subject_id),
@@ -144,6 +148,7 @@ class SubjectRights:
             "workshop_registrations": await self.workshops.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
         }
+        result["clinical_metrics"] = "retained with the clinical record"
         result["retained"] = [
             {
                 "store": "audit_trail",

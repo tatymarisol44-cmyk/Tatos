@@ -134,6 +134,10 @@ def load_catalog(root: Path) -> Catalog:
             agent = parse_agent(path, division)
             if agent is None:
                 continue
+            if agent.id in agents:
+                raise ValueError(
+                    f"Duplicate agent id {agent.id!r}: {agents[agent.id].path} and {agent.path}"
+                )
             agents[agent.id] = agent
             digest.update(path.relative_to(root).as_posix().encode())
             digest.update(path.read_bytes().replace(b"\r\n", b"\n"))

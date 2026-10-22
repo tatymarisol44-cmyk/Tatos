@@ -25,6 +25,7 @@ from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
 from orchestrator.clinical_files import ClinicalFiles
+from orchestrator.clinical_metrics import ClinicalMetrics
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
@@ -58,6 +59,7 @@ from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.monthly_report import MonthlyReport
 from orchestrator.oncall import OnCall
+from orchestrator.patient_login import PatientLogins
 from orchestrator.portal import PatientPortal
 from orchestrator.privacy_cases import PrivacyCases
 from orchestrator.publishing import PublicationService
@@ -178,9 +180,11 @@ class Orchestrator:
         self.subject_threads = SubjectThreads(self.db)
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
+        self.patient_logins = PatientLogins(self.db, self.audit, self.principals)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
+        self.clinical_metrics = ClinicalMetrics(self.db, self.audit)
         self.instruments = Instruments(self.db, self.audit)
         self.agenda = Agenda(self.db, self.audit, settings)
         self.followup = FollowUp(self.db, self.consents)
@@ -216,7 +220,15 @@ class Orchestrator:
             self.db, self.audit, settings, self.campaigns.telegram, self.inbound.is_opted_out
         )
         self.inbound.assistant = WhatsAppAssistant(
-            self.db, self.llm, self.knowledge, self.agenda, self.crm, settings, self.spend
+            self.db,
+            self.llm,
+            self.knowledge,
+            self.agenda,
+            self.crm,
+            settings,
+            self.spend,
+            self.memory,
+            self.consents,
         )
         # The inbox (ADR 0023): channels record into it; the assistant drafts for it.
         self.inbox = InboxService(self.db, self.audit, settings)
@@ -242,6 +254,7 @@ class Orchestrator:
             self.crm,
             self.clinical,
             self.instruments,
+            self.clinical_metrics,
             self.clinical_files,
             self.campaigns,
             self.inbox,
@@ -410,6 +423,7 @@ class Orchestrator:
             "inbox_messages": await self.inbox.purge(
                 timedelta(days=self.settings.inbox_retention_days), dry_run=dry_run
             ),
+            "patient_sessions": await self.patient_logins.purge(dry_run=dry_run),
             "sign_in_leftovers": await self.staff_logins.purge(dry_run=dry_run),
         }
 

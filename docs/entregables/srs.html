@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRS Agency Orchestrator Salud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a specification binder. A sticky section index on wide screens, one reading column, tables as the main material. */
+:root{
+  --bg:#f6f8f8; --paper:#ffffff; --ink:#15262b; --muted:#56686d; --rule:#d5dfe0;
+  --accent:#0d5c63; --accent-soft:#e1efef;
+  --ok:#1d6b3a; --ok-bg:#e3f2e8; --part:#8a5a00; --part-bg:#fbf0d9; --fut:#5b6470; --fut-bg:#eceff2; --crit:#9b1c1c; --crit-bg:#fbe6e6;
+  --f-display:"Literata",Georgia,"Times New Roman",serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1719; --paper:#152024; --ink:#e3ecec; --muted:#9fb1b4; --rule:#2b3b3f;
+  --accent:#6fc3c9; --accent-soft:#1b3337;
+  --ok:#8fd6a6; --ok-bg:#163223; --part:#f0c46a; --part-bg:#3a2d10; --fut:#b6bec8; --fut-bg:#252c33; --crit:#f4a3a3; --crit-bg:#3d1818; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1719; --paper:#152024; --ink:#e3ecec; --muted:#9fb1b4; --rule:#2b3b3f;
+  --accent:#6fc3c9; --accent-soft:#1b3337;
+  --ok:#8fd6a6; --ok-bg:#163223; --part:#f0c46a; --part-bg:#3a2d10; --fut:#b6bec8; --fut-bg:#252c33; --crit:#f4a3a3; --crit-bg:#3d1818; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body);margin:0}
+.wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px;max-width:1240px;margin:0 auto;padding-inline:24px;padding-block:32px 80px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;max-height:calc(100vh - 40px);overflow:auto;font-size:13px;border-right:1px solid var(--rule);padding-right:16px}
+nav.toc b{display:block;font:600 11px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:3px 0}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--accent)}
+main{min-width:0;max-width:900px}
+header.cover{border-bottom:3px double var(--rule);padding-bottom:22px;margin-bottom:28px}
+.eyebrow{font:600 11px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+h1{font:650 clamp(28px,4vw,40px)/1.15 var(--f-display);margin:10px 0 8px;text-wrap:balance}
+h2{font:650 23px/1.25 var(--f-display);margin:44px 0 12px;text-wrap:balance;scroll-margin-top:16px}
+h3{font:600 16px/1.35 var(--f-body);margin:26px 0 8px;color:var(--accent)}
+p{margin:0 0 12px;max-width:72ch}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:72ch}
+li{margin:3px 0}
+.sub{color:var(--muted);font-size:16px;max-width:65ch}
+code,.id{font-family:var(--f-mono);font-size:12.5px}
+.id{white-space:nowrap;font-weight:600}
+.callout{background:var(--accent-soft);border-left:3px solid var(--accent);padding:12px 16px;margin:14px 0;border-radius:0 6px 6px 0;max-width:80ch}
+.callout.warn{background:var(--part-bg);border-left-color:var(--part)}
+.callout p:last-child{margin:0}
+.tbl{overflow-x:auto;margin:10px 0 18px;border:1px solid var(--rule);border-radius:6px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.45}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--rule)}
+th{font-weight:600;font-size:12px;letter-spacing:.03em;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.v{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.st{display:inline-block;font:600 11px/1 var(--f-mono);padding:4px 7px;border-radius:4px;white-space:nowrap}
+.st.I{background:var(--ok-bg);color:var(--ok)}
+.st.P{background:var(--part-bg);color:var(--part)}
+.st.F{background:var(--fut-bg);color:var(--fut)}
+.st.C{background:var(--crit-bg);color:var(--crit)}
+.chain{font-family:var(--f-mono);font-size:12.5px;background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;overflow-x:auto;white-space:nowrap}
+pre.mermaid{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:14px;overflow-x:auto}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0 20px}
+.kv div{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:10px 12px}
+.kv b{display:block;font:650 22px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.kv span{font-size:12px;color:var(--muted)}
+footer{margin-top:60px;padding-top:16px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);padding-inline:16px}nav.toc{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--rule);padding:0 0 14px;columns:2;column-gap:20px}}
+@media (max-width:480px){nav.toc{columns:1}}
+
+@media print{nav.toc,.index{display:none!important}.wrap{display:block!important;padding:0!important}main{max-width:none!important}
+.tbl,.task,section{break-inside:auto}tr,.task h3,h2,h3{break-inside:avoid;break-after:avoid}body{background:#fff!important}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<nav class="toc" aria-label="Índice">
+  <b>Índice</b>
+  <a href="#control">0. Control del documento</a>
+  <a href="#resumen">1. Resumen ejecutivo</a>
+  <a href="#alcance">2. Propósito y alcance</a>
+  <a href="#principios">3. Principios</a>
+  <a href="#actores">4. Actores y roles</a>
+  <a href="#estados">5. Estados y evidencia</a>
+  <a href="#flujo">6. Flujo del producto</a>
+  <a href="#arquitectura">7. Arquitectura</a>
+  <a href="#rf">8. Requisitos funcionales</a>
+  <a href="#rnf">9. Requisitos no funcionales</a>
+  <a href="#datos">10. Modelo de datos</a>
+  <a href="#legal">11. Marco legal (Ecuador)</a>
+  <a href="#seguridad">12. Seguridad y privacidad</a>
+  <a href="#cicd">13. CI/CD y reproducibilidad</a>
+  <a href="#despliegue">14. Despliegue y operación</a>
+  <a href="#pruebas">15. Estrategia de pruebas</a>
+  <a href="#decisiones">16. Registro de decisiones</a>
+  <a href="#riesgos">17. Riesgos</a>
+  <a href="#roadmap">18. Hoja de ruta</a>
+  <a href="#estado">19. Estado exacto</a>
+  <a href="#aceptacion">20. Criterios de aceptación</a>
+  <a href="#glosario">21. Glosario</a>
+  <a href="#trazabilidad">22. Trazabilidad</a>
+</nav>
+
+<main>
+<header class="cover">
+  <div class="eyebrow">Software Requirements Specification · Versión 1.0</div>
+  <h1>Agency Orchestrator Salud</h1>
+  <p class="sub">Plataforma SaaS con IA para consultorios de salud mental en Ecuador: gestión de pacientes, historia clínica, agenda, tests psicológicos, gestión documental, marketing con consentimiento y gobierno de datos según la LOPDP.</p>
+  <p class="sub" style="font-size:14px">Fecha: 9 de octubre de 2026 · Repositorio: <code>tatymarisol44-cmyk/Tatos</code> · Estado: MVP construido, ensayado por CI en cada cambio; uso con pacientes reales pendiente de los pasos legales.</p>
+</header>
+
+<section id="control">
+<h2>0. Control del documento</h2>
+<div class="tbl"><table>
+<tr><th>Campo</th><th>Valor</th></tr>
+<tr><td>Producto</td><td>Agency Orchestrator, vertical de salud mental (psicología y psiquiatría), Ecuador</td></tr>
+<tr><td>Tipo</td><td>Especificación de requisitos (SRS) + registro de decisiones de producto y arquitectura</td></tr>
+<tr><td>Versión</td><td>1.0 (español). Sustituye como referencia de negocio a <code>docs/SRS.md</code> v0.x (inglés), que sigue siendo la referencia técnica fina por requisito.</td></tr>
+<tr><td>Repositorio</td><td>GitHub <code>tatymarisol44-cmyk/Tatos</code>, rama <code>main</code> protegida (ruleset <code>main-protegida</code>)</td></tr>
+<tr><td>Último commit verificado</td><td><code>5020f70</code> (9 oct. 2026)</td></tr>
+<tr><td>Código</td><td>Python 3.12–3.13 (núcleo), Java 21 / Spring AI (agente remoto A2A), HTML/JS sin build (consola)</td></tr>
+<tr><td>Pruebas</td><td>900 pasan, 20 omitidas en local (Postgres real y navegador; corren en CI); cobertura 95,2 %; ruff + mypy <code>--strict</code> limpios</td></tr>
+<tr><td>Marco legal</td><td>LOPDP (R.O. 459, 2021) y resoluciones SPDP 2025-0006, 2025-0028, 2026-0004, 2026-0005; ACESS-2022-0046 (receta especial)</td></tr>
+<tr><td>Principio rector</td><td>Ninguna afirmación del producto sin la cadena <b>requisito → implementación → prueba → evidencia en CI</b>. Lo que no tiene esa cadena se marca como parcial o futuro.</td></tr>
+</table></div>
+<div class="callout"><p><b>Regla de lectura.</b> Cada requisito lleva su estado: <span class="st I">I</span> implementado y probado, <span class="st P">P</span> parcial, <span class="st F">F</span> futuro. La columna "Verificación" nombra el módulo de pruebas en <code>tests/</code> que lo demuestra. Las decisiones se marcan como CONFIRMADA, DECIDIDA POR LA IA (bajo autoridad de la dueña) o PENDIENTE.</p></div>
+</section>
+
+<section id="resumen">
+<h2>1. Resumen ejecutivo</h2>
+<p>Agency Orchestrator Salud es una plataforma para que un consultorio de psicología o psiquiatría lleve a sus pacientes, su historia clínica, su agenda, sus tests y su comunicación en un solo lugar, con inteligencia artificial que ayuda sin reemplazar al profesional. Es multiempresa: cada consultorio es un <i>tenant</i> aislado, con varios profesionales, y cada profesional trabaja con el "paquete" de su profesión (qué documentos puede escribir, qué no puede prometer en publicidad, qué puede prescribir).</p>
+<p>La IA responde preguntas cotidianas con el conocimiento del propio consultorio, redacta borradores de campañas y contesta WhatsApp con calidez, pero tiene límites duros: no da consejos médicos, no diagnostica, no lee notas de psicoterapia, no contesta mensajes de crisis (esos van a una persona de guardia) y toda respuesta clínica riesgosa queda retenida hasta que un profesional la revisa.</p>
+<p>El gobierno de datos está construido según la LOPDP ecuatoriana: consentimientos por finalidad, auditoría encadenada con hashes, derechos de acceso y borrado, registro de casos de privacidad con plazos legales, necesidad de saber para datos clínicos y seudónimos para los datos de marketing.</p>
+<div class="kv">
+  <div><b>113</b><span>operaciones de API REST (OpenAPI)</span></div>
+  <div><b>900</b><span>pruebas automáticas que pasan</span></div>
+  <div><b>21</b><span>decisiones de arquitectura (ADR)</span></div>
+  <div><b>18</b><span>migraciones de esquema (Alembic)</span></div>
+  <div><b>260</b><span>agentes especialistas en el catálogo</span></div>
+  <div><b>US$0</b><span>costo del perfil de producción MVP</span></div>
+</div>
+<div class="chain">PACIENTE → CONSENTIMIENTO → CITA → SESIÓN → DOCUMENTO CLÍNICO → TEST → SEGUIMIENTO → RECORDATORIO → CAMPAÑA (con grupo control) → AUDITORÍA → DERECHOS</div>
+</section>
+
+<section id="alcance">
+<h2>2. Propósito, alcance y no objetivos</h2>
+<h3>2.1 Propósito</h3>
+<p>Este SRS consolida qué hace el producto, cómo se verifica y qué falta. Está escrito para una auditoría técnica (código limpio, reproducibilidad, escalabilidad y CI/CD) y como base contractual con los consultorios piloto.</p>
+<h3>2.2 Alcance funcional</h3>
+<ul>
+<li>Consultorios (tenants), profesionales con su paquete de profesión, personal con roles, inicio de sesión con MFA.</li>
+<li>Gestión de pacientes: alta, búsqueda, edición, restricción, acceso del paciente a su propia app.</li>
+<li>Perfil del paciente: historia clínica de solo agregar, tests aplicados con puntaje, archivos clínicos, seguimiento, consentimientos.</li>
+<li>Agenda por profesional, horarios, turnos libres, reservas sin choques, calendario para el celular, recordatorios.</li>
+<li>Gestión documental: documentos clínicos tipados por profesión, archivos firmados fuera de la plataforma, base de conocimiento del consultorio, plantillas legales.</li>
+<li>Tests psicológicos propios y plantillas de dominio público (PHQ-9, GAD-7) con alertas por ítem.</li>
+<li>Asistente con IA: respuestas desde el conocimiento del consultorio, revisión humana de respuestas riesgosas, enrutamiento a 260 especialistas.</li>
+<li>Marketing: segmentos, campañas con grupo control y estadística, creatividades generadas por código, publicación en redes con aprobación, WhatsApp entrante.</li>
+<li>Seguridad del paciente: detección de crisis, guardia con escalamiento, líneas oficiales (ECU 911, 171 opción 6).</li>
+<li>Privacidad: auditoría encadenada, exportación y borrado, registro de casos con plazos LOPDP.</li>
+</ul>
+<h3>2.3 Fuera de alcance (no objetivos)</h3>
+<ul>
+<li>La IA no diagnostica, no prescribe y no da consejo terapéutico.</li>
+<li>La plataforma no emite la receta especial oficial de ACESS: solo valida la hoja de trabajo que el médico copia al formulario numerado.</li>
+<li>No se contacta a terceros (familia, policía) automáticamente ante una crisis: solo se alerta al profesional tratante y a la guardia.</li>
+<li>No se usan datos de salud anonimizados entre consultorios sin aprobación previa de la SPDP (LOPDP Art. 31.3).</li>
+<li>No hay facturación electrónica ni inventario en esta versión (ERP: futuro).</li>
+<li>No se promete disponibilidad por encima de un servidor en el perfil MVP (ver ADR 0021).</li>
+</ul>
+</section>
+
+<section id="principios">
+<h2>3. Principios no negociables</h2>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Principio</th><th>Cómo se cumple</th></tr>
+<tr><td class="id">P-01</td><td>Necesidad de saber</td><td>Los datos clínicos solo los lee quien tiene el rol clínico de forma explícita; ni administración ni llaves de servicio (LOPDP Art. 10.e).</td></tr>
+<tr><td class="id">P-02</td><td>La IA asiste, no decide</td><td>Respuestas clínicas riesgosas retenidas para revisión humana; campañas y publicaciones requieren aprobación de una persona.</td></tr>
+<tr><td class="id">P-03</td><td>Crisis siempre a una persona</td><td>Los mensajes de crisis nunca llegan al modelo; textos fijos revisados y alerta a la guardia con escalamiento a los 5 minutos.</td></tr>
+<tr><td class="id">P-04</td><td>Consentimiento por finalidad</td><td>Marketing, analítica y memoria tienen consentimientos separados; sin respuesta = no.</td></tr>
+<tr><td class="id">P-05</td><td>Historia clínica de solo agregar</td><td>Nada se edita ni se borra; una corrección es una entrada nueva que "enmienda" la anterior.</td></tr>
+<tr><td class="id">P-06</td><td>Notas de psicoterapia solo para su autor</td><td>Ni otros profesionales ni administración; excluidas de búsqueda, memoria, métricas, campañas, modelos y exportación.</td></tr>
+<tr><td class="id">P-07</td><td>Aislamiento entre consultorios</td><td>Toda tabla con clave que empieza por el tenant; una matriz de pruebas ataca cada operación de la API desde otro consultorio.</td></tr>
+<tr><td class="id">P-08</td><td>Medir antes de afirmar</td><td>Campañas con grupo control; resultados "provisionales" hasta cerrar la ventana; "no concluyente" con menos de 30 por grupo.</td></tr>
+<tr><td class="id">P-09</td><td>Reproducibilidad</td><td>Dependencias bloqueadas, imágenes por digest, firmadas, construidas desde el mismo lockfile; cada push se ensaya completo en CI.</td></tr>
+<tr><td class="id">P-10</td><td>Fallar con elegancia</td><td>Si falla un componente opcional (modelo, búsqueda, memoria), el sistema degrada a textos fijos o reglas, nunca a silencio.</td></tr>
+<tr><td class="id">P-11</td><td>Sin datos de pacientes en señales técnicas</td><td>Logs redactados, alertas sin datos personales, métricas agregadas.</td></tr>
+<tr><td class="id">P-12</td><td>Honestidad legal</td><td>Cada referencia legal tiene estado: leída en fuente primaria, secundaria o "por verificar"; un paquete de producción no puede apoyarse en referencias sin verificar.</td></tr>
+</table></div>
+</section>
+
+<section id="actores">
+<h2>4. Actores, usuarios y roles</h2>
+<div class="tbl"><table>
+<tr><th>Actor</th><th>Rol técnico</th><th>Responsabilidad</th></tr>
+<tr><td>Dirección / dueña del consultorio</td><td><code>owner</code></td><td>Indicadores, aprobación de campañas y descuentos por encima del tope del paquete.</td></tr>
+<tr><td>Administración</td><td><code>admin</code></td><td>Personal, profesionales, cuentas de redes, guardia, documentos del conocimiento. No lee datos clínicos.</td></tr>
+<tr><td>Recepción</td><td><code>reception</code></td><td>Pacientes, citas, planes, consentimientos, acceso del paciente, alertas.</td></tr>
+<tr><td>Psicóloga / psiquiatra</td><td><code>reviewer</code> (explícito)</td><td>Historia clínica, tests, archivos, seguimiento, revisión de respuestas retenidas.</td></tr>
+<tr><td>Marketing</td><td><code>marketing</code></td><td>Campañas (crear, editar, aprobar dentro del tope, enviar, resultados).</td></tr>
+<tr><td>Oficial de privacidad (DPO)</td><td><code>privacy</code></td><td>Exportación y borrado de datos del titular, auditoría, registro de casos de privacidad.</td></tr>
+<tr><td>Paciente</td><td>llave <code>pk_</code></td><td>Sus citas, turnos libres, reservas, chat, consentimientos, fidelidad.</td></tr>
+<tr><td>Integración de software</td><td>llave de servicio</td><td>Sistema propio del consultorio; actúa como administración, sin acceso clínico.</td></tr>
+<tr><td>Guardia</td><td>contacto de guardia</td><td>Recibe alertas de crisis por Telegram, WhatsApp y correo; reconoce y resuelve.</td></tr>
+<tr><td>Agentes externos</td><td>A2A / MCP</td><td>Otros agentes de IA o editores que delegan tareas con protocolos estándar.</td></tr>
+</table></div>
+<p>Cada persona tiene su propia llave (<code>sk_</code> personal o <code>pk_</code> de paciente) o inicia sesión con Google Identity Platform con MFA obligatoria (ADR 0018). El actor que aparece en la auditoría es siempre la persona dueña de la llave; un encabezado declarado por el cliente se ignora.</p>
+</section>
+
+<section id="estados">
+<h2>5. Vocabulario de estados y evidencia</h2>
+<h3>5.1 Estado de un requisito</h3>
+<div class="tbl"><table>
+<tr><th>Estado</th><th>Significado</th></tr>
+<tr><td><span class="st I">I</span> Implementado</td><td>Existe el código y al menos una prueba automática que falla si se rompe; corre en CI.</td></tr>
+<tr><td><span class="st P">P</span> Parcial</td><td>Una parte está implementada y probada; el resto queda descrito.</td></tr>
+<tr><td><span class="st F">F</span> Futuro</td><td>Diseñado o planificado; no implementado.</td></tr>
+</table></div>
+<h3>5.2 Niveles de evidencia</h3>
+<div class="tbl"><table>
+<tr><th>Nivel</th><th>Descripción</th><th>Ejemplo en este producto</th></tr>
+<tr><td class="id">E1</td><td>Documento o decisión</td><td>ADR, política, plantilla legal</td></tr>
+<tr><td class="id">E2</td><td>Configuración versionada</td><td>Manifiestos Kubernetes, compose, Terraform</td></tr>
+<tr><td class="id">E3</td><td>Prueba unitaria o de integración</td><td>Módulos de <code>tests/</code> sobre SQLite y Postgres real</td></tr>
+<tr><td class="id">E4</td><td>Ensayo reproducible de extremo a extremo</td><td>CI: ensayo en kind y en servidor único con instalador real, demo completa, backup, reinicio y rollback</td></tr>
+<tr><td class="id">E5</td><td>Verificación independiente</td><td>Pentest externo, revisión legal (pendientes)</td></tr>
+</table></div>
+</section>
+
+<section id="flujo">
+<h2>6. Flujo integral del producto</h2>
+<p>El recorrido de un paciente en el consultorio, de principio a fin, y lo que el sistema produce en cada paso.</p>
+<div class="tbl"><table>
+<tr><th>#</th><th>Paso</th><th>Qué hace el sistema</th><th>Salida</th></tr>
+<tr><td>1</td><td>Alta del consultorio</td><td>Crea el tenant con su paquete; registra profesionales con su propio paquete</td><td>Consultorio aislado</td></tr>
+<tr><td>2</td><td>Personal y roles</td><td>Llaves personales o SSO con MFA</td><td>Personas identificadas</td></tr>
+<tr><td>3</td><td>Conocimiento del consultorio</td><td>Sube políticas, precios, preguntas frecuentes; rechaza notas clínicas</td><td>Base de conocimiento por versión</td></tr>
+<tr><td>4</td><td>Agenda</td><td>Horarios semanales por profesional</td><td>Turnos libres</td></tr>
+<tr><td>5</td><td>Primer contacto</td><td>WhatsApp entrante: el asistente responde y ofrece 3 turnos reales</td><td>Reserva por número de opción</td></tr>
+<tr><td>6</td><td>Alta del paciente</td><td>Recepción crea la ficha con id seudónimo</td><td>Paciente</td></tr>
+<tr><td>7</td><td>Consentimientos</td><td>La app pregunta una vez, con texto honesto por paquete</td><td>Consentimiento por finalidad</td></tr>
+<tr><td>8</td><td>Acceso del paciente</td><td>Llave <code>pk_</code> con caducidad</td><td>App del paciente</td></tr>
+<tr><td>9</td><td>Recordatorio</td><td>Un día antes, sin contenido clínico</td><td>Recordatorio entregado</td></tr>
+<tr><td>10</td><td>Sesión</td><td>Cambio de estado de la cita (confirmada, completada, no asistió)</td><td>Asistencia</td></tr>
+<tr><td>11</td><td>Historia clínica</td><td>Nota de sesión o de psicoterapia, tipada por el paquete del autor</td><td>Entrada de solo agregar</td></tr>
+<tr><td>12</td><td>Tests</td><td>PHQ-9, GAD-7 o test propio; puntaje, banda y alertas</td><td>Resultado versionado</td></tr>
+<tr><td>13</td><td>Archivos</td><td>Consentimiento firmado fuera, subido con SHA-256</td><td>Archivo clínico</td></tr>
+<tr><td>14</td><td>Seguimiento</td><td>Asistencia, riesgo de inasistencia con razones, tendencias de tests</td><td>Lista de pacientes que requieren atención</td></tr>
+<tr><td>15</td><td>Pregunta clínica al asistente</td><td>Riesgo alto: se retiene; el profesional edita y aprueba</td><td>Respuesta revisada</td></tr>
+<tr><td>16</td><td>Crisis</td><td>Texto fijo con ECU 911 y 171 op. 6; alerta y escalamiento</td><td>Alerta atendida</td></tr>
+<tr><td>17</td><td>Indicadores</td><td>Segmentos y métricas calculadas con SQL; la IA solo narra</td><td>Resumen de dirección</td></tr>
+<tr><td>18</td><td>Campaña</td><td>Copia revisada contra el paquete, aprobación, grupo control</td><td>Envío medible</td></tr>
+<tr><td>19</td><td>Publicación en redes</td><td>Creatividad por código, reglas de la red, aprobación</td><td>Publicación</td></tr>
+<tr><td>20</td><td>Resultados</td><td>Intención de tratar, Fisher, Wilson, Newcombe</td><td>Lift con intervalo</td></tr>
+<tr><td>21</td><td>Derechos del titular</td><td>Exportación (sin notas de psicoterapia), borrado con retención clínica</td><td>Respuesta en plazo</td></tr>
+<tr><td>22</td><td>Caso de privacidad</td><td>Pasos con fecha límite legal; alerta 24 h antes</td><td>Caso cerrado en plazo</td></tr>
+<tr><td>23</td><td>Auditoría</td><td>Cadena de hashes verificable y anclas externas</td><td>Integridad demostrable</td></tr>
+<tr><td>24</td><td>Retención</td><td>Purga de conversaciones inactivas; anonimización de marketing</td><td>Datos mínimos</td></tr>
+</table></div>
+</section>
+
+<section id="arquitectura">
+<h2>7. Arquitectura</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph Clientes
+    C[Consola web]
+    PA[App del paciente]
+    WA[WhatsApp / Telegram]
+    ED[Editor MCP]
+    AG[Agentes A2A]
+  end
+  subgraph Plataforma[Agency Orchestrator]
+    API[FastAPI: auth, roles, límites]
+    G[LangGraph: enrutamiento, equipo, revisión]
+    CL[Clínico: historia, tests, archivos, seguimiento]
+    AGD[Agenda y recordatorios]
+    MKT[CRM, indicadores, campañas, redes]
+    GOV[Auditoría, consentimientos, derechos, casos]
+  end
+  C --> API
+  PA --> API
+  WA --> API
+  ED --> G
+  AG --> API
+  API --> G & CL & AGD & MKT & GOV
+  G -->|LiteLLM| LLM[(Claude / otros)]
+  G --> Q[(Qdrant)]
+  CL & AGD & MKT & GOV --> PG[(PostgreSQL 17)]
+  API --> R[(Redis: límites)]
+</pre>
+<h3>7.1 Tecnologías</h3>
+<div class="tbl"><table>
+<tr><th>Capa</th><th>Tecnología</th><th>Estado</th><th>Razón</th></tr>
+<tr><td>API</td><td>FastAPI, Python 3.12/3.13</td><td>CONFIRMADA</td><td>Ecosistema de IA, tipado, OpenAPI</td></tr>
+<tr><td>Orquestación IA</td><td>LangGraph 1.x</td><td>CONFIRMADA</td><td>Grafos con estado, interrupción para revisión humana, checkpoints</td></tr>
+<tr><td>Modelos</td><td>LiteLLM (Claude por defecto)</td><td>CONFIRMADA</td><td>Independencia de proveedor, cadena de respaldo</td></tr>
+<tr><td>Base de datos</td><td>PostgreSQL 17 con TLS</td><td>CONFIRMADA</td><td>Transacciones, bloqueos de fila, PITR en la nube</td></tr>
+<tr><td>Migraciones</td><td>Alembic (0001–0018)</td><td>CONFIRMADA</td><td>Esquema versionado, verificado contra Postgres real</td></tr>
+<tr><td>Vectores</td><td>Qdrant 1.19</td><td>CONFIRMADA</td><td>Índice por tenant; reconstruible desde Postgres</td></tr>
+<tr><td>Límites compartidos</td><td>Redis 7.4</td><td>CONFIRMADA</td><td>Rate limit consistente entre réplicas</td></tr>
+<tr><td>Consola</td><td>HTML + JS sin build, CSP estricta</td><td>CONFIRMADA</td><td>Sin dependencias de terceros en el navegador</td></tr>
+<tr><td>Agente remoto</td><td>Java 21, Spring Boot 4, Spring AI 2 (A2A)</td><td>CONFIRMADA</td><td>Demostración políglota por protocolo</td></tr>
+<tr><td>Identidad</td><td>Llaves por persona + OIDC (Google Identity Platform, MFA)</td><td>DECIDIDA (O7)</td><td>Mismo encargado que el hosting; sin subencargado nuevo</td></tr>
+<tr><td>Producción MVP</td><td>Docker Compose + Cloudflare Tunnel en VM Oracle Always Free</td><td>DECIDIDA (ADR 0021)</td><td>US$0, sin puertos abiertos</td></tr>
+<tr><td>Producción a escala</td><td>GKE Autopilot, Cloud SQL, Artifact Registry, Binary Authorization (Terraform)</td><td>LISTA, NO APLICADA</td><td>Requiere facturación</td></tr>
+<tr><td>Observabilidad</td><td>OpenTelemetry, Prometheus, alertas con pruebas promtool</td><td>CONFIRMADA</td><td>SLOs y alertas por consumo de presupuesto de error</td></tr>
+</table></div>
+</section>
+
+<section id="rf">
+<h2>8. Requisitos funcionales</h2>
+
+<h3>8.1 Consultorio, identidad y roles (ORG)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">ORG-01</td><td>Cada consultorio es un tenant aislado; ningún recurso de un tenant es legible con credenciales de otro, y la respuesta es idéntica a "no existe" (404).</td><td><span class="st I">I</span></td><td class="v">test_tenant_isolation_matrix</td></tr>
+<tr><td class="id">ORG-02</td><td>Un consultorio registra N profesionales, cada uno con un paquete de profesión no abstracto (psicóloga, psiquiatra, odontología).</td><td><span class="st I">I</span></td><td class="v">test_establishment</td></tr>
+<tr><td class="id">ORG-03</td><td>Llaves personales: <code>sk_</code> con roles para personal, <code>pk_</code> ligada a un paciente con caducidad; comparación en tiempo constante.</td><td><span class="st I">I</span></td><td class="v">test_audit_regressions</td></tr>
+<tr><td class="id">ORG-04</td><td>Inicio de sesión OIDC con MFA obligatoria en producción; claims anidados (Google Identity Platform); aprovisionamiento al primer ingreso; "cerrar sesión en todas partes".</td><td><span class="st I">I</span></td><td class="v">test_oidc</td></tr>
+<tr><td class="id">ORG-05</td><td>Los datos clínicos exigen el rol clínico explícito; administración y servicio reciben 403.</td><td><span class="st I">I</span></td><td class="v">test_need_to_know</td></tr>
+<tr><td class="id">ORG-06</td><td>Revocación de una persona y de todas sus sesiones; auditada.</td><td><span class="st I">I</span></td><td class="v">test_oidc</td></tr>
+<tr><td class="id">ORG-07</td><td>Inicio de sesión de la consola con PKCE; aprovisionamiento SCIM.</td><td><span class="st F">F</span></td><td class="v">—</td></tr>
+</table></div>
+
+<h3>8.2 Gestión de pacientes (PAC)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">PAC-01</td><td>Crear paciente con id seudónimo opcional, listar (búsqueda por nombre, sin datos de contacto en el listado), abrir y editar. Id duplicado: 409.</td><td><span class="st I">I</span></td><td class="v">test_crm, test_business_api</td></tr>
+<tr><td class="id">PAC-02</td><td>Cada apertura de ficha por una persona queda auditada.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">PAC-03</td><td>Un paciente restringido (tras borrado) rechaza ediciones, citas y planes nuevos (409).</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">PAC-04</td><td>Citas con máquina de estados: programada → confirmada | completada | no asistió | cancelada; transiciones ilegales 409; estados finales definitivos.</td><td><span class="st I">I</span></td><td class="v">test_crm, test_audit_regressions</td></tr>
+<tr><td class="id">PAC-05</td><td>Planes de tratamiento con etapas del paquete; mover a una etapa ajena: 422.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">PAC-06</td><td>Alertas tipo semáforo: citas sin confirmar, presupuestos sin respuesta, controles vencidos.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">PAC-07</td><td>Acceso del paciente: recepción emite una llave <code>pk_</code> para la app.</td><td><span class="st I">I</span></td><td class="v">test_business_api</td></tr>
+<tr><td class="id">PAC-08</td><td>Campos personalizados por paquete.</td><td><span class="st F">F</span></td><td class="v">—</td></tr>
+</table></div>
+
+<h3>8.3 Perfil y portal del paciente (PAT)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">PAT-01</td><td>El paciente ve su perfil (<code>/v1/me</code>), sus citas, planes, consentimientos y fidelidad; nunca los de otro paciente.</td><td><span class="st I">I</span></td><td class="v">test_tenant_isolation_matrix</td></tr>
+<tr><td class="id">PAT-02</td><td>Consentimientos preguntados una vez, con textos por paquete (salud mental: "nunca mencionan tu tratamiento"); sin respuesta = no.</td><td><span class="st I">I</span></td><td class="v">test_profession_packs</td></tr>
+<tr><td class="id">PAT-03</td><td>Turnos libres reales y reserva propia; calendario firmado para su celular.</td><td><span class="st I">I</span></td><td class="v">test_agenda</td></tr>
+<tr><td class="id">PAT-04</td><td>Chat del paciente con el asistente, con las mismas reglas de revisión.</td><td><span class="st I">I</span></td><td class="v">test_business_api</td></tr>
+<tr><td class="id">PAT-05</td><td>App instalable (PWA / Play Store) y diario emocional.</td><td><span class="st F">F</span></td><td class="v">pendiente abogada (I1, I3)</td></tr>
+</table></div>
+
+<h3>8.4 Agenda y recordatorios (AGD)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">AGD-01</td><td>Horarios semanales por profesional en la zona horaria del consultorio; turnos libres = horario − citas.</td><td><span class="st I">I</span></td><td class="v">test_agenda</td></tr>
+<tr><td class="id">AGD-02</td><td>Sin doble reserva: la reserva bloquea la fila del profesional y rechaza cualquier solapamiento, también entre réplicas.</td><td><span class="st I">I</span></td><td class="v">test_agenda, test_postgres_concurrency</td></tr>
+<tr><td class="id">AGD-03</td><td>Feeds iCalendar firmados con HMAC que muestran solo iniciales y horas.</td><td><span class="st I">I</span></td><td class="v">test_agenda</td></tr>
+<tr><td class="id">AGD-04</td><td>Un recordatorio por cita, un día antes, sin contenido clínico: Telegram, plantilla de WhatsApp o app; respeta STOP; una sola vez con N réplicas.</td><td><span class="st I">I</span></td><td class="v">test_reminders</td></tr>
+</table></div>
+
+<h3>8.5 Historia clínica y gestión documental (DOC)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">DOC-01</td><td>Entradas de solo agregar, tipadas por el paquete del autor (psicóloga: consentimiento en línea, certificado de asistencia, informe psicológico, resultado de escala; psiquiatra: receta ordinaria, hoja de receta especial, certificado médico, seguimiento de medicación; base común: consentimientos de terapia y de tutor, nota de sesión, nota de psicoterapia, derivación, informe de internamiento).</td><td><span class="st I">I</span></td><td class="v">test_clinical_records, test_profession_packs</td></tr>
+<tr><td class="id">DOC-02</td><td>Corrección = nueva entrada que enmienda; nunca se sobrescribe.</td><td><span class="st I">I</span></td><td class="v">test_clinical_records</td></tr>
+<tr><td class="id">DOC-03</td><td>Nota de psicoterapia visible solo para su autor; ni listada para otros.</td><td><span class="st I">I</span></td><td class="v">test_clinical_records, test_surfaces</td></tr>
+<tr><td class="id">DOC-04</td><td>Archivos clínicos en la base de datos (hasta 10 MB), tipo comprobado por firma del contenido, SHA-256 al subir y al bajar, opción "solo yo".</td><td><span class="st I">I</span></td><td class="v">test_clinical_files</td></tr>
+<tr><td class="id">DOC-05</td><td>Firma: el profesional firma fuera de la plataforma y sube el PDF; se conserva su SHA-256.</td><td><span class="st I">I</span></td><td class="v">test_clinical_files</td></tr>
+<tr><td class="id">DOC-06</td><td>Hoja de receta especial validada contra ACESS-2022-0046 Arts. 6, 25 y 27 (campos, CIE-10, cantidad en letras y números, sin abreviaturas); el sistema nunca emite el formulario oficial.</td><td><span class="st I">I</span></td><td class="v">test_prescriptions</td></tr>
+<tr><td class="id">DOC-07</td><td>Base de conocimiento del consultorio: subir, reemplazar, listar, borrar y buscar; texto canónico en Postgres; reindexado completo; rechazo de notas clínicas (403) antes de vectorizar.</td><td><span class="st I">I</span></td><td class="v">test_knowledge, test_surfaces</td></tr>
+<tr><td class="id">DOC-08</td><td>Plantillas legales en español: aviso de privacidad, contrato de encargo, registro de actividades, evaluación de impacto.</td><td><span class="st P">P</span></td><td class="v">docs/legal/es (revisión de abogada pendiente)</td></tr>
+<tr><td class="id">DOC-09</td><td>Extracción de texto de PDF/DOCX para la base de conocimiento.</td><td><span class="st F">F</span></td><td class="v">—</td></tr>
+</table></div>
+
+<h3>8.6 Tests psicológicos y seguimiento (CLI)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">CLI-01</td><td>El profesional diseña cualquier test: ítems de opción, número o texto, ítems invertidos, suma o promedio, subescalas, bandas y alertas por ítem; privado o compartido.</td><td><span class="st I">I</span></td><td class="v">test_instruments</td></tr>
+<tr><td class="id">CLI-02</td><td>Tests versionados: cada resultado guarda la versión con la que se puntuó.</td><td><span class="st I">I</span></td><td class="v">test_instruments</td></tr>
+<tr><td class="id">CLI-03</td><td>Plantillas PHQ-9 y GAD-7 con las bandas de los artículos originales; ítem 9 del PHQ-9 &gt; 0 genera alerta sea cual sea el total; se informa como banda, nunca como diagnóstico.</td><td><span class="st I">I</span></td><td class="v">test_scales, test_instruments</td></tr>
+<tr><td class="id">CLI-04</td><td>Seguimiento: asistencia, riesgo de inasistencia como regla con sus razones, tendencias por banda, participación en campañas solo con consentimiento de analítica, lista de pacientes con alerta.</td><td><span class="st I">I</span></td><td class="v">test_followup</td></tr>
+<tr><td class="id">CLI-05</td><td>Textos oficiales en español de PHQ-9/GAD-7 para que el paciente los llene en la app.</td><td><span class="st F">F</span></td><td class="v">P7</td></tr>
+</table></div>
+
+<h3>8.7 Asistente con IA y revisión humana (IA)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">IA-01</td><td>Enrutamiento en dos etapas a 260 especialistas (búsqueda + modelo pequeño), con respaldo; modo equipo con planificador en grafo.</td><td><span class="st I">I</span></td><td class="v">test_router, test_team</td></tr>
+<tr><td class="id">IA-02</td><td>Respuestas basadas en el conocimiento del consultorio con citas verificadas; evidencia débil etiquetada.</td><td><span class="st I">I</span></td><td class="v">test_pathways, test_retrieval</td></tr>
+<tr><td class="id">IA-03</td><td>Guardas de entrada: tamaño, inyección de instrucciones (ES/EN), datos personales redactados antes de llegar al modelo.</td><td><span class="st I">I</span></td><td class="v">test_guardrails</td></tr>
+<tr><td class="id">IA-04</td><td>Riesgo alto (consejo clínico, división sensible, inyección marcada) pausa la respuesta; el profesional aprueba, edita o rechaza; la conversación queda bloqueada hasta decidir.</td><td><span class="st I">I</span></td><td class="v">test_governance, test_console_e2e</td></tr>
+<tr><td class="id">IA-05</td><td>Cada respuesta lleva su procedencia: IA sin revisar, pendiente, editada y aprobada por un profesional.</td><td><span class="st I">I</span></td><td class="v">test_business_api</td></tr>
+<tr><td class="id">IA-06</td><td>Memoria semántica solo con consentimiento, vocabulario cerrado de preferencias, sin datos clínicos.</td><td><span class="st I">I</span></td><td class="v">test_memory</td></tr>
+<tr><td class="id">IA-07</td><td>Tope mensual de gasto en modelos por consultorio; al superarlo, textos fijos.</td><td><span class="st I">I</span></td><td class="v">test_spend</td></tr>
+<tr><td class="id">IA-08</td><td>Interfaces MCP (editor) y A2A (agentes), con las mismas reglas de revisión.</td><td><span class="st I">I</span></td><td class="v">test_integrations</td></tr>
+<tr><td class="id">IA-09</td><td>Evaluación de calidad con juez LLM calibrado, nocturna con modelos reales.</td><td><span class="st P">P</span></td><td class="v">test_judge (nocturna desactivada sin llaves)</td></tr>
+</table></div>
+
+<h3>8.8 WhatsApp, crisis y guardia (WSP)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">WSP-01</td><td>Webhook firmado de Meta; mensajes deduplicados, clasificados al llegar; el texto nunca se guarda.</td><td><span class="st I">I</span></td><td class="v">test_inbound</td></tr>
+<tr><td class="id">WSP-02</td><td>El asistente responde lo cotidiano con conocimiento del consultorio, nombre, próxima cita y 3 turnos; controles posteriores (medicación, dosis, diagnóstico, técnicas, enlaces, longitud) caen al texto fijo.</td><td><span class="st I">I</span></td><td class="v">test_whatsapp_assistant</td></tr>
+<tr><td class="id">WSP-03</td><td>Reserva por código: "1", "2" o "3" reserva el turno ofrecido al paciente cuyo número coincide (única coincidencia).</td><td><span class="st I">I</span></td><td class="v">test_whatsapp_assistant</td></tr>
+<tr><td class="id">WSP-04</td><td>Crisis y "quiero hablar con una persona": textos fijos revisados (ECU 911, 171 op. 6) y alerta al personal; nunca al modelo.</td><td><span class="st I">I</span></td><td class="v">test_inbound, test_whatsapp_assistant</td></tr>
+<tr><td class="id">WSP-05</td><td>Guardia por niveles: aviso inmediato por Telegram, plantilla de WhatsApp y correo; escalamiento a los 5 min sin reconocimiento; sin datos del paciente en el aviso.</td><td><span class="st I">I</span></td><td class="v">test_oncall</td></tr>
+<tr><td class="id">WSP-06</td><td>STOP registra baja seudónima (HMAC); respuesta humana dentro de la ventana de 24 h.</td><td><span class="st I">I</span></td><td class="v">test_inbound, test_reidentification</td></tr>
+<tr><td class="id">WSP-07</td><td>Plantillas fuera de ventana, campañas por WhatsApp, respuestas a comentarios.</td><td><span class="st F">F</span></td><td class="v">requiere cuenta Meta (A4)</td></tr>
+</table></div>
+
+<h3>8.9 Marketing: indicadores, campañas y redes (MKT)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">MKT-01</td><td>Segmentos por SQL (sin visitas, dormido, en riesgo, campeón, leal, nuevo, ocasional) con el intervalo de control del paquete.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">MKT-02</td><td>Resumen: pacientes, segmentos, top 20 % por valor, alertas, riesgo de inasistencia, embudo por etapa, pronóstico rotulado.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">MKT-03</td><td>Preguntas en lenguaje natural respondidas solo desde las métricas, citando la métrica.</td><td><span class="st I">I</span></td><td class="v">test_crm</td></tr>
+<tr><td class="id">MKT-04</td><td>Campañas (control, reactivación, tratamiento pendiente, referidos, cumpleaños, educación); elegibilidad antes de dividir; población registrada; modo real o simulación fijado al crear.</td><td><span class="st I">I</span></td><td class="v">test_campaigns</td></tr>
+<tr><td class="id">MKT-05</td><td>Copia revisada contra afirmaciones prohibidas del paquete ("la cura", "te cura"…) y detalles clínicos; solo <code>{first_name}</code>; STOP obligatorio.</td><td><span class="st I">I</span></td><td class="v">test_campaigns, test_governance</td></tr>
+<tr><td class="id">MKT-06</td><td>Aprobación humana; descuento sobre el tope requiere a la dueña; envío una sola vez; versión aprobada fija.</td><td><span class="st I">I</span></td><td class="v">test_campaigns</td></tr>
+<tr><td class="id">MKT-07</td><td>Grupo control por hash; resultados por intención de tratar: provisionales hasta cerrar la ventana de 30 días, luego Fisher, Wilson y Newcombe; "no concluyente" con menos de 30 por grupo; progreso diario.</td><td><span class="st I">I</span></td><td class="v">test_campaigns, test_stats</td></tr>
+<tr><td class="id">MKT-08</td><td>Tope de contactos al mes por paciente; entrega primero en la app y Telegram a las 48 h; entregas inciertas nunca se reenvían.</td><td><span class="st I">I</span></td><td class="v">test_campaigns</td></tr>
+<tr><td class="id">MKT-09</td><td>Creatividades por código (infografías JPEG, videos MP4 H.264) con pie de salud; la copia pasa las reglas antes de dibujar.</td><td><span class="st I">I</span></td><td class="v">test_creatives</td></tr>
+<tr><td class="id">MKT-10</td><td>Cuentas de redes por consultorio o profesional; el token nunca se guarda (solo su referencia).</td><td><span class="st I">I</span></td><td class="v">test_social</td></tr>
+<tr><td class="id">MKT-11</td><td>Publicación con verificación previa de reglas de cada red (Instagram, Facebook fotos, TikTok privado hasta auditoría), aprobación humana, una sola vez, "incierta" ante error de transporte, simulación sin credencial.</td><td><span class="st I">I</span></td><td class="v">test_publishing</td></tr>
+<tr><td class="id">MKT-12</td><td>Publicidad pagada con aprobación previa del gasto, sin segmentar por condición de salud.</td><td><span class="st F">F</span></td><td class="v">—</td></tr>
+<tr><td class="id">MKT-13</td><td>Insights tipo Vailati a partir de comentarios no clínicos con consentimiento.</td><td><span class="st F">F</span></td><td class="v">—</td></tr>
+</table></div>
+
+<h3>8.10 Privacidad y derechos (PRV)</h3>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Requisito</th><th>Estado</th><th>Verificación</th></tr>
+<tr><td class="id">PRV-01</td><td>Consentimientos por (titular, finalidad) con fuente; cada cambio auditado.</td><td><span class="st I">I</span></td><td class="v">test_governance</td></tr>
+<tr><td class="id">PRV-02</td><td>Exportación del titular: consentimientos, CRM, historia (sin notas de psicoterapia, informando cuántas), tests, archivos, mensajes, auditoría.</td><td><span class="st I">I</span></td><td class="v">test_clinical_records, test_instruments</td></tr>
+<tr><td class="id">PRV-03</td><td>Borrado: contacto y marketing se borran; la historia clínica se conserva restringida; marketing anonimizado con ids <code>anon:</code>.</td><td><span class="st I">I</span></td><td class="v">test_crm, test_reidentification</td></tr>
+<tr><td class="id">PRV-04</td><td>Auditoría encadenada con hashes, verificable (<code>/v1/audit/verify</code>) y anclada en almacenamiento WORM.</td><td><span class="st I">I</span></td><td class="v">test_governance</td></tr>
+<tr><td class="id">PRV-05</td><td>Registro de casos (acceso, rectificación, borrado, oposición: 15 días; brecha: clínica 2, SPDP + ARCOTEL 5, pacientes 3) con alerta 24 h antes.</td><td><span class="st I">I</span></td><td class="v">test_privacy_cases</td></tr>
+<tr><td class="id">PRV-06</td><td>Clasificación de datos que decide qué puede ir a cada destino (logs, prompts, búsqueda); detector de cédula; redacción de logs.</td><td><span class="st I">I</span></td><td class="v">test_classification</td></tr>
+<tr><td class="id">PRV-07</td><td>Retención: purga de conversaciones inactivas y memoria vencida; trabajo programado con alertas.</td><td><span class="st I">I</span></td><td class="v">test_limits_and_retention</td></tr>
+<tr><td class="id">PRV-08</td><td>Retención configurable de eventos de auditoría.</td><td><span class="st F">F</span></td><td class="v">GOV-06</td></tr>
+</table></div>
+</section>
+
+<section id="rnf">
+<h2>9. Requisitos no funcionales</h2>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Categoría</th><th>Requisito</th><th>Estado</th></tr>
+<tr><td class="id">NFR-SEC</td><td>Seguridad</td><td>Producción se niega a arrancar sin llaves, con SQLite, sin TLS a Postgres, sin clave de seudónimos o con perfil no durable. CORS cerrado, HSTS, no-store, nosniff, frame-deny. CSP estricta en la consola.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-TEN</td><td>Aislamiento</td><td>Toda tabla con clave primaria que empieza por <code>tenant</code> (prueba automática); Qdrant con índice <code>is_tenant</code>; matriz de ataque por operación.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-REL</td><td>Confiabilidad</td><td>Circuit breaker al modelo, timeouts de sentencia y de bloqueo en Postgres, contrapresión (<code>MAX_INFLIGHT_MODEL_REQUESTS</code>), estados reclamados con UPDATE condicional.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-PERF</td><td>Rendimiento</td><td>Medido: ~9 turnos de chat/s por proceso con 1,5 s por llamada al modelo (<code>docs/load-test.md</code>). Con proveedores reales: pendiente.</td><td><span class="st P">P</span></td></tr>
+<tr><td class="id">NFR-SCL</td><td>Escalabilidad</td><td>Servicio sin estado en proceso; HPA, PDB y topología en Kubernetes; límites en Redis; reservas y campañas seguras con varias réplicas (pruebas de concurrencia en Postgres).</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-OBS</td><td>Observabilidad</td><td>Trazas OTel por nodo del grafo y llamada al modelo; métricas; SLOs con alertas por consumo de presupuesto (probadas con promtool); runbooks por alerta.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-DR</td><td>Recuperación</td><td>MVP: backup diario con SHA-256 y anclas (RPO 24 h). Escala: PITR de Cloud SQL (RPO 5 min, RTO 1 h). Simulacro de restauración automatizado.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-REP</td><td>Reproducibilidad</td><td><code>uv.lock</code> con <code>--frozen</code>; imágenes base por digest; catálogo como submódulo; colecciones nombradas por versión de catálogo y embedder.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-MNT</td><td>Mantenibilidad</td><td>mypy estricto, ruff, reglas de arquitectura sobre el grafo de imports, ADR por decisión.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-ACC</td><td>Accesibilidad</td><td>WCAG 2.1 AA verificado con axe en Chromium; navegación por teclado.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-PORT</td><td>Portabilidad</td><td>Desarrollo en Windows; producción en Linux amd64 y arm64; Codespaces; Compose; Kubernetes.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">NFR-COST</td><td>Costo</td><td>Libro de uso por solicitud, tope mensual por consultorio, perfil de producción a US$0.</td><td><span class="st I">I</span></td></tr>
+</table></div>
+</section>
+
+<section id="datos">
+<h2>10. Modelo de datos (principal)</h2>
+<div class="tbl"><table>
+<tr><th>Tabla</th><th>Campos clave</th><th>Clase de dato</th></tr>
+<tr><td><code>crm_patients</code></td><td>(tenant, id), nombre visible, teléfono, correo, chat Telegram, nacimiento, canal preferido, restringido, borrado</td><td>Salud</td></tr>
+<tr><td><code>crm_appointments</code></td><td>(tenant, id), paciente, inicio, duración, tipo, estado, precio, recordado</td><td>Salud</td></tr>
+<tr><td><code>clinical_documents</code></td><td>(tenant, id), paciente, tipo, acceso, autor, profesional, paquete, cuerpo, sha256, enmienda</td><td>Psicoterapia</td></tr>
+<tr><td><code>clinical_files</code></td><td>(tenant, id), paciente, nombre, tipo, sha256, acceso, autor</td><td>Psicoterapia</td></tr>
+<tr><td><code>instruments</code> / <code>instrument_results</code></td><td>definición versionada / respuestas, puntaje, banda, alertas</td><td>Interno / Salud</td></tr>
+<tr><td><code>professionals</code>, <code>professional_hours</code></td><td>profesional, paquete, llave de personal / horarios</td><td>Personal / Interno</td></tr>
+<tr><td><code>consents</code></td><td>(tenant, titular, finalidad), otorgado, fuente</td><td>Personal</td></tr>
+<tr><td><code>audit_events</code>, <code>audit_heads</code></td><td>secuencia, actor, acción, recurso, titular, detalles, hash previo</td><td>Auditoría</td></tr>
+<tr><td><code>reviews</code></td><td>(tenant, hilo), estado, borrador, decisión</td><td>Salud</td></tr>
+<tr><td><code>campaigns</code>, <code>campaign_recipients</code></td><td>tipo, segmento, plantilla, holdout, aprobaciones / brazo, estado</td><td>Interno / Personal</td></tr>
+<tr><td><code>channel_accounts</code>, <code>publications</code></td><td>red, referencia de secreto / creatividad, sha256, estado</td><td>Credencial / Público</td></tr>
+<tr><td><code>channel_alerts</code>, <code>on_call_contacts</code></td><td>alerta de crisis / guardia por nivel</td><td>Salud / Personal</td></tr>
+<tr><td><code>privacy_cases</code>, <code>privacy_case_steps</code></td><td>tipo, titular, apertura / paso, base legal, vence, resultado</td><td>Salud</td></tr>
+<tr><td><code>model_spend</code></td><td>(tenant, mes), costo, llamadas</td><td>Interno</td></tr>
+</table></div>
+<p>Cada tabla tiene una clase de dato que decide a qué destinos puede ir (<code>classification.py</code>); una prueba falla si se crea una tabla sin clase.</p>
+</section>
+
+<section id="legal">
+<h2>11. Marco legal (Ecuador)</h2>
+<div class="tbl"><table>
+<tr><th>Obligación</th><th>Fuente</th><th>Control en el producto</th></tr>
+<tr><td>Todo consultorio y la plataforma son tratamiento a gran escala</td><td>SPDP-2026-0005 Art. 14.1</td><td>Plantillas de EIPD y registro de actividades; DPO externo pendiente (L6)</td></tr>
+<tr><td>DPO registrado (externo, empresa en Ecuador)</td><td>SPDP-2025-0028</td><td>Pendiente de la dueña</td></tr>
+<tr><td>Servidor en el exterior con encargado no es transferencia</td><td>SPDP-2026-0004 Art. 23</td><td>Lista de subencargados; aviso al paciente (Art. 12.10)</td></tr>
+<tr><td>Datos de salud anonimizados requieren aprobación SPDP</td><td>LOPDP Art. 31.3</td><td>Modelo entre consultorios apagado</td></tr>
+<tr><td>Marketing y analítica requieren consentimiento; oposición en cualquier momento</td><td>LOPDP Arts. 8, 16.2</td><td>Consentimientos por finalidad, STOP</td></tr>
+<tr><td>Derechos en 15 días</td><td>LOPDP Arts. 13–16</td><td>Registro de casos con alerta</td></tr>
+<tr><td>Brecha: 2 / 5 / 3 días</td><td>LOPDP Arts. 43, 46</td><td>Registro de casos con alerta</td></tr>
+<tr><td>Minimización</td><td>LOPDP Art. 10.e</td><td>Necesidad de saber; sin número del paciente en avisos</td></tr>
+<tr><td>Seguridad del tratamiento</td><td>LOPDP Art. 37</td><td>TLS, cifrado en reposo del proveedor, auditoría</td></tr>
+<tr><td>Receta especial (psicotrópicos)</td><td>ACESS-2022-0046</td><td>Validador de la hoja; nunca emite el formulario</td></tr>
+</table></div>
+<div class="callout warn"><p>Este SRS es una especificación técnica, no asesoría legal. Los plazos se cuentan en días calendario, que nunca son más tarde que los días hábiles (<i>término</i>); la abogada debe confirmar <i>término</i> frente a <i>plazo</i> (L7).</p></div>
+</section>
+
+<section id="seguridad">
+<h2>12. Seguridad y privacidad</h2>
+<ul>
+<li><b>Identidad:</b> llaves por persona con roles; OIDC con MFA; acceso de emergencia documentado.</li>
+<li><b>Autorización:</b> rol + tenant + necesidad de saber para datos clínicos.</li>
+<li><b>Datos en tránsito:</b> HTTPS (Cloudflare o Gateway de GKE), TLS a Postgres en producción.</li>
+<li><b>Secretos:</b> nunca en código ni base de datos; referencias por nombre; gitleaks sobre todo el historial.</li>
+<li><b>Cadena de suministro:</b> acciones fijadas por SHA, Trivy antes de publicar, SBOM y procedencia, firma cosign sin llaves, verificación antes de desplegar, Binary Authorization en GKE.</li>
+<li><b>Contenedores:</b> no root, sistema de archivos de solo lectura, sin capacidades, <code>no-new-privileges</code>.</li>
+<li><b>Red:</b> Kubernetes con deny-all por defecto; servidor único sin puertos de entrada.</li>
+<li><b>IA:</b> guardas de entrada, delimitación de datos no confiables, citas verificadas, revisión humana, tope de gasto.</li>
+<li><b>Documentos:</b> modelo de amenazas y alcance de pentest en <code>docs/security/</code>.</li>
+</ul>
+</section>
+
+<section id="cicd">
+<h2>13. CI/CD y reproducibilidad</h2>
+<div class="chain">push a main → lint y tipos → pruebas (py3.12 y 3.13, Postgres real) → evaluación de enrutamiento → agente Java + contrato A2A en vivo → seguridad (Trivy, gitleaks) → manifiestos (kubeconform, promtool, terraform validate) → imágenes escaneadas → publicadas (amd64 + arm64) con SBOM → firmadas → ensayo kind → ensayo servidor único → aprobación humana → producción</div>
+<div class="tbl"><table>
+<tr><th>Etapa</th><th>Qué demuestra</th><th>Bloquea</th></tr>
+<tr><td>Lint &amp; types</td><td>ruff (incluye reglas de seguridad), formato, mypy estricto</td><td>Sí</td></tr>
+<tr><td>Tests</td><td>900+ pruebas, cobertura ≥ 80 % (hoy 95 %), en Postgres no UTC</td><td>Sí</td></tr>
+<tr><td>Routing eval</td><td>top-1 ≥ 0,50 y recall@8 ≥ 0,80 sin modelo</td><td>Sí</td></tr>
+<tr><td>Java A2A</td><td>34 pruebas JUnit + contrato en vivo</td><td>Sí</td></tr>
+<tr><td>Security scan</td><td>Trivy (dependencias, secretos, IaC), gitleaks</td><td>Sí</td></tr>
+<tr><td>Manifests</td><td>Kustomize renderizado y validado; reglas de alertas probadas</td><td>Sí</td></tr>
+<tr><td>Images</td><td>Escaneo CRÍTICO antes de publicar; firma por digest</td><td>Sí</td></tr>
+<tr><td>Ensayo kind</td><td>Despliegue real y rollback de una versión rota</td><td>Sí, antes de producción</td></tr>
+<tr><td>Ensayo servidor único</td><td>Instalador real, todos los flujos de la demo, backup, reinicio con datos, versiones sin firma rechazadas</td><td>Sí, antes de producción</td></tr>
+</table></div>
+<p><b>Rama protegida:</b> sin borrado, sin force push, PR con los 8 checks obligatorios; producción exige la aprobación de la revisora del entorno <code>production</code>.</p>
+</section>
+
+<section id="despliegue">
+<h2>14. Despliegue y operación</h2>
+<div class="tbl"><table>
+<tr><th></th><th>MVP (hoy)</th><th>Escala (cuando haga falta)</th></tr>
+<tr><td>Dónde</td><td>Una VM Oracle Always Free (ARM) con Docker Compose</td><td>GKE Autopilot + Cloud SQL (Terraform)</td></tr>
+<tr><td>Entrada</td><td>Cloudflare Tunnel (sin puertos abiertos)</td><td>Gateway HTTPS con certificado administrado</td></tr>
+<tr><td>Costo</td><td>US$0</td><td>~US$175–450/mes por entorno</td></tr>
+<tr><td>Despliegue</td><td><code>deploy.sh</code>: firma → migración → salud → humo → rollback automático</td><td><code>rollout.sh</code> con el mismo contrato</td></tr>
+<tr><td>RPO / RTO</td><td>24 h / horas</td><td>5 min / 1 h</td></tr>
+<tr><td>Cuándo pasar</td><td colspan="2">Segunda clínica, compromiso de disponibilidad, más de ~5 turnos/s sostenidos o un RPO de 24 h inaceptable.</td></tr>
+</table></div>
+<p>Operación: SLOs (<code>docs/slo.md</code>), alertas a Telegram (+ correo) para la guardia de la plataforma, runbooks por alerta, backup nocturno, simulacro de restauración.</p>
+</section>
+
+<section id="pruebas">
+<h2>15. Estrategia de pruebas</h2>
+<div class="tbl"><table>
+<tr><th>Capa</th><th>Qué prueba</th><th>Módulos</th></tr>
+<tr><td>Unitarias</td><td>Puntajes, estadística, reglas de copia, validador de receta</td><td class="v">test_scales, test_stats, test_prescriptions</td></tr>
+<tr><td>Integración</td><td>API + base de datos + grafo</td><td class="v">test_business_api, test_service</td></tr>
+<tr><td>Postgres real</td><td>Migraciones con datos, concurrencia de dos réplicas, zona horaria</td><td class="v">test_migrations, test_postgres_concurrency</td></tr>
+<tr><td>Seguridad</td><td>Aislamiento por operación, necesidad de saber, reidentificación, regresiones de auditorías</td><td class="v">test_tenant_isolation_matrix, test_need_to_know, test_reidentification, test_audit_regressions</td></tr>
+<tr><td>Resiliencia</td><td>Caída del modelo, del vector store y de la base</td><td class="v">test_resilience, test_remote_chaos</td></tr>
+<tr><td>E2E navegador</td><td>Revisión, espacio clínico, agenda, WCAG AA</td><td class="v">test_console_e2e</td></tr>
+<tr><td>IA</td><td>Enrutamiento, citas, juez calibrado</td><td class="v">test_router, test_pathways, test_judge</td></tr>
+<tr><td>Despliegue</td><td>Manifiestos, scripts de rollback ejecutados con docker falso</td><td class="v">test_deploy_config, test_single_node, test_rollout_script</td></tr>
+<tr><td>Arquitectura</td><td>Reglas del grafo de imports</td><td class="v">test_architecture</td></tr>
+</table></div>
+</section>
+
+<section id="decisiones">
+<h2>16. Registro de decisiones</h2>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Estado</th><th>Decisión</th></tr>
+<tr><td class="id">ADR 0001</td><td>CONFIRMADA</td><td>Enrutamiento en dos etapas con respaldo</td></tr>
+<tr><td class="id">ADR 0002</td><td>CONFIRMADA</td><td>Índice inmutable versionado por catálogo y embedder</td></tr>
+<tr><td class="id">ADR 0003/0007</td><td>CONFIRMADA</td><td>Núcleo Python, agentes políglotas por A2A</td></tr>
+<tr><td class="id">ADR 0004</td><td>CONFIRMADA</td><td>Modo equipo con planificador en grafo</td></tr>
+<tr><td class="id">ADR 0005</td><td>CONFIRMADA</td><td>Checkpoints en Postgres</td></tr>
+<tr><td class="id">ADR 0006</td><td>CONFIRMADA</td><td>Juez LLM calibrado para evaluar respuestas</td></tr>
+<tr><td class="id">ADR 0008</td><td>CONFIRMADA</td><td>Evidencia graduada y registro de ruta</td></tr>
+<tr><td class="id">ADR 0009</td><td>CONFIRMADA</td><td>Revisión humana y gobierno</td></tr>
+<tr><td class="id">ADR 0010</td><td>CONFIRMADA</td><td>Memoria semántica con consentimiento</td></tr>
+<tr><td class="id">ADR 0011–0013</td><td>CONFIRMADA</td><td>CRM, métricas SQL, campañas con grupo control y medición</td></tr>
+<tr><td class="id">ADR 0014</td><td>CONFIRMADA</td><td>Paquetes de profesión (Ecuador)</td></tr>
+<tr><td class="id">ADR 0015</td><td>CONFIRMADA</td><td>Canales sociales con reglas leídas de fuentes oficiales</td></tr>
+<tr><td class="id">ADR 0016</td><td>CONFIRMADA</td><td>HTTPS, HSTS, CORS cerrado</td></tr>
+<tr><td class="id">ADR 0017</td><td>CONFIRMADA</td><td>Guardia con escalamiento</td></tr>
+<tr><td class="id">ADR 0018</td><td>DECIDIDA (O7)</td><td>SSO con MFA; Google Identity Platform</td></tr>
+<tr><td class="id">ADR 0019</td><td>DECIDIDA</td><td>Espacio clínico: tests propios, archivos, seguimiento</td></tr>
+<tr><td class="id">ADR 0020</td><td>DECIDIDA</td><td>Agenda, recordatorios y asistente de WhatsApp</td></tr>
+<tr><td class="id">ADR 0021</td><td>DECIDIDA</td><td>Producción MVP en un servidor; Kubernetes para escalar</td></tr>
+<tr><td class="id">O1–O4, O6</td><td>DECIDIDA</td><td>Alertas, RPO/RTO, staging separado, Artifact Registry, Binary Authorization</td></tr>
+<tr><td class="id">O5</td><td>CONFIRMADA</td><td>Rama protegida y entornos con revisora (hecho por la dueña)</td></tr>
+<tr><td class="id">P9b</td><td>DECIDIDA</td><td>Administración no lee datos clínicos</td></tr>
+<tr><td class="id">L1–L8</td><td>PENDIENTE</td><td>Consulta legal, DPO, plantillas, contratos con subencargados</td></tr>
+<tr><td class="id">A4, A9</td><td>PENDIENTE</td><td>Cuentas Meta / WhatsApp; dominio propio</td></tr>
+<tr><td class="id">O8</td><td>PENDIENTE</td><td>Pentest independiente</td></tr>
+</table></div>
+</section>
+
+<section id="riesgos">
+<h2>17. Registro de riesgos</h2>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Severidad</th><th>Riesgo</th><th>Mitigación</th></tr>
+<tr><td class="id">R-01</td><td><span class="st C">Crítico</span></td><td>Fuga de datos entre consultorios</td><td>Clave por tenant, matriz de ataque por operación, pruebas de aislamiento en vectores</td></tr>
+<tr><td class="id">R-02</td><td><span class="st C">Crítico</span></td><td>Crisis no atendida</td><td>Textos fijos, guardia multicanal, escalamiento a 5 min, alerta de página a los 15 min</td></tr>
+<tr><td class="id">R-03</td><td><span class="st P">Alto</span></td><td>Consejo clínico de la IA</td><td>Revisión humana, controles posteriores deterministas, textos fijos</td></tr>
+<tr><td class="id">R-04</td><td><span class="st P">Alto</span></td><td>Uso con pacientes reales sin cumplimiento legal</td><td>Pasos legales como compuerta del lanzamiento (LAUNCH.md §5)</td></tr>
+<tr><td class="id">R-05</td><td><span class="st P">Alto</span></td><td>Caída del servidor único</td><td>Backup nocturno con copia fuera del servidor; camino a GKE ensayado</td></tr>
+<tr><td class="id">R-06</td><td><span class="st P">Alto</span></td><td>Imagen maliciosa en producción</td><td>Firma verificada antes de desplegar; Binary Authorization en GKE</td></tr>
+<tr><td class="id">R-07</td><td><span class="st P">Medio</span></td><td>Publicidad engañosa en salud</td><td>Afirmaciones prohibidas por paquete, pie de salud, aprobación humana</td></tr>
+<tr><td class="id">R-08</td><td><span class="st P">Medio</span></td><td>Costo de modelos</td><td>Tope mensual, contrapresión, embeddings locales</td></tr>
+<tr><td class="id">R-09</td><td><span class="st P">Medio</span></td><td>Pruebas intermitentes en CI</td><td>Se corrige la causa (p. ej. llave de tarjeta de revisión sin marca de tiempo), no se reintenta a ciegas</td></tr>
+<tr><td class="id">R-10</td><td><span class="st F">Bajo</span></td><td>Dependencia de un proveedor</td><td>LiteLLM, Compose y Kubernetes portables, Terraform</td></tr>
+</table></div>
+</section>
+
+<section id="roadmap">
+<h2>18. Hoja de ruta</h2>
+<div class="tbl"><table>
+<tr><th>Fase</th><th>Entregables</th><th>Estado</th></tr>
+<tr><td>0–1 Fundación y núcleo</td><td>Orquestación, RAG, revisión, auditoría, CRM, campañas</td><td><span class="st I">Hecho</span></td></tr>
+<tr><td>2 Salud mental</td><td>Paquetes psicóloga/psiquiatra, historia clínica, tests, receta</td><td><span class="st I">Hecho</span></td></tr>
+<tr><td>3 Marketing y canales</td><td>Creatividades, redes, WhatsApp, crisis, guardia</td><td><span class="st I">Hecho</span></td></tr>
+<tr><td>4 Agenda y seguimiento</td><td>Agenda, recordatorios, asistente, seguimiento</td><td><span class="st I">Hecho</span></td></tr>
+<tr><td>5 Producción</td><td>CI/CD firmado, SSO, perfiles de despliegue, privacidad</td><td><span class="st I">Hecho</span></td></tr>
+<tr><td>6 Lanzamiento piloto</td><td>VM Oracle, pasos legales, DPO, pentest, una clínica</td><td><span class="st P">En curso (dueña)</span></td></tr>
+<tr><td>7 App del paciente</td><td>PWA, diario emocional, tests en la app</td><td><span class="st F">Futuro</span></td></tr>
+<tr><td>8 Odontología y medicina</td><td>Migrar paquete dental; médicos generales y especialidades</td><td><span class="st F">Futuro</span></td></tr>
+<tr><td>9 ERP</td><td>Facturación, pagos, inventario</td><td><span class="st F">Futuro</span></td></tr>
+</table></div>
+</section>
+
+<section id="estado">
+<h2>19. Estado exacto al cerrar este SRS</h2>
+<div class="tbl"><table>
+<tr><th>Elemento</th><th>Estado</th></tr>
+<tr><td>Código</td><td>En GitHub, rama <code>main</code> protegida, último commit <code>5020f70</code></td></tr>
+<tr><td>CI</td><td>Verde en todas las etapas; ensayos kind y servidor único verdes</td></tr>
+<tr><td>Ensayo servidor único</td><td>Verde desde <code>5020f70</code> (instalador real, demo completa, backup, reinicio con datos, versiones sin firma rechazadas). Antes, CI encontró y se corrigieron dos causas: TLS de Postgres y Redis sin cambio de usuario.</td></tr>
+<tr><td>Demo</td><td>Funcionó de extremo a extremo con datos sintéticos por túnel de Cloudflare desde la PC de la dueña</td></tr>
+<tr><td>Servidor de producción</td><td>Pendiente: crear la VM Oracle y ejecutar el instalador (<code>docs/DEPLOY-SINGLE-NODE.md</code>)</td></tr>
+<tr><td>Pacientes reales</td><td>No permitido hasta L1–L8 (abogada, DPO, contratos)</td></tr>
+<tr><td>Dominio</td><td>No existe (A9); se usa dirección rápida de Cloudflare</td></tr>
+</table></div>
+</section>
+
+<section id="aceptacion">
+<h2>20. Criterios de aceptación</h2>
+<div class="tbl"><table>
+<tr><th>ID</th><th>Criterio</th><th>Estado</th></tr>
+<tr><td class="id">AC-01</td><td>Otro consultorio no obtiene datos, vectores, archivos ni auditoría de un consultorio.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-02</td><td>Administración no puede leer la historia clínica.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-03</td><td>Una nota de psicoterapia solo la ve su autor y no sale en la exportación.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-04</td><td>Un mensaje de crisis nunca llega al modelo y genera alerta.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-05</td><td>Una respuesta clínica riesgosa no se muestra sin revisión humana.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-06</td><td>No hay dos citas superpuestas para un profesional, ni con dos réplicas.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-07</td><td>Una campaña no se envía sin consentimiento, aprobación ni opción STOP.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-08</td><td>Un resultado de campaña no declara efecto antes de cerrar su ventana.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-09</td><td>La auditoría detecta cualquier alteración de su cadena.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-10</td><td>Un plazo legal de privacidad avisa 24 h antes de vencer.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-11</td><td>CI bloquea cualquier versión con pruebas fallidas; producción solo recibe imágenes firmadas.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-12</td><td>Una versión rota se revierte sola sin dejar de atender.</td><td><span class="st I">I</span></td></tr>
+<tr><td class="id">AC-13</td><td>El sistema se instala de cero en un servidor limpio con un comando.</td><td><span class="st I">I</span></td></tr>
+</table></div>
+</section>
+
+<section id="glosario">
+<h2>21. Glosario</h2>
+<div class="tbl"><table>
+<tr><th>Término</th><th>Definición</th></tr>
+<tr><td>Tenant</td><td>Consultorio: espacio aislado de un cliente.</td></tr>
+<tr><td>Paquete de profesión</td><td>Reglas declarativas de una profesión: documentos, afirmaciones prohibidas, consentimientos, crisis, prescripción.</td></tr>
+<tr><td>Revisión humana</td><td>Pausa de una respuesta de riesgo alto hasta que un profesional decide.</td></tr>
+<tr><td>Grupo control (holdout)</td><td>Pacientes elegibles que no reciben la campaña para medir su efecto real.</td></tr>
+<tr><td>Intención de tratar</td><td>Comparar a todos los asignados, recibieran o no el mensaje.</td></tr>
+<tr><td>Necesidad de saber</td><td>Solo accede quien lo necesita para su función (LOPDP Art. 10.e).</td></tr>
+<tr><td>Cadena de auditoría</td><td>Eventos encadenados por hash; alterar uno rompe la verificación.</td></tr>
+<tr><td>A2A / MCP</td><td>Protocolos abiertos entre agentes y entre editores y herramientas.</td></tr>
+<tr><td>RPO / RTO</td><td>Cuántos datos se pueden perder / cuánto se tarda en volver.</td></tr>
+<tr><td>Digest</td><td>Huella SHA-256 de una imagen; no cambia, a diferencia de una etiqueta.</td></tr>
+<tr><td>Binary Authorization</td><td>Control de GKE que solo admite imágenes atestadas.</td></tr>
+</table></div>
+</section>
+
+<section id="trazabilidad">
+<h2>22. Matriz de trazabilidad</h2>
+<div class="tbl"><table>
+<tr><th>Objetivo</th><th>Requisitos</th><th>Módulo</th><th>Prueba principal</th></tr>
+<tr><td>SaaS seguro</td><td>ORG, NFR-TEN</td><td>auth, oidc, security</td><td class="v">test_tenant_isolation_matrix, test_need_to_know</td></tr>
+<tr><td>Paciente bien atendido</td><td>PAC, PAT, AGD</td><td>crm, portal, agenda, reminders</td><td class="v">test_crm, test_agenda, test_reminders</td></tr>
+<tr><td>Historia clínica íntegra</td><td>DOC, CLI</td><td>clinical_records, clinical_files, instruments, followup</td><td class="v">test_clinical_records, test_instruments</td></tr>
+<tr><td>IA controlada</td><td>IA, WSP</td><td>graph, risk, whatsapp_assistant, inbound</td><td class="v">test_governance, test_whatsapp_assistant</td></tr>
+<tr><td>Marketing ético y medible</td><td>MKT</td><td>campaigns, stats, publishing, creatives</td><td class="v">test_campaigns, test_stats, test_publishing</td></tr>
+<tr><td>Privacidad demostrable</td><td>PRV</td><td>governance, subject_rights, privacy_cases</td><td class="v">test_privacy_cases, test_reidentification</td></tr>
+<tr><td>Entrega confiable</td><td>NFR-REP, NFR-DR</td><td>deploy/, workflows</td><td class="v">test_single_node, test_deploy_config, test_backup_restore</td></tr>
+</table></div>
+</section>
+
+<footer>
+<p>Agency Orchestrator Salud · SRS v1.0 · 9 de octubre de 2026 · Generado desde el código, las pruebas y las ADR del repositorio <code>tatymarisol44-cmyk/Tatos</code>. La plataforma no optimiza por producir más respuestas; optimiza por respuestas seguras, trazables y revisadas.</p>
+</footer>
+</main>
+</div>
+
+<script type="module">
+try { const m = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"); m.default.initialize({startOnLoad:false, theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default"}); await m.default.run({querySelector:"pre.mermaid"}); } catch (e) { /* sin internet: el diagrama queda como texto */ }
+</script>
+
+</body>
+</html>

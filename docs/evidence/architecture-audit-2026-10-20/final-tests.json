@@ -1,0 +1,35 @@
+{
+  "exit_code": 0,
+  "duration_seconds": 503.75,
+  "source_files": 248,
+  "source_drift": [],
+  "postgres_enabled": true,
+  "bash_simulators_enabled": true,
+  "passed": 1144,
+  "skipped": 5,
+  "failed": 0,
+  "coverage_percent": 95.31372720132647,
+  "omissions": [
+    {
+      "test": "tests.test_migrations.test_replicas_migrating_together_do_not_collide[sqlite]",
+      "reason": "the advisory lock is a Postgres feature; SQLite is single-process dev"
+    },
+    {
+      "test": "tests.test_remote_live.test_discovers_the_java_agent",
+      "reason": "set TEST_A2A_AGENT_URL to run"
+    },
+    {
+      "test": "tests.test_remote_live.test_jvm_questions_are_routed_and_answered_by_java",
+      "reason": "set TEST_A2A_AGENT_URL to run"
+    },
+    {
+      "test": "tests.test_remote_live.test_team_mode_mixes_java_and_local_specialists",
+      "reason": "set TEST_A2A_AGENT_URL to run"
+    },
+    {
+      "test": "tests.test_remote_live.test_protocol_errors_surface_as_remote_errors",
+      "reason": "set TEST_A2A_AGENT_URL to run"
+    }
+  ],
+  "manifest_sha256": "bfff7f9960bfb58a7a24b46420c3f6bc7178c8dbfa6ff409f39863c9fb50c5cc"
+}

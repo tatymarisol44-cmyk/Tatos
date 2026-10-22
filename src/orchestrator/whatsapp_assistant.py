@@ -31,12 +31,23 @@ from typing import Any
 from sqlalchemy import JSON, Column, DateTime, String, Table, and_, delete, insert, select
 
 from orchestrator import usage as ledger
-from orchestrator.agenda import Agenda
+from orchestrator.agenda import Agenda, AgendaError
+from orchestrator.booking_preferences import (
+    Preference,
+    historical_preference,
+    numbered_options,
+    rank_slots,
+    stated_preference,
+    validated_offer,
+)
 from orchestrator.config import Settings
 from orchestrator.crm import CrmError, CrmService, appointments, patients
 from orchestrator.db import Database, aware, metadata, utcnow
+from orchestrator.governance import ConsentRegistry, Purpose
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient
+from orchestrator.memory import SemanticMemory
+from orchestrator.packs import pack_for
 from orchestrator.risk import fold, is_clinical
 from orchestrator.spend import BudgetExceeded, Spend
 
@@ -118,6 +129,8 @@ class WhatsAppAssistant:
         crm: CrmService,
         settings: Settings,
         spend: Spend | None = None,
+        memory: SemanticMemory | None = None,
+        consents: ConsentRegistry | None = None,
     ) -> None:
         self.db = db
         self.llm = llm
@@ -126,6 +139,8 @@ class WhatsAppAssistant:
         self.crm = crm
         self.settings = settings
         self.spend = spend
+        self.memory = memory
+        self.consents = consents
 
     # --- who is writing -----------------------------------------------------------------
 
@@ -222,12 +237,68 @@ class WhatsAppAssistant:
                     )
                 )
 
-    async def _slots(self, tenant: str, patient_id: str | None) -> list[dict[str, Any]]:
+    async def _preference(
+        self, tenant: str, patient_id: str | None, text: str
+    ) -> Preference | None:
+        explicit = stated_preference(text)
+        enabled = (
+            patient_id is not None
+            and self.settings.memory_enabled
+            and "schedule" in pack_for(self.settings, tenant).memory.preferences
+            and self.consents is not None
+            and await self.consents.has(tenant, patient_id, Purpose.MEMORY)
+        )
+        if not enabled or patient_id is None:
+            return explicit
+        if self.memory is not None:
+            try:
+                if explicit:
+                    await self.memory.remember(
+                        tenant,
+                        patient_id,
+                        [("schedule", explicit)],
+                        "channel:whatsapp",
+                        allowed={"schedule"},
+                    )
+                else:
+                    for fact in await self.memory.export(tenant, patient_id):
+                        if (
+                            fact.key == "schedule"
+                            and fact.value in ("morning", "afternoon")
+                            and datetime.fromisoformat(fact.expires_at) > utcnow()
+                        ):
+                            return "morning" if fact.value == "morning" else "afternoon"
+            except Exception:
+                log.warning("schedule preference store unavailable")
+        if explicit:
+            return explicit
+        query = (
+            select(appointments.c.starts_at)
+            .where(
+                and_(
+                    appointments.c.tenant == tenant,
+                    appointments.c.patient_id == patient_id,
+                    appointments.c.status == "completed",
+                    appointments.c.starts_at < utcnow(),
+                    appointments.c.starts_at >= utcnow() - timedelta(days=180),
+                )
+            )
+            .order_by(appointments.c.starts_at.desc())
+            .limit(12)
+        )
+        async with self.db.engine.connect() as conn:
+            dates = [aware(value) for value in (await conn.execute(query)).scalars()]
+        return historical_preference([d.astimezone(self.agenda.tz) for d in dates if d])
+
+    async def _slots(
+        self, tenant: str, patient_id: str | None, preference: Preference | None = None
+    ) -> list[dict[str, Any]]:
         professional = await self._professional(tenant, patient_id)
         if professional is None:
             return []
         try:
-            free = await self.agenda.free_slots(tenant, professional, days=14, limit=3)
+            free = await self.agenda.free_slots(tenant, professional, days=14, limit=2100)
+            free = rank_slots(free, preference)
         except KeyError:
             return []
         return [
@@ -236,6 +307,7 @@ class WhatsAppAssistant:
                 "starts_at": s["starts_at"],
                 "minutes": s["minutes"],
                 "local": s["local"],
+                "preference": preference,
             }
             for s in free
         ]
@@ -252,12 +324,22 @@ class WhatsAppAssistant:
             offer = await self._offer(tenant, key)
             if offer and int(choice.group(1)) <= len(offer):
                 return await self._book(tenant, key, patient, offer[int(choice.group(1)) - 1])
-        slots = await self._slots(tenant, patient["id"] if patient else None)
+        patient_id = patient["id"] if patient else None
+        preference = await self._preference(tenant, patient_id, text)
+        slots = await self._slots(tenant, patient_id, preference)
         reply = await self._write(tenant, await self._context(tenant, text, patient, slots))
         if reply is None:
             return None, False  # the fixed welcome text answers instead
+        if slots:
+            reply = validated_offer(reply, slots)
+        needs_booking = bool(re.search(r"\b(cita|turno|agendar|reservar|reserva)\b", fold(text)))
+        if not slots and needs_booking:
+            reply = (
+                "No hay horarios disponibles en los próximos 14 días. "
+                "Una persona del equipo te ayudará a encontrar una alternativa."
+            )
         await self._save_offer(tenant, key, slots)
-        return reply, False
+        return reply, not slots and needs_booking
 
     async def draft(self, tenant: str, text: str, phone: str | None = None) -> str | None:
         """A suggested reply for the inbox (ADR 0023): the same model, prompt and checks,
@@ -340,6 +422,11 @@ class WhatsAppAssistant:
                 True,
             )
         try:
+            minutes = await self.agenda.is_free_slot(
+                tenant, slot["professional_id"], datetime.fromisoformat(slot["starts_at"])
+            )
+            if minutes != int(slot["minutes"]):
+                raise AgendaError("the duration changed since the offer")
             await self.crm.create_appointment(
                 tenant,
                 patient["id"],
@@ -349,15 +436,18 @@ class WhatsAppAssistant:
                 price=0,
                 actor=SYSTEM_ACTOR,
                 professional_id=slot["professional_id"],
+                require_available_slot=True,
             )
-        except CrmError:  # taken meanwhile (SlotTaken) or the record is restricted
-            fresh = await self._slots(tenant, patient["id"])
+        except (CrmError, AgendaError, KeyError):
+            preference = slot.get("preference")
+            preference = preference if preference in ("morning", "afternoon") else None
+            fresh = await self._slots(tenant, patient["id"], preference)
             await self._save_offer(tenant, key, fresh)
-            options = "\n".join(f"{n}) {s['local']}" for n, s in enumerate(fresh, 1))
+            options = numbered_options(fresh) if fresh else ""
             return (
-                "Uy, ese horario se acaba de ocupar 😕 "
+                "Ese horario ya no está disponible o cambió la atención. "
                 + (
-                    f"¿Te sirve alguno de estos?\n{options}\nResponde 1, 2 o 3."
+                    f"¿Te sirve alguno de estos?\n{options}"
                     if fresh
                     else "Una persona del equipo te escribirá para buscar otro."
                 ),
