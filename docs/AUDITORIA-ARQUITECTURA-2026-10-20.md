@@ -73,3 +73,25 @@ Estos puntos limitan lo que puede afirmarse de la candidata. El informe no llama
 La batería completa terminó con **1.144 pruebas aprobadas, cero fallos, cinco omitidas y cobertura 95,31 %**. Tiempo de pytest: 497,46 segundos; tiempo del lanzador: 503,75 segundos. Se habilitaron PostgreSQL 17.11 aislado en loopback, backup/restore y simuladores Bash. El manifiesto de 248 archivos no presentó cambios durante la ejecución. Se cerró la instancia temporal al finalizar. [Resumen y motivos de omisión](evidence/architecture-audit-2026-10-20/final-tests.json), [JUnit completo](evidence/architecture-audit-2026-10-20/final-tests.xml), [inventario](evidence/architecture-audit-2026-10-20/inventory.json), [referencias](evidence/architecture-audit-2026-10-20/references.json).
 
 Las omisiones son cuatro contratos Java/A2A que requieren un agente Java vivo y la variante SQLite de un bloqueo exclusivo de PostgreSQL; la variante PostgreSQL se ejecutó. El job Java de CI comprueba por separado el contrato vivo. Hubo dos avisos de deprecación (fixture del event loop y adaptador datetime de SQLite), sin fallos. El escaneo de secretos de los archivos de la candidata aprobó. El resultado remoto de la nueva revisión debe comprobarse sobre su propio SHA antes de fusionar.
+
+## Seguimiento: build, imágenes y persistencia
+
+La candidata anterior `f9074a8` aprobó los nueve jobs de CI. La ampliación posterior incorpora estos cambios, cuya validación se registra por separado:
+
+| Área | Cambio | Comprobación |
+|---|---|---|
+| Backend de build | Las seis herramientas se fijan por URL de wheel universal y SHA-256; manifiesto `build-requirements.txt` para construcción y auditoría. | Dos wheels iguales con hashes obligatorios; prueba negativa de hash incorrecto; seis paquetes sin avisos conocidos en la consulta realizada. |
+| Recursos instalados | El gate compara fuente, wheel y archivos realmente instalados. | Instalación aislada no editable; 146 recursos verificados tras extraer el gasto. |
+| APT | Snapshots de Debian y Debian Security, sin mirrors anteriores; actualizaciones de seguridad antes de ffmpeg. | Entradas oficiales consultadas; la instalación real necesita el job Docker. Se conserva verificación de firmas. |
+| Cadena OCI | Build único; selección de manifests; escaneo amd64/arm64; promoción del mismo archivo con digests preservados; ensayo contra registro local. | Trece pruebas de integridad/política; pendiente del ensayo Docker real hasta que pase seguridad de CI. |
+| Política de gasto | `budget.py` contiene el contrato y las reglas sin ORM; `spend_store.py` implementa SQL; `spend.py` conserva compatibilidad. | Cien pruebas relacionadas; guard de imports de biblioteca estándar; esquema previo conservado. |
+| Contabilidad | La decisión de límite usa saldo sin redondeo visual; periodos UTC; costes y contadores inválidos se rechazan antes de SQL; reintento de alta concurrente acotado. | Seis regresiones fallaron antes del cambio. Incluyen costes negativos, NaN e infinitos, saldo redondeado y cambio de mes fuera de UTC. |
+| Documento | Corrección de caracteres dañados en el resultado final anterior. | Edición UTF-8. |
+
+Se integró `main` después de su PR #32, conservando tanto la actualización de paquetes del sistema como el bloqueo de vulnerabilidades HIGH reparables. No se descartaron esas correcciones al resolver los conflictos en Dockerfile y CI.
+
+La ejecución de CI `39476382531` identificó otra coincidencia de Gitleaks en una rama documental remota: un SHA-256 de `docs/evidence/render-release-2026-10-20/manifest.json`. Se contrastó con el contenido del archivo referido en su commit. Es una huella verificada, no una credencial. La autorización anterior no cubre ese valor y se solicitó una excepción exacta adicional; no se redujo el alcance del escaneo ni se aplicó una excepción sin respuesta.
+
+La política de gasto sigue siendo contabilidad posterior al consumo. La reserva estricta y el bloqueo de precios desconocidos dependen de la preferencia solicitada al propietario; esta extracción no se presenta como un tope reservado antes de cada llamada.
+
+Detalles operativos: [Build e integridad de imágenes](BUILD-AND-IMAGE-INTEGRITY.md).

@@ -100,6 +100,8 @@ async def revise_instrument(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "instrument not found") from exc
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except InstrumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.delete("/instruments/{instrument_id}", status_code=status.HTTP_204_NO_CONTENT)

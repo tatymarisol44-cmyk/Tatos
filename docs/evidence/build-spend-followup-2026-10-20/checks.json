@@ -1,0 +1,16 @@
+{
+  "pinned_build_packages": 6,
+  "pinned_builder": "hatchling 1.32.4",
+  "uv": "0.12.24",
+  "wheel_sha256": "0df65dea29f4390cae83aeef6451d3ec107e9e358191b1c62c8bb9f7cc32d4f9",
+  "identical_wheels": true,
+  "installed_and_packaged_resources": 146,
+  "image_artifact_tests_passed": 13,
+  "spending_focused_tests_passed": 100,
+  "spending_regressions_before_change_failed": 6,
+  "mypy_source_files": 127,
+  "runtime_budget_mode": "post-consumption; strict reservation preference pending",
+  "oci_integration": "pending security gate",
+  "additional_secret_exception": "not applied; explicit approval pending",
+  "full_suite": "running; obsolete pipeline test identified"
+}

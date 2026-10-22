@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual del Consultorio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a practical handbook. Chapter cards with numbered steps (real sequences), a role chip on each task, a quick index at the top. */
+:root{
+  --bg:#f5f6fb; --paper:#ffffff; --ink:#1c1f3a; --muted:#5d6280; --rule:#dde0ee;
+  --accent:#3b44a8; --accent-soft:#e8eaf9; --mint:#0f7a64; --mint-soft:#e0f4ef; --warn:#8a4b00; --warn-soft:#fdf0dc;
+  --f-display:"Bricolage Grotesque",system-ui,sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12142a; --paper:#1a1d38; --ink:#e7e9f7; --muted:#a6abcb; --rule:#2e3256;
+  --accent:#a9b0ff; --accent-soft:#262a52; --mint:#7fdcc4; --mint-soft:#15332d; --warn:#f2c27a; --warn-soft:#3b2a12; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12142a; --paper:#1a1d38; --ink:#e7e9f7; --muted:#a6abcb; --rule:#2e3256;
+  --accent:#a9b0ff; --accent-soft:#262a52; --mint:#7fdcc4; --mint-soft:#15332d; --warn:#f2c27a; --warn-soft:#3b2a12; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);margin:0}
+.page{max-width:960px;margin:0 auto;padding-inline:20px;padding-block:36px 80px}
+header h1{font:700 clamp(30px,5vw,46px)/1.05 var(--f-display);margin:8px 0 10px;letter-spacing:-.01em;text-wrap:balance}
+.eyebrow{font:600 12px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lead{font-size:18px;color:var(--muted);max-width:62ch;margin:0}
+.index{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:28px 0 8px}
+.index a{display:block;background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:10px 14px;color:var(--ink);text-decoration:none;font-weight:600;font-size:15px}
+.index a span{display:block;font-weight:400;font-size:13px;color:var(--muted)}
+.index a:hover,.index a:focus-visible{border-color:var(--accent)}
+section.ch{margin-top:46px;scroll-margin-top:16px}
+h2{font:700 27px/1.2 var(--f-display);margin:0 0 6px;text-wrap:balance}
+.chlead{color:var(--muted);margin:0 0 18px;max-width:65ch}
+.task{background:var(--paper);border:1px solid var(--rule);border-radius:12px;padding:18px 20px;margin:14px 0}
+.task h3{font:700 18px/1.3 var(--f-display);margin:0 0 6px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.who{font:600 11px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;background:var(--accent-soft);color:var(--accent);padding:5px 8px;border-radius:20px}
+.where{font:600 11px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;background:var(--mint-soft);color:var(--mint);padding:5px 8px;border-radius:20px}
+.task p{margin:0 0 10px;max-width:68ch}
+ol.steps{margin:6px 0 4px;padding-left:24px;max-width:70ch}
+ol.steps li{margin:6px 0;padding-left:4px}
+ul{max-width:70ch;padding-left:22px}
+.ui{font-family:var(--f-mono);font-size:13px;background:var(--accent-soft);color:var(--ink);padding:1px 6px;border-radius:4px;white-space:nowrap}
+code{font-family:var(--f-mono);font-size:13px}
+.note{background:var(--mint-soft);border-radius:10px;padding:12px 16px;margin:12px 0;max-width:72ch}
+.warn{background:var(--warn-soft);border-radius:10px;padding:12px 16px;margin:12px 0;max-width:72ch}
+.note p,.warn p{margin:0}
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:10px;background:var(--paper);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:12px;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+tr:last-child td{border-bottom:0}
+footer{margin-top:60px;color:var(--muted);font-size:14px;border-top:1px solid var(--rule);padding-top:16px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+@media print{nav.toc,.index{display:none!important}.wrap{display:block!important;padding:0!important}main{max-width:none!important}
+.tbl,.task,section{break-inside:auto}tr,.task h3,h2,h3{break-inside:avoid;break-after:avoid}body{background:#fff!important}}
+</style>
+</head>
+<body>
+
+
+<div class="page">
+<header>
+  <div class="eyebrow">Manual de uso · Agency Orchestrator Salud</div>
+  <h1>Manual del Consultorio</h1>
+  <p class="lead">Cómo trabajar día a día con la plataforma: pacientes, su perfil, la agenda, la historia clínica, los tests, los documentos, el marketing y la privacidad. Cada tarea indica quién la hace y dónde.</p>
+  <nav class="index" aria-label="Capítulos">
+    <a href="#inicio">Primeros pasos<span>Llaves, roles, consola</span></a>
+    <a href="#pacientes">Gestión de pacientes<span>Alta, búsqueda, citas</span></a>
+    <a href="#perfil">Perfil del paciente<span>Ficha clínica completa</span></a>
+    <a href="#agenda">Agenda<span>Horarios, turnos, recordatorios</span></a>
+    <a href="#documental">Gestión documental<span>Historia, archivos, conocimiento</span></a>
+    <a href="#tests">Tests psicológicos<span>PHQ-9, GAD-7, propios</span></a>
+    <a href="#asistente">Asistente y revisión<span>Respuestas con IA</span></a>
+    <a href="#whatsapp">WhatsApp y crisis<span>Mensajes y guardia</span></a>
+    <a href="#marketing">Marketing<span>Campañas y redes</span></a>
+    <a href="#privacidad">Privacidad<span>Consentimientos y derechos</span></a>
+    <a href="#app">App del paciente<span>Lo que ve el paciente</span></a>
+    <a href="#faq">Preguntas frecuentes<span>Problemas comunes</span></a>
+  </nav>
+</header>
+
+<section class="ch" id="inicio">
+<h2>1. Primeros pasos</h2>
+<p class="chlead">La plataforma tiene dos puertas: la <b>consola</b> (la página principal, para el trabajo diario) y la <b>documentación interactiva</b> en <code>/docs</code> (para tareas de dirección, marketing y privacidad que todavía no tienen pantalla propia). Las dos usan la misma llave personal.</p>
+
+<div class="task">
+<h3>Tu llave personal <span class="who">Todos</span></h3>
+<p>Cada persona tiene su propia llave (empieza con <code>sk_</code>). Lo que haces queda registrado a tu nombre en la auditoría, por eso <b>nunca se comparte</b>.</p>
+<ol class="steps">
+<li>Administración crea tu llave y te la entrega por un canal privado.</li>
+<li>Abre la dirección de la plataforma en el navegador.</li>
+<li>Pega tu llave en la casilla <span class="ui">API key</span> de arriba. El navegador la recuerda en ese equipo.</li>
+<li>Si pierdes el equipo o la llave, avisa a administración para que la revoque.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Qué puede hacer cada rol <span class="who">Administración</span></h3>
+<div class="tbl"><table>
+<tr><th>Rol</th><th>Para quién</th><th>Puede</th><th>No puede</th></tr>
+<tr><td>Recepción</td><td>Secretaría</td><td>Pacientes, citas, planes, consentimientos, acceso del paciente, alertas</td><td>Ver historia clínica, tests ni archivos</td></tr>
+<tr><td>Clínico (<code>reviewer</code>)</td><td>Psicóloga, psiquiatra</td><td>Historia clínica, tests, archivos, seguimiento, revisar respuestas de la IA</td><td>Ver notas de psicoterapia de otro profesional</td></tr>
+<tr><td>Dirección (<code>owner</code>)</td><td>Dueña</td><td>Indicadores, aprobar campañas y descuentos altos</td><td>Ver historia clínica (salvo que también sea clínica)</td></tr>
+<tr><td>Marketing</td><td>Comunicación</td><td>Crear, aprobar (dentro del tope) y enviar campañas; ver resultados</td><td>Datos clínicos</td></tr>
+<tr><td>Privacidad</td><td>Oficial de datos</td><td>Exportar y borrar datos de un titular, auditoría, casos de privacidad</td><td>—</td></tr>
+<tr><td>Administración</td><td>Gerencia</td><td>Personal, profesionales, redes, guardia, base de conocimiento</td><td>Leer datos clínicos</td></tr>
+</table></div>
+<p>Una persona puede tener varios roles. Por ejemplo, una psicóloga que trabaja sola puede tener <i>recepción + clínico + dirección</i>.</p>
+</div>
+
+<div class="task">
+<h3>Crear la llave de una persona <span class="who">Administración</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>Abre <code>/docs</code> y pulsa <span class="ui">Authorize</span>; pega tu llave.</li>
+<li>Busca <span class="ui">POST /v1/admin/staff</span> → <span class="ui">Try it out</span>.</li>
+<li>Escribe el nombre y los roles, por ejemplo <code>{"name": "maria.recepcion", "roles": ["reception"]}</code>.</li>
+<li>Pulsa <span class="ui">Execute</span>. La respuesta trae la llave <b>una sola vez</b>: entrégala a la persona y no la guardes.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Registrar a los profesionales <span class="who">Administración</span><span class="where">/docs</span></h3>
+<p>Cada profesional trabaja con el "paquete" de su profesión, que define qué documentos puede escribir: la psicóloga no puede emitir recetas y el psiquiatra sí.</p>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/admin/professionals</span> envía su id, nombre, paquete (<code>ec-psychologist</code> o <code>ec-psychiatrist</code>) y su llave de personal (<code>staff_id</code>).</li>
+<li>Ya aparece en la agenda y sus documentos se tipan con su paquete.</li>
+</ol>
+</div>
+</section>
+
+<section class="ch" id="pacientes">
+<h2>2. Gestión de pacientes</h2>
+<p class="chlead">La ficha administrativa del paciente: quién es, cómo contactarlo, sus citas y sus planes. Recepción la maneja; los datos clínicos van en el perfil clínico (capítulo 3).</p>
+
+<div class="task">
+<h3>Dar de alta a un paciente <span class="who">Recepción</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/crm/patients</span> envía el nombre visible y, si quieres, un número de paciente propio como id (por ejemplo <code>P-0042</code>). No uses la cédula ni el correo como id.</li>
+<li>Agrega teléfono, correo, fecha de nacimiento y canal preferido (app, Telegram o WhatsApp).</li>
+<li>Si el id ya existe, verás un error 409: busca al paciente antes de crearlo otra vez.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Buscar y abrir un paciente <span class="who">Recepción · Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>Abre la pestaña <span class="ui">Patients</span>.</li>
+<li>Escribe parte del nombre en <span class="ui">Search patients</span>.</li>
+<li>Pulsa el nombre. La lista no muestra teléfonos ni correos, a propósito: así nadie los ve por encima del hombro.</li>
+</ol>
+<div class="note"><p>Cada vez que alguien abre la ficha de un paciente, queda registrado quién y cuándo.</p></div>
+</div>
+
+<div class="task">
+<h3>Citas: crear y cambiar su estado <span class="who">Recepción</span><span class="where">Consola · /docs</span></h3>
+<ol class="steps">
+<li>La forma más fácil es reservar desde la agenda (capítulo 4). También puedes usar <span class="ui">POST /v1/crm/appointments</span>.</li>
+<li>Después de la sesión, marca el resultado en <span class="ui">POST /v1/crm/appointments/{id}/status</span>: <code>confirmed</code>, <code>completed</code>, <code>no_show</code> o <code>cancelled</code>.</li>
+<li>Una cita completada, cancelada o con inasistencia ya no se puede cambiar. Si fue un error, crea una nota en la historia.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Alertas del día (semáforo) <span class="who">Recepción</span><span class="where">/docs</span></h3>
+<p><span class="ui">GET /v1/crm/alerts</span> muestra primero lo rojo:</p>
+<ul>
+<li>citas próximas sin confirmar;</li>
+<li>presupuestos o planes sin respuesta;</li>
+<li>pacientes que deberían volver a control y no tienen cita.</li>
+</ul>
+</div>
+
+<div class="task">
+<h3>Darle al paciente acceso a su app <span class="who">Recepción</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/crm/patients/{id}/access</span> genera su llave de paciente (empieza con <code>pk_</code>). Tiene fecha de caducidad.</li>
+<li>Entrégasela al paciente en persona o por un canal privado. Con ella ve sus citas, reserva turnos y elige sus consentimientos (capítulo 11).</li>
+</ol>
+</div>
+</section>
+
+<section class="ch" id="perfil">
+<h2>3. Perfil del paciente</h2>
+<p class="chlead">El espacio clínico de cada paciente. Solo lo abren los profesionales con rol clínico: ni recepción ni administración ven esta parte.</p>
+
+<div class="task">
+<h3>Abrir el perfil clínico <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En <span class="ui">Patients</span>, pulsa el nombre del paciente. Se abre su espacio de trabajo con cuatro secciones:</li>
+</ol>
+<div class="tbl"><table>
+<tr><th>Sección en pantalla</th><th>Qué muestra</th></tr>
+<tr><td><span class="ui">Follow-up</span></td><td>Asistencia, riesgo de inasistencia (con las razones), tendencias de sus tests y si abre las comunicaciones (solo con su consentimiento de analítica).</td></tr>
+<tr><td><span class="ui">Apply a test</span></td><td>Aplicar un test a este paciente y ver el puntaje al instante.</td></tr>
+<tr><td><span class="ui">Results</span></td><td>Todos sus resultados, con banda y alertas.</td></tr>
+<tr><td><span class="ui">Documents</span></td><td>Sus archivos: consentimientos firmados, informes, certificados.</td></tr>
+</table></div>
+<p>Pulsa <span class="ui">← Back to the assistant</span> para volver.</p>
+</div>
+
+<div class="task">
+<h3>Pacientes que necesitan atención <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En <span class="ui">Patients</span>, pulsa <span class="ui">Needs attention</span>.</li>
+<li>Verás los pacientes con alguna señal: alerta en un test, inasistencias o una tendencia que empeora. Pulsa uno para abrir su perfil.</li>
+</ol>
+<div class="note"><p>El riesgo de inasistencia es una regla con sus razones (por ejemplo, "2 inasistencias en las últimas 4 citas"), no una caja negra. Nunca sube de "bajo" sin una razón visible.</p></div>
+</div>
+
+<div class="task">
+<h3>Qué datos tiene el perfil y quién los ve</h3>
+<div class="tbl"><table>
+<tr><th>Dato</th><th>Lo ve</th></tr>
+<tr><td>Nombre, contacto, citas, planes</td><td>Recepción, clínicos, dirección</td></tr>
+<tr><td>Notas de sesión, informes, tests, archivos del equipo</td><td>Clínicos del consultorio</td></tr>
+<tr><td>Notas de psicoterapia y archivos "solo yo"</td><td>Solo su autor</td></tr>
+<tr><td>Consentimientos</td><td>Recepción, privacidad, el propio paciente</td></tr>
+</table></div>
+</div>
+</section>
+
+<section class="ch" id="agenda">
+<h2>4. Agenda</h2>
+<p class="chlead">Cada profesional tiene su horario semanal. Los turnos libres salen solos y nadie puede reservar dos citas a la misma hora.</p>
+
+<div class="task">
+<h3>Configurar el horario de un profesional <span class="who">Administración · Recepción</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">PUT /v1/agenda/professionals/{id}/hours</span> envía los días y horas, por ejemplo lunes de 09:00 a 13:00 con turnos de 50 minutos.</li>
+<li>Sin horario, la agenda muestra "No free times: set the professional's working hours first".</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Ver la agenda y reservar <span class="who">Recepción</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En <span class="ui">Patients</span>, pulsa <span class="ui">Agenda</span>.</li>
+<li>En <span class="ui">Whose agenda</span> elige al profesional.</li>
+<li><span class="ui">Next two weeks</span> muestra las citas reservadas y <span class="ui">Free times</span> los turnos libres.</li>
+<li>En <span class="ui">Book for</span> elige al paciente y pulsa el turno. Si otra persona lo tomó un segundo antes, verás un aviso y el turno desaparece.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>La agenda en el celular del profesional <span class="who">Clínico</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/agenda/professionals/{id}/calendar-link</span> genera tu enlace de calendario.</li>
+<li>Agrégalo en Google Calendar o en el calendario del iPhone como "suscripción por URL".</li>
+<li>Por privacidad, el calendario muestra solo iniciales y horas. Si el enlace se filtra, genera uno nuevo.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Recordatorios <span class="who">Automático</span></h3>
+<p>Un día antes de cada cita, el sistema envía <b>un</b> recordatorio, sin contenido clínico: por Telegram si el paciente lo conectó, si no por WhatsApp (plantilla aprobada por Meta) y si no por la app. Si el paciente escribió STOP en WhatsApp, no se le envía nada por ese canal.</p>
+</div>
+</section>
+
+<section class="ch" id="documental">
+<h2>5. Gestión documental</h2>
+<p class="chlead">Tres tipos de documentos con reglas distintas: la historia clínica (escrita en la plataforma), los archivos (PDF o imágenes que subes) y la base de conocimiento del consultorio (información general para el asistente).</p>
+
+<div class="task">
+<h3>Escribir en la historia clínica <span class="who">Clínico</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/clinical/patients/{id}/documents</span> elige el tipo de documento de tu profesión y escribe el texto.</li>
+<li>Al guardar, queda con fecha, autor y huella SHA-256. <b>No se puede editar ni borrar.</b></li>
+<li>Para corregir, crea una entrada nueva con <code>amends</code> igual al id de la anterior. La historia muestra las dos.</li>
+</ol>
+<div class="tbl"><table>
+<tr><th>Profesión</th><th>Tipos de documento disponibles</th></tr>
+<tr><td>Común (salud mental)</td><td>Consentimiento de terapia, consentimiento del tutor (menores), consentimiento de internamiento voluntario, nota de sesión, <b>nota de psicoterapia</b> (solo el autor), derivación, informe de internamiento</td></tr>
+<tr><td>Psicóloga</td><td>Consentimiento para sesiones en línea, certificado de asistencia, informe psicológico, resultado de escala</td></tr>
+<tr><td>Psiquiatra</td><td>Receta ordinaria, hoja de trabajo de receta especial, certificado médico, seguimiento de medicación</td></tr>
+</table></div>
+<div class="warn"><p><b>Receta especial (psicotrópicos):</b> la plataforma valida tu hoja de trabajo contra ACESS-2022-0046 (campos, código CIE-10, cantidad en letras y números, sin abreviaturas), pero <b>no emite</b> el formulario oficial numerado. Ese lo llenas tú en el formulario de ACESS.</p></div>
+</div>
+
+<div class="task">
+<h3>Subir un archivo (consentimiento firmado, informe) <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>Firma el documento fuera de la plataforma (a mano y escaneado, o con firma electrónica) y guárdalo en PDF.</li>
+<li>Abre el perfil del paciente → sección <span class="ui">Documents</span>.</li>
+<li>Elige el archivo (hasta 10 MB; PDF o imagen) y quién lo verá: <span class="ui">The care team</span> (el equipo clínico) u <span class="ui">Only me (the author)</span> (solo tú).</li>
+<li>Súbelo. La plataforma comprueba que el contenido sea realmente del tipo que dice y guarda su huella SHA-256; al descargarlo, la huella viene con el archivo para comprobar que no cambió.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Base de conocimiento del consultorio <span class="who">Administración</span><span class="where">Consola</span></h3>
+<p>Es lo que el asistente usa para responder: horarios, precios, política de cancelación, cómo llegar, preguntas frecuentes. <b>Nunca datos de pacientes.</b></p>
+<ol class="steps">
+<li>Abre la pestaña <span class="ui">Knowledge</span>.</li>
+<li>Escribe un título y pega el texto (o arrastra un archivo de texto). Para actualizar, vuelve a subir con el mismo título.</li>
+<li>Las respuestas del asistente muestran qué documento usaron.</li>
+</ol>
+<div class="note"><p>Si intentas subir una nota clínica o un texto con instrucciones sospechosas, la plataforma lo rechaza antes de procesarlo.</p></div>
+</div>
+
+<div class="task">
+<h3>Plantillas legales del consultorio <span class="who">Dirección · Privacidad</span></h3>
+<p>En <code>docs/legal/es/</code> hay cuatro plantillas en español: aviso de privacidad, contrato de encargo con la plataforma, registro de actividades de tratamiento y evaluación de impacto. Deben revisarse con un abogado antes de usarse con pacientes reales.</p>
+</div>
+</section>
+
+<section class="ch" id="tests">
+<h2>6. Tests psicológicos</h2>
+<p class="chlead">Aplica PHQ-9 y GAD-7, o diseña tus propios tests con puntaje automático y alertas.</p>
+
+<div class="task">
+<h3>Agregar PHQ-9 o GAD-7 <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En <span class="ui">Patients</span>, pulsa <span class="ui">Manage tests</span>.</li>
+<li>En <span class="ui">Public-domain templates</span> pulsa PHQ-9 o GAD-7. Quedan en <span class="ui">Your tests</span>.</li>
+</ol>
+<div class="warn"><p>En el PHQ-9, cualquier respuesta mayor que 0 en el ítem 9 (pensamientos de hacerse daño) genera una alerta <b>sea cual sea el puntaje total</b>. Revísala el mismo día.</p></div>
+</div>
+
+<div class="task">
+<h3>Diseñar un test propio <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En <span class="ui">Manage tests</span> → <span class="ui">Design a new test</span>.</li>
+<li>Agrega los ítems. Cada uno puede ser <span class="ui">Choice</span> (opciones con valor), <span class="ui">Number</span> u <span class="ui">Open answer</span>. Marca los ítems que puntúan al revés.</li>
+<li>Elige cómo se calcula el puntaje: <span class="ui">Sum</span>, <span class="ui">Mean</span> o <span class="ui">No score</span>. Define bandas (por ejemplo 0–4 "mínimo") y alertas por ítem.</li>
+<li>Elige quién lo usa: <span class="ui">Everyone in the practice</span> u <span class="ui">Only me</span>.</li>
+<li>Confirma que tienes derecho a usar ese test (licencia) y guárdalo.</li>
+</ol>
+<p>Si lo cambias más adelante, se crea una versión nueva. Los resultados antiguos conservan la versión con la que se puntuaron.</p>
+</div>
+
+<div class="task">
+<h3>Aplicar un test a un paciente <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>Abre el perfil del paciente → <span class="ui">Apply a test</span>.</li>
+<li>Elige el test y marca las respuestas del paciente.</li>
+<li>Al guardar verás el puntaje, la banda y las alertas. El resultado aparece en <span class="ui">Results</span> y en el seguimiento.</li>
+</ol>
+<div class="note"><p>La banda describe la intensidad de los síntomas, no es un diagnóstico. El diagnóstico siempre es del profesional.</p></div>
+</div>
+</section>
+
+<section class="ch" id="asistente">
+<h2>7. Asistente con IA y revisión</h2>
+<p class="chlead">El asistente responde con la información del consultorio. Si una pregunta toca algo clínico, la respuesta no se muestra hasta que un profesional la revisa.</p>
+
+<div class="task">
+<h3>Preguntar al asistente <span class="who">Todos</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>En la pestaña <span class="ui">Agents</span>, escribe en <span class="ui">Your request</span> y pulsa Enviar.</li>
+<li>El asistente elige al especialista adecuado (o un equipo de especialistas en modo <span class="ui">Team</span>) y responde citando sus fuentes.</li>
+<li>Cada respuesta lleva una etiqueta: "generada por IA, no revisada", "pendiente de revisión" o "editada y aprobada por un profesional".</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Revisar respuestas retenidas <span class="who">Clínico</span><span class="where">Consola</span></h3>
+<ol class="steps">
+<li>Abre la pestaña <span class="ui">Reviews</span>. El número indica cuántas esperan.</li>
+<li>Cada tarjeta muestra la pregunta, el motivo del riesgo y el borrador.</li>
+<li>Corrige el borrador si hace falta. Tu texto no se pierde aunque la lista se actualice.</li>
+<li>Pulsa <span class="ui">Approve</span> o <span class="ui">Reject</span>. Quien preguntó ve la respuesta al instante con la etiqueta correspondiente.</li>
+</ol>
+</div>
+</section>
+
+<section class="ch" id="whatsapp">
+<h2>8. WhatsApp, crisis y guardia</h2>
+<p class="chlead">El número de WhatsApp del consultorio contesta con calidez lo cotidiano, ofrece turnos reales y nunca da consejos médicos. Las crisis siempre van a una persona.</p>
+
+<div class="task">
+<h3>Qué responde solo el asistente <span class="who">Automático</span></h3>
+<ul>
+<li>Saludos, horarios, precios "desde", ubicación, política de cancelación (de la base de conocimiento).</li>
+<li>Turnos: ofrece 3 horarios libres numerados. Si el paciente responde "1", "2" o "3", se reserva ese turno (solo si su número coincide con un único paciente).</li>
+<li>Nunca habla de medicación, dosis, diagnósticos ni técnicas terapéuticas. Si el borrador las menciona, se reemplaza por un texto fijo.</li>
+</ul>
+</div>
+
+<div class="task">
+<h3>Si alguien escribe en crisis <span class="who">Guardia</span></h3>
+<ol class="steps">
+<li>El paciente recibe al instante un texto fijo, revisado, con <b>ECU 911</b> y la <b>línea 171, opción 6</b> del MSP. La IA no participa.</li>
+<li>La persona de guardia recibe un aviso por Telegram, WhatsApp y correo, <b>sin datos del paciente</b> (solo la referencia de la alerta).</li>
+<li>Abre la consola y reconoce la alerta (<span class="ui">POST /v1/social/alerts/{id}/ack</span>). Si nadie la reconoce en 5 minutos, avisa al siguiente nivel.</li>
+<li>Responde al paciente desde la plataforma, dentro de las 24 horas de la ventana de WhatsApp (<span class="ui">…/reply</span>), y resuelve la alerta (<span class="ui">…/resolve</span>).</li>
+</ol>
+<div class="warn"><p>La plataforma nunca contacta a familiares ni a terceros por su cuenta. Esa decisión la toma el profesional.</p></div>
+</div>
+
+<div class="task">
+<h3>Configurar la guardia <span class="who">Administración</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>En <span class="ui">POST /v1/admin/on-call</span> agrega a cada persona con su nivel (1 = de turno, 2 = respaldo), su chat de Telegram, WhatsApp y correo.</li>
+<li>Prueba con un mensaje de ejemplo antes de abrir el número al público.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>"Quiero hablar con una persona" y STOP <span class="who">Recepción</span></h3>
+<p>Si alguien pide hablar con una persona, recibe un texto cálido y se abre una alerta para el personal. Si escribe STOP, deja de recibir mensajes de marketing por ese canal, y eso queda registrado.</p>
+</div>
+</section>
+
+<section class="ch" id="marketing">
+<h2>9. Marketing</h2>
+<p class="chlead">Campañas a pacientes que dieron su consentimiento, con un grupo control para saber si funcionaron de verdad, y publicaciones en redes generadas y revisadas antes de salir.</p>
+
+<div class="task">
+<h3>Ver indicadores y segmentos <span class="who">Dirección</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li><span class="ui">GET /v1/insights/summary</span>: pacientes activos, segmentos, el 20 % de mayor valor, riesgo de inasistencia, embudo de planes y pronóstico.</li>
+<li><span class="ui">GET /v1/insights/segments</span>: quién está en cada grupo. Los segmentos son "sin visitas", "dormido", "en riesgo", "campeón", "leal", "nuevo" y "ocasional".</li>
+<li><span class="ui">POST /v1/insights/ask</span>: pregunta en lenguaje natural, por ejemplo "¿cuántos pacientes dejaron de venir este trimestre?". La respuesta cita la métrica que usó.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Crear y enviar una campaña <span class="who">Marketing · Dirección</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li><span class="ui">POST /v1/campaigns</span>: elige el tipo (control, reactivación, tratamiento pendiente, referidos, cumpleaños, educación), el segmento, el modo (<code>simulation</code> para probar o <code>live</code>) y el porcentaje del grupo control.</li>
+<li>Escribe el mensaje o pide un borrador a la IA. Solo puedes personalizar con <code>{first_name}</code> y el mensaje debe incluir "responde STOP".</li>
+<li>La plataforma revisa el texto: rechaza promesas prohibidas para salud mental ("la cura", "te cura", "curación") y cualquier detalle clínico. Si algo falla, la campaña queda en borrador con la lista de problemas.</li>
+<li>Una persona la aprueba (<span class="ui">…/approve</span>). Si incluye un descuento mayor al tope, también debe aprobarla la dueña.</li>
+<li>Envíala (<span class="ui">…/send</span>). Solo reciben los pacientes con consentimiento de marketing vigente en ese momento, como máximo 2 mensajes al mes, primero por la app y por Telegram solo si no la abren en 48 horas.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Leer los resultados <span class="who">Dirección</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li><span class="ui">GET /v1/campaigns/{id}/results</span> compara las reservas del grupo que recibió el mensaje con las del grupo control.</li>
+<li>Durante los 30 días de la ventana, el resultado es <b>provisional</b>: verás el progreso diario, pero sin conclusiones.</li>
+<li>Al cerrarse, verás el efecto (lift) con su intervalo de confianza. Con menos de 30 pacientes por grupo dirá "no concluyente". No es un error: es honestidad estadística.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Publicar en redes sociales <span class="who">Administración · Marketing</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>Administración conecta la cuenta del consultorio o de un profesional (<span class="ui">POST /v1/social/accounts</span>). El token se guarda en el servidor, nunca en la base de datos.</li>
+<li>Consulta las reglas de cada red en <span class="ui">GET /v1/social/rules</span> (formatos, límites, revisión de TikTok).</li>
+<li>Crea la publicación con su texto (<span class="ui">POST /v1/social/publications</span>). La plataforma dibuja la infografía o el video con el pie "Contenido informativo. No reemplaza una consulta profesional." y revisa el texto con las mismas reglas que las campañas.</li>
+<li>Una persona la aprueba y luego se publica. Sin credenciales, todo funciona en modo simulación y no sale nada.</li>
+</ol>
+<div class="note"><p>Las publicaciones nunca usan datos de pacientes, y la publicidad no se dirige a personas por su condición de salud.</p></div>
+</div>
+</section>
+
+<section class="ch" id="privacidad">
+<h2>10. Privacidad y derechos</h2>
+<p class="chlead">Lo que exige la LOPDP y cómo se hace en la plataforma.</p>
+
+<div class="task">
+<h3>Consentimientos <span class="who">Recepción · Privacidad</span></h3>
+<ul>
+<li>Son por finalidad: <b>marketing</b>, <b>analítica</b> y <b>memoria</b> (que el asistente recuerde preferencias). La atención clínica no necesita consentimiento aparte.</li>
+<li>Sin respuesta = no. El paciente los elige en su app; también se registran en <span class="ui">PUT /v1/subjects/{id}/consents/{finalidad}</span> indicando la fuente (por ejemplo "formulario firmado").</li>
+</ul>
+</div>
+
+<div class="task">
+<h3>Atender una solicitud de acceso o borrado <span class="who">Privacidad</span><span class="where">/docs</span></h3>
+<ol class="steps">
+<li>Registra el caso el mismo día: <span class="ui">POST /v1/privacy/cases</span> con el tipo (<code>access</code>, <code>rectification</code>, <code>erasure</code>, <code>objection</code>) y el paciente. La fecha límite (15 días) se calcula sola.</li>
+<li>Acceso: <span class="ui">GET /v1/subjects/{id}/export</span> entrega todo. Las notas de psicoterapia no se incluyen, pero la respuesta dice cuántas hay.</li>
+<li>Borrado: <span class="ui">DELETE /v1/subjects/{id}</span> borra el contacto y el marketing. La historia clínica se conserva restringida, porque la ley obliga a guardarla.</li>
+<li>Completa el paso (<span class="ui">…/steps/answer</span>) describiendo qué hiciste y cierra el caso.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Si hay una brecha de datos <span class="who">Privacidad · Dirección</span></h3>
+<ol class="steps">
+<li>Abre un caso de tipo <code>breach</code> con la hora en que se supo.</li>
+<li>Los plazos se calculan solos: avisar a la SPDP y a ARCOTEL en 5 días y a los pacientes afectados en 3 días si hay riesgo para sus derechos. Si la plataforma descubrió la brecha, avisa a la clínica en 2 días.</li>
+<li>24 horas antes de cada vencimiento suena una alerta. Sigue el runbook <code>docs/runbooks/data-breach.md</code>.</li>
+</ol>
+</div>
+
+<div class="task">
+<h3>Auditoría <span class="who">Privacidad</span><span class="where">/docs</span></h3>
+<p><span class="ui">GET /v1/audit</span> lista quién hizo qué y cuándo (nunca el contenido de los mensajes). <span class="ui">GET /v1/audit/verify</span> comprueba que nadie haya alterado el registro.</p>
+</div>
+</section>
+
+<section class="ch" id="app">
+<h2>11. Lo que ve el paciente</h2>
+<p class="chlead">Con su llave <code>pk_</code>, el paciente usa su propia app (hoy, a través de la API; la app instalable está en desarrollo).</p>
+<div class="tbl"><table>
+<tr><th>Función</th><th>Ruta</th></tr>
+<tr><td>Su perfil</td><td><code>GET /v1/me</code></td></tr>
+<tr><td>Sus citas y reservar un turno libre</td><td><code>/v1/me/appointments</code>, <code>/v1/me/slots</code></td></tr>
+<tr><td>Su calendario</td><td><code>GET /v1/me/calendar-link</code></td></tr>
+<tr><td>Sus consentimientos, con textos claros por profesión</td><td><code>/v1/me/consents</code></td></tr>
+<tr><td>Chat con el asistente</td><td><code>POST /v1/me/chat</code></td></tr>
+<tr><td>Fidelidad y novedades</td><td><code>/v1/me/loyalty</code>, <code>/v1/me/offers/seen</code></td></tr>
+</table></div>
+<p>El paciente nunca ve datos de otro paciente ni las notas de su profesional.</p>
+</section>
+
+<section class="ch" id="faq">
+<h2>12. Preguntas frecuentes</h2>
+<div class="task"><h3>"requires the clinician role (reviewer)…"</h3><p>Tu llave no tiene el rol clínico. Es intencional: administración y recepción no ven datos clínicos. Si eres profesional, pide a administración que te asigne el rol <code>reviewer</code>.</p></div>
+<div class="task"><h3>"This conversation is waiting for a reviewer"</h3><p>Hay una respuesta retenida para revisión. Empieza una conversación nueva o espera a que un profesional la revise en <span class="ui">Reviews</span>.</p></div>
+<div class="task"><h3>No veo turnos libres</h3><p>El profesional no tiene horario cargado, o todos sus turnos de las próximas dos semanas están ocupados.</p></div>
+<div class="task"><h3>Mi campaña quedó en borrador</h3><p>El texto no pasó la revisión: mira la lista de problemas (promesa prohibida, falta "STOP", un detalle clínico) y corrígelo.</p></div>
+<div class="task"><h3>"Too many requests"</h3><p>Se alcanzó el límite de solicitudes por minuto del consultorio. Espera un minuto.</p></div>
+<div class="task"><h3>El asistente contesta con textos fijos</h3><p>Se alcanzó el tope mensual de gasto en IA del consultorio, o el proveedor del modelo no responde. Todo lo demás (agenda, historia, alertas) sigue funcionando.</p></div>
+</section>
+
+<footer>
+<p>Manual del Consultorio · Agency Orchestrator Salud · versión 1.0, 9 de octubre de 2026. Las etiquetas de la consola se citan en inglés tal como aparecen en pantalla. Use solo datos sintéticos hasta completar los pasos legales del lanzamiento.</p>
+</footer>
+</div>
+
+</body>
+</html>

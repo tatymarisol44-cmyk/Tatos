@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototipo · Consultorio Psic. Carla Luzuriaga</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F5F7F8; --surface:#FFFFFF; --line:#E3E7EA; --line-2:#D5DBE0; --text:#17212B; --muted:#56616D;
+  --accent:#0E6E6B; --accent-dark:#0A524F; --accent-soft:#E3F1F0;
+  --warn-bg:#FFF4E5; --warn:#7A4106; --danger:#A61B1B; --danger-bg:#FDECEC; --danger-text:#7A1414;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px}
+a{color:var(--accent)} a:hover{color:var(--accent-dark)}
+button{font:inherit;cursor:pointer}
+h1,h2,p{margin:0}
+.proto-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px;background:#17212B;color:#fff;font-size:14px}
+.proto-bar .switch{display:flex;gap:6px;flex-wrap:wrap}
+.proto-bar a{color:#fff;text-decoration:none;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.35);font-weight:600;min-height:40px;display:inline-flex;align-items:center}
+.proto-bar a.on{background:#fff;color:#17212B}
+.screen{display:none}
+.screen.on{display:block}
+/* staff layout */
+.layout{display:flex;flex-wrap:wrap;min-height:calc(100vh - 60px)}
+.nav{flex:1 1 248px;max-width:100%;padding:24px 16px;display:flex;flex-direction:column;gap:6px;background:var(--surface);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;padding:4px 8px 20px}
+.avatar{width:40px;height:40px;border-radius:12px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+.nav a,.nav span.item{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:0 14px;border-radius:10px;text-decoration:none;font-weight:600;color:var(--text)}
+.nav a.on{background:var(--accent-soft);color:var(--accent-dark)}
+.nav span.item{color:var(--muted)}
+.count{min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:var(--danger);color:#fff;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+.soon{font-size:11px;padding:3px 8px;border-radius:999px;background:#EEF1F3;color:var(--muted)}
+.channels{margin-top:auto;padding:14px;border-radius:12px;background:var(--bg);display:flex;flex-direction:column;gap:6px;font-size:13px}
+main.content{flex:999 1 560px;min-width:0;padding:32px 40px 48px;display:flex;flex-direction:column;gap:22px;max-width:1180px}
+@media (max-width:720px){ main.content{padding:20px 16px 40px} .nav{border-right:0;border-bottom:1px solid var(--line)} .channels{display:none} }
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.title{font-size:28px;font-weight:700;letter-spacing:-.01em}
+.sub{font-size:14px;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{font-size:17px;font-weight:700}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line-2);background:#fff;color:var(--text);font-weight:600;font-size:14px;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.chip{font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;display:inline-block}
+.ok{background:var(--accent-soft);color:var(--accent-dark)} .wait{background:var(--warn-bg);color:var(--warn)} .neutral{background:#EEF1F3;color:#3E4954}
+.alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-radius:14px;background:var(--danger-bg);border:1px solid #F3B8B8;color:var(--danger-text)}
+.stats{display:flex;flex-wrap:wrap;gap:16px}
+.stat{flex:1 1 160px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;text-decoration:none;color:var(--text);display:flex;flex-direction:column;gap:6px}
+.stat b{font-size:32px;color:var(--accent)}
+.list-item{display:flex;align-items:center;gap:16px;padding:12px 14px;border-radius:10px;border:1px solid #EEF1F3;text-decoration:none;color:var(--text)}
+.list-item .time{width:56px;font-weight:700;font-variant-numeric:tabular-nums}
+.todo{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:10px;background:var(--bg);text-decoration:none;color:var(--text)}
+.muted{color:var(--muted);font-size:13px}
+.week{overflow-x:auto}
+.week-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;min-width:760px}
+.day-head{padding:8px 10px;border-radius:10px;background:var(--bg);display:flex;flex-direction:column}
+.day-head.today{background:var(--accent);color:#fff}
+.slot{display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:10px;text-decoration:none;font-size:13px;margin-top:8px}
+.slot.c{background:var(--accent-soft);border:1px solid #9CCBC8;color:var(--accent-dark)}
+.slot.w{background:var(--warn-bg);border:1px solid #F0C48A;color:var(--warn)}
+.slot.f{background:#fff;border:1px dashed #A9B4BE;color:#3E4954}
+label.field{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
+input[type=text],input[type=search],input[type=date],input[type=time],textarea{min-height:44px;padding:0 12px;border-radius:10px;border:1px solid #C9D1D8;font:inherit;font-weight:400;background:#fff}
+textarea{padding:12px;resize:vertical}
+.check{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px;font-weight:400}
+.filters{display:flex;flex-wrap:wrap;gap:8px}
+.filters button{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--line-2);background:#fff;font-size:14px;font-weight:600;color:var(--text)}
+.filters button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.table-box{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+table{width:100%;min-width:760px;border-collapse:collapse;font-size:14px}
+th{text-align:left;color:var(--muted);font-size:13px;font-weight:600;padding:14px 16px;border-bottom:1px solid var(--line)}
+td{padding:12px 16px;border-bottom:1px solid #EEF1F3}
+.who{display:inline-flex;align-items:center;gap:12px;min-height:44px;text-decoration:none;color:var(--text)}
+.ini{width:36px;height:36px;border-radius:999px;background:var(--accent-soft);color:var(--accent-dark);display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{min-height:44px;padding:0 16px;border:0;background:transparent;font-size:14px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--accent-dark);border-bottom-color:var(--accent)}
+.bars{display:flex;align-items:flex-end;gap:16px;height:150px;padding:0 4px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%}
+.bar i{display:block;width:100%;max-width:56px;border-radius:8px 8px 2px 2px;background:var(--accent)}
+.doc{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid #EEF1F3;text-decoration:none;color:var(--text)}
+.upload{min-height:44px;border-radius:10px;border:1px dashed #9CCBC8;background:#F5FBFA;color:var(--accent-dark);font-weight:600}
+.thread{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:10px;text-decoration:none;color:var(--text)}
+.thread.on{background:var(--bg)}
+.ch{flex:none;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.wa{background:var(--accent-soft);color:var(--accent-dark)} .ig{background:#F3E8FF;color:#5B2A86} .fb{background:#E6EEFB;color:#1E3F7A}
+.bubble{max-width:78%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.5}
+.bubble small{display:block;margin-top:4px;font-size:11px;opacity:.8}
+/* patient phone */
+.phone-stage{display:flex;justify-content:center;padding:28px 16px 48px}
+.phone{width:390px;max-width:100%;height:844px;border-radius:36px;border:10px solid #17212B;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(23,33,43,.18)}
+.phone .body{flex:1;overflow-y:auto;padding:24px 20px 16px;display:flex;flex-direction:column;gap:18px}
+.tabbar{display:flex;justify-content:space-around;padding:6px 4px 12px;background:#fff;border-top:1px solid var(--line)}
+.tabbar a,.tabbar span{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:64px;min-height:48px;justify-content:center;font-size:12px;font-weight:600;color:var(--muted);text-decoration:none}
+.tabbar a.on{color:var(--accent-dark);font-weight:700}
+.next-appt{padding:18px;border-radius:16px;background:var(--accent);color:#fff;display:flex;flex-direction:column;gap:10px}
+.next-appt .btn{border-color:#fff}
+.pill{flex:none;width:64px;min-height:72px;border-radius:14px;border:1px solid var(--line-2);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text)}
+.pill.on,.time-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.time-btn{min-height:48px;border-radius:12px;border:1px solid var(--line-2);background:#fff;font-size:15px;font-weight:700;color:var(--text)}
+.answer{min-height:56px;padding:0 16px;border-radius:14px;border:1px solid var(--line-2);background:#fff;font-size:16px;font-weight:600;text-align:left;color:var(--text)}
+.answer.on{background:var(--accent-soft);border:2px solid var(--accent);color:#0A3D3B}
+.footer-bar{padding:12px 20px 18px;background:#fff;border-top:1px solid var(--line);display:flex;gap:10px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <span><strong>Prototipo</strong> · datos de ejemplo · nada se guarda</span>
+  <nav class="switch" aria-label="Elegir app">
+    <a href="#hoy" id="sw-staff">App del consultorio</a>
+    <a href="#p-inicio" id="sw-patient">App del paciente</a>
+  </nav>
+</div>
+
+<!-- ===================== APP DEL CONSULTORIO ===================== -->
+<div id="staff" class="screen">
+<div class="layout">
+  <nav class="nav" aria-label="Menú principal">
+    <div class="brand"><span class="avatar" aria-hidden="true">CL</span><span><strong>Psic. Carla Luzuriaga</strong><br><span class="muted">Consultorio</span></span></div>
+    <a href="#hoy" data-nav="hoy">Hoy</a>
+    <a href="#agenda" data-nav="agenda">Agenda</a>
+    <a href="#pacientes" data-nav="pacientes">Pacientes</a>
+    <a href="#mensajes" data-nav="mensajes">Mensajes <span class="count">3</span></a>
+    <span class="item">Marketing <span class="soon">Fase 2</span></span>
+    <span class="item">Ajustes</span>
+    <div class="channels"><strong>Canales conectados</strong><span>WhatsApp · Instagram · Facebook</span><span class="muted">Pendiente: verificación de Meta</span></div>
+  </nav>
+
+  <!-- HOY -->
+  <main class="content" data-page="hoy">
+    <div class="head">
+      <div><p class="sub">Martes 13 de octubre</p><h1 class="title">Buenos días, Dra. Carla</h1></div>
+      <div class="row" style="gap:8px"><a class="btn primary" href="#agenda">Nueva cita</a><a class="btn" href="#pacientes">Nuevo paciente</a></div>
+    </div>
+    <section class="alert" aria-label="Alerta de crisis">
+      <div><strong>Posible crisis: A. P. escribió por WhatsApp hace 12 min</strong><br><span style="font-size:14px">Se le envió la contención automática con el ECU 911 y la línea 171 (opción 6). Falta que la contactes.</span></div>
+      <div class="row" style="gap:8px"><a class="btn danger" href="#mensajes">Ver conversación</a><button class="btn" type="button">Ya la contacté</button></div>
+    </section>
+    <section class="stats" aria-label="Resumen del día">
+      <a class="stat" href="#agenda"><b>5</b><span class="sub">Citas hoy</span></a>
+      <a class="stat" href="#mensajes"><b>3</b><span class="sub">Mensajes sin responder</span></a>
+      <a class="stat" href="#ficha"><b>2</b><span class="sub">Tests por revisar</span></a>
+      <a class="stat" href="#mensajes"><b>1</b><span class="sub">Alerta abierta</span></a>
+    </section>
+    <div class="row">
+      <section class="card" style="flex:3 1 420px" aria-label="Citas de hoy">
+        <div class="head"><h2>Citas de hoy</h2><a href="#agenda" style="font-weight:600;font-size:14px">Ver agenda completa</a></div>
+        <a class="list-item" href="#ficha"><span class="time">09:00</span><span style="flex:1"><strong>María José R.</strong><br><span class="muted">Seguimiento · presencial</span></span><span class="chip ok">Confirmada</span></a>
+        <a class="list-item" href="#ficha"><span class="time">10:30</span><span style="flex:1"><strong>Andrés P.</strong><br><span class="muted">Seguimiento · en línea</span></span><span class="chip ok">Confirmada</span></a>
+        <a class="list-item" href="#ficha"><span class="time">12:00</span><span style="flex:1"><strong>Valentina C.</strong><br><span class="muted">Primera consulta · presencial</span></span><span class="chip wait">Por confirmar</span></a>
+        <a class="list-item" href="#ficha"><span class="time">15:00</span><span style="flex:1"><strong>Diego M.</strong><br><span class="muted">Seguimiento · presencial</span></span><span class="chip ok">Confirmada</span></a>
+        <a class="list-item" href="#ficha"><span class="time">17:00</span><span style="flex:1"><strong>Paola S.</strong><br><span class="muted">Seguimiento · en línea</span></span><span class="chip wait">Por confirmar</span></a>
+      </section>
+      <section class="card" style="flex:2 1 300px" aria-label="Pendientes">
+        <h2>Pendientes</h2>
+        <a class="todo" href="#ficha"><strong>Revisar test PHQ-9 de María José R.</strong><span class="muted">Puntaje 11 · bajó desde 14 el mes pasado</span></a>
+        <a class="todo" href="#mensajes"><strong>2 respuestas preparadas por la IA</strong><span class="muted">WhatsApp e Instagram · esperan tu aprobación</span></a>
+        <a class="todo" href="#ficha"><strong>Firmar informe de Diego M.</strong><span class="muted">Documento en borrador</span></a>
+        <a class="todo" href="#agenda"><strong>Valentina C. no ha confirmado</strong><span class="muted">Recordatorio por WhatsApp enviado ayer</span></a>
+        <p class="muted">Las respuestas que prepara la IA nunca se envían sin tu aprobación.</p>
+      </section>
+    </div>
+  </main>
+
+  <!-- AGENDA -->
+  <main class="content" data-page="agenda">
+    <div class="head">
+      <div><h1 class="title">Agenda</h1><p class="sub">Semana del 12 al 17 de octubre · los pacientes solo pueden reservar los espacios libres</p></div>
+      <div class="row" style="gap:8px"><button class="btn" type="button" aria-label="Semana anterior">‹</button><button class="btn" type="button">Hoy</button><button class="btn" type="button" aria-label="Semana siguiente">›</button></div>
+    </div>
+    <div class="row">
+      <section class="card week" style="flex:3 1 520px" aria-label="Semana">
+        <div class="week-grid">
+          <div><div class="day-head"><span>Lun</span><b style="font-size:20px">12</b></div><a class="slot c" href="#ficha"><b>09:00</b>Diego M.</a><a class="slot f" href="#agenda"><b>11:00</b>Libre</a><a class="slot c" href="#ficha"><b>15:00</b>Lucía V.</a><a class="slot f" href="#agenda"><b>17:00</b>Libre</a></div>
+          <div><div class="day-head today"><span>Mar</span><b style="font-size:20px">13</b></div><a class="slot c" href="#ficha"><b>09:00</b>María José R.</a><a class="slot c" href="#ficha"><b>10:30</b>Andrés P.</a><a class="slot w" href="#ficha"><b>12:00</b>Valentina C.</a><a class="slot c" href="#ficha"><b>15:00</b>Diego M.</a><a class="slot w" href="#ficha"><b>17:00</b>Paola S.</a></div>
+          <div><div class="day-head"><span>Mié</span><b style="font-size:20px">14</b></div><a class="slot f" href="#agenda"><b>09:00</b>Libre</a><a class="slot f" href="#agenda"><b>11:00</b>Libre</a><a class="slot c" href="#ficha"><b>16:00</b>Jorge A.</a></div>
+          <div><div class="day-head"><span>Jue</span><b style="font-size:20px">15</b></div><a class="slot c" href="#ficha"><b>10:00</b>Camila T.</a><a class="slot f" href="#agenda"><b>12:00</b>Libre</a><a class="slot f" href="#agenda"><b>15:00</b>Libre</a></div>
+          <div><div class="day-head"><span>Vie</span><b style="font-size:20px">16</b></div><a class="slot w" href="#ficha"><b>09:00</b>Sofía L.</a><a class="slot f" href="#agenda"><b>11:00</b>Libre</a><a class="slot c" href="#ficha"><b>14:00</b>Mateo G.</a></div>
+          <div><div class="day-head"><span>Sáb</span><b style="font-size:20px">17</b></div><a class="slot f" href="#agenda"><b>09:00</b>Libre</a><a class="slot f" href="#agenda"><b>11:00</b>Libre</a></div>
+        </div>
+      </section>
+      <section class="card" style="flex:1 1 280px" aria-label="Nueva cita">
+        <h2>Nueva cita</h2>
+        <label class="field">Paciente<input type="text" placeholder="Buscar o crear paciente"></label>
+        <div class="row" style="gap:10px"><label class="field" style="flex:1 1 120px">Fecha<input type="date" value="2026-10-14"></label><label class="field" style="flex:1 1 100px">Hora<input type="time" value="11:00"></label></div>
+        <fieldset style="border:0;margin:0;padding:0"><legend style="font-weight:600;font-size:14px;margin-bottom:6px">Modalidad</legend>
+          <label class="check"><input type="radio" name="modo" checked> Presencial</label>
+          <label class="check"><input type="radio" name="modo"> En línea (enlace por WhatsApp)</label></fieldset>
+        <label class="check"><input type="checkbox" checked> Recordatorio el día anterior por WhatsApp</label>
+        <button class="btn primary" type="button" id="save-appt">Guardar cita</button>
+        <p class="muted" id="save-msg">Horario de atención: lunes a viernes 09:00–18:00, sábados 09:00–13:00.</p>
+      </section>
+    </div>
+  </main>
+
+  <!-- PACIENTES -->
+  <main class="content" data-page="pacientes">
+    <div class="head"><div><h1 class="title">Pacientes</h1><p class="sub">42 pacientes · cada apertura de una ficha clínica queda registrada</p></div><button class="btn primary" type="button">Nuevo paciente</button></div>
+    <div class="row" style="gap:12px;align-items:center">
+      <label style="flex:1 1 280px"><span class="sr">Buscar paciente</span><input type="search" placeholder="Buscar por nombre, teléfono o correo" style="width:100%"></label>
+      <div class="filters" role="group" aria-label="Filtros"><button class="on" type="button">Todos</button><button type="button">En tratamiento</button><button type="button">Primera vez</button><button type="button">Sin cita próxima</button><button type="button">Riesgo de abandono</button></div>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th scope="col">Paciente</th><th scope="col">Próxima cita</th><th scope="col">Último test</th><th scope="col">Canal</th><th scope="col">Estado</th></tr></thead>
+        <tbody>
+          <tr><td><a class="who" href="#ficha"><span class="ini">MR</span><span><strong>María José R.</strong><br><span class="muted">Paciente desde marzo</span></span></a></td><td>Hoy 09:00</td><td>PHQ-9 · 11</td><td>WhatsApp</td><td><span class="chip ok">En tratamiento</span></td></tr>
+          <tr><td><a class="who" href="#ficha"><span class="ini">AP</span><span><strong>Andrés P.</strong><br><span class="muted">Paciente desde junio</span></span></a></td><td>Hoy 10:30</td><td>GAD-7 · 9</td><td>WhatsApp</td><td><span class="chip wait">Alerta abierta</span></td></tr>
+          <tr><td><a class="who" href="#ficha"><span class="ini">VC</span><span><strong>Valentina C.</strong><br><span class="muted">Nueva</span></span></a></td><td>Hoy 12:00</td><td>Sin tests</td><td>Instagram</td><td><span class="chip neutral">Primera vez</span></td></tr>
+          <tr><td><a class="who" href="#ficha"><span class="ini">DM</span><span><strong>Diego M.</strong><br><span class="muted">Paciente desde enero</span></span></a></td><td>Hoy 15:00</td><td>PHQ-9 · 6</td><td>WhatsApp</td><td><span class="chip ok">En tratamiento</span></td></tr>
+          <tr><td><a class="who" href="#ficha"><span class="ini">LV</span><span><strong>Lucía V.</strong><br><span class="muted">Paciente desde agosto</span></span></a></td><td>Sin cita</td><td>GAD-7 · 12</td><td>Facebook</td><td><span class="chip wait">Sin cita próxima</span></td></tr>
+          <tr><td><a class="who" href="#ficha"><span class="ini">CT</span><span><strong>Camila T.</strong><br><span class="muted">Paciente desde febrero</span></span></a></td><td>Jue 15 · 10:00</td><td>Faltó 2 citas</td><td>Instagram</td><td><span class="chip wait">Riesgo de abandono</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">"Sin cita próxima" y "Riesgo de abandono" ayudan a dar seguimiento: el sistema solo sugiere, la decisión de contactar es tuya.</p>
+  </main>
+
+  <!-- FICHA -->
+  <main class="content" data-page="ficha">
+    <a href="#pacientes" style="font-weight:600;font-size:14px;text-decoration:none">‹ Pacientes</a>
+    <section class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="display:flex;gap:16px;align-items:center;min-width:0">
+        <span class="ini" style="width:56px;height:56px;font-size:18px">MR</span>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="font-size:24px">María José R.</h1>
+          <span class="sub">29 años · paciente desde marzo · prefiere WhatsApp</span>
+          <div class="row" style="gap:6px"><span class="chip ok">Tratamiento: autorizado</span><span class="chip ok">Recordatorios: autorizado</span><span class="chip neutral">Marketing: no autorizado</span></div>
+        </div>
+      </div>
+      <div class="row" style="gap:8px"><a class="btn" href="#mensajes">Escribir</a><button class="btn" type="button">Enviar test</button><a class="btn primary" href="#agenda">Agendar cita</a></div>
+    </section>
+    <div class="tabs" role="tablist" aria-label="Secciones de la ficha"><button class="on" role="tab" aria-selected="true" type="button">Resumen</button><button role="tab" aria-selected="false" type="button">Citas</button><button role="tab" aria-selected="false" type="button">Tests</button><button role="tab" aria-selected="false" type="button">Documentos</button><button role="tab" aria-selected="false" type="button">Notas clínicas</button><button role="tab" aria-selected="false" type="button">Mensajes</button></div>
+    <div class="row">
+      <div style="flex:3 1 420px;min-width:0;display:flex;flex-direction:column;gap:20px">
+        <section class="card"><div class="head"><h2>Resumen antes de la sesión</h2><span class="chip neutral">Borrador de la IA · revisar</span></div>
+          <p style="line-height:1.6">Lleva 8 sesiones. El PHQ-9 bajó de 18 a 11 en tres meses. Asistió a todas las citas desde agosto. En la última sesión acordaron practicar registro de pensamientos; hoy conviene revisar cómo le fue.</p>
+          <p class="muted">Se arma solo con tus notas y los resultados registrados. No es un diagnóstico.</p></section>
+        <section class="card"><div class="head"><h2>PHQ-9 (depresión)</h2><strong style="color:var(--accent-dark);font-size:14px">Mejorando</strong></div>
+          <div class="bars" role="img" aria-label="Puntajes del PHQ-9: julio 18, agosto 16, septiembre 14, octubre 11">
+            <div class="bar"><b>18</b><i style="height:67%"></i><span class="muted">Jul</span></div>
+            <div class="bar"><b>16</b><i style="height:59%"></i><span class="muted">Ago</span></div>
+            <div class="bar"><b>14</b><i style="height:52%"></i><span class="muted">Sep</span></div>
+            <div class="bar"><b>11</b><i style="height:41%"></i><span class="muted">Oct</span></div>
+          </div><p class="muted">Escala de 0 a 27. También registrados: GAD-7 (ansiedad) · 9 en octubre.</p></section>
+        <section class="card"><h2>🔒 Notas clínicas</h2><p class="muted">Solo tú puedes verlas. Cada vez que se abren queda registrado.</p>
+          <label class="field">Nota de la sesión de hoy<textarea rows="4" placeholder="Escribe aquí…"></textarea></label></section>
+      </div>
+      <div style="flex:2 1 300px;min-width:0;display:flex;flex-direction:column;gap:20px">
+        <section class="card"><h2>Citas</h2>
+          <div class="todo" style="flex-direction:row;justify-content:space-between"><strong>Hoy · 09:00</strong><span class="muted">Presencial</span></div>
+          <div class="todo" style="flex-direction:row;justify-content:space-between"><strong>Mar 20 · 09:00</strong><span class="muted">Presencial</span></div>
+          <div class="todo" style="flex-direction:row;justify-content:space-between"><strong>Mar 6 · 09:00</strong><span class="muted">Asistió</span></div></section>
+        <section class="card"><h2>Documentos</h2>
+          <a class="doc" href="#ficha"><span>📄</span><span><strong>Consentimiento informado</strong><br><span class="muted">PDF · firmado en marzo</span></span></a>
+          <a class="doc" href="#ficha"><span>📄</span><span><strong>Informe de evaluación inicial</strong><br><span class="muted">PDF · marzo</span></span></a>
+          <a class="doc" href="#ficha"><span>📄</span><span><strong>Plan de tratamiento</strong><br><span class="muted">Actualizado en septiembre</span></span></a>
+          <button class="upload" type="button">Subir documento</button></section>
+        <section class="card"><h2>Últimos mensajes</h2><p style="font-size:14px">WhatsApp · ayer: "¿Puedo cambiar mi cita del jueves?" — respondido</p><a href="#mensajes" style="font-weight:600;font-size:14px">Abrir conversación</a></section>
+      </div>
+    </div>
+  </main>
+
+  <!-- MENSAJES -->
+  <main class="content" data-page="mensajes">
+    <div class="head"><h1 class="title">Mensajes</h1><div class="filters" role="group" aria-label="Filtrar por canal"><button class="on" type="button">Todos</button><button type="button">WhatsApp</button><button type="button">Instagram</button><button type="button">Facebook</button></div></div>
+    <div class="row" style="align-items:stretch;gap:16px">
+      <section class="card" style="flex:1 1 280px;padding:10px;gap:6px" aria-label="Conversaciones">
+        <a class="thread on" href="#mensajes"><span class="head" style="align-items:center"><strong>Andrés P.</strong><span class="muted">12 min</span></span><span style="display:flex;gap:8px;align-items:center"><span class="ch wa">WhatsApp</span><span class="muted">Hoy no me siento bien…</span></span></a>
+        <a class="thread" href="#mensajes"><span class="head" style="align-items:center"><strong>Valentina C.</strong><span class="muted">1 h</span></span><span style="display:flex;gap:8px;align-items:center"><span class="ch ig">Instagram</span><span class="muted">¿La cita de hoy sigue en pie?</span></span></a>
+        <a class="thread" href="#mensajes"><span class="head" style="align-items:center"><strong>Lucía V.</strong><span class="muted">3 h</span></span><span style="display:flex;gap:8px;align-items:center"><span class="ch fb">Facebook</span><span class="muted">Quisiera volver a agendar</span></span></a>
+        <a class="thread" href="#mensajes"><span class="head" style="align-items:center"><strong>Persona nueva</strong><span class="muted">Ayer</span></span><span style="display:flex;gap:8px;align-items:center"><span class="ch ig">Instagram</span><span class="muted">¿Cuánto cuesta la consulta?</span></span></a>
+      </section>
+      <section class="card" style="flex:2 1 420px" aria-label="Conversación con Andrés P.">
+        <div class="head" style="align-items:center;padding-bottom:12px;border-bottom:1px solid #EEF1F3"><span><strong style="font-size:17px">Andrés P.</strong><br><span class="muted">WhatsApp · paciente desde junio</span></span><a href="#ficha" style="font-weight:600;font-size:14px">Ver ficha</a></div>
+        <div class="alert" style="padding:12px 14px;font-size:14px">Se detectó una posible crisis. Ya se envió la contención con el ECU 911 y la línea 171 (opción 6). Esta conversación la responde una persona, nunca la IA.</div>
+        <div class="bubble" style="align-self:flex-start;background:var(--bg)">Hoy no me siento bien, no sé qué hacer.<small>Andrés · 09:41</small></div>
+        <div class="bubble" style="align-self:flex-end;background:var(--accent-soft);color:#0A3D3B">Gracias por escribirnos. No estás solo. Si estás en peligro, llama ya al ECU 911 o a la línea 171, opción 6. La Dra. Carla te contactará en breve.<small>Mensaje automático de contención · 09:41</small></div>
+        <label class="field">Tu respuesta<textarea rows="3" placeholder="Escribe un mensaje…"></textarea></label>
+        <div class="row" style="gap:8px;justify-content:flex-end"><button class="btn" type="button">Llamar</button><button class="btn primary" type="button">Enviar</button></div>
+      </section>
+    </div>
+    <section class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="flex:1 1 360px"><strong style="color:var(--accent-dark);font-size:13px">Sugerencia de la IA para Valentina C. (Instagram)</strong><p style="font-size:14px;margin-top:4px">"¡Hola, Valentina! Tu primera consulta es hoy a las 12:00 en el consultorio. ¿Nos confirmas tu asistencia?"</p></div>
+      <div class="row" style="gap:8px"><button class="btn" type="button">Editar</button><button class="btn primary" type="button">Aprobar y enviar</button></div>
+    </section>
+  </main>
+</div>
+</div>
+
+<!-- ===================== APP DEL PACIENTE ===================== -->
+<div id="patient" class="screen">
+<div class="phone-stage">
+  <div class="phone">
+    <!-- INICIO -->
+    <div class="body" data-ppage="p-inicio">
+      <div><span class="muted">Psic. Carla Luzuriaga</span><h1 style="font-size:26px">Hola, María José</h1></div>
+      <section class="next-appt" aria-label="Tu próxima cita">
+        <span style="font-size:13px;font-weight:600">Tu próxima cita</span>
+        <strong style="font-size:22px">Martes 20 de octubre · 09:00</strong>
+        <span style="font-size:14px">Presencial · Consultorio</span>
+        <div class="row" style="gap:8px"><button class="btn" type="button" style="color:var(--accent-dark)">Agregar a mi calendario</button><a class="btn" href="#p-agendar" style="background:transparent;color:#fff">Cambiar</a></div>
+      </section>
+      <a class="card" href="#p-test" style="flex-direction:row;justify-content:space-between;align-items:center;text-decoration:none;color:var(--text)"><span><strong>Tienes 1 cuestionario pendiente</strong><br><span class="muted">GAD-7 · unos 3 minutos</span></span><span aria-hidden="true">›</span></a>
+      <section class="card"><h2>Indicaciones de tu psicóloga</h2><p style="font-size:14px">• Registra tus pensamientos cuando te sientas ansiosa (hoja de la sesión 8).</p><p style="font-size:14px">• Practica la respiración 4-7-8 antes de dormir.</p></section>
+      <a class="btn" href="#p-agendar" style="border-color:var(--accent);color:var(--accent-dark);min-height:48px">Agendar otra cita</a>
+      <p style="padding:12px 14px;border-radius:12px;background:var(--danger-bg);color:var(--danger-text);font-size:13px;line-height:1.5">¿Estás en crisis? Llama al <strong>ECU 911</strong> o a la línea <strong>171, opción 6</strong>. Esta app no atiende emergencias.</p>
+    </div>
+    <!-- AGENDAR -->
+    <div class="body" data-ppage="p-agendar">
+      <a href="#p-inicio" style="font-weight:600;font-size:14px;text-decoration:none">‹ Volver</a>
+      <h1 style="font-size:24px">Agendar una cita</h1>
+      <section><h2 style="font-size:15px;margin-bottom:10px">1. Elige el día</h2><div id="days" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px"></div></section>
+      <section><h2 style="font-size:15px;margin-bottom:10px">2. Elige la hora</h2><div id="times" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"></div><p class="muted" style="margin-top:8px">Solo ves los horarios libres de la Dra. Carla.</p></section>
+      <fieldset style="border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px"><legend style="font-weight:700;font-size:15px;margin-bottom:8px">3. ¿Cómo prefieres?</legend>
+        <label class="check card" style="padding:0 14px;flex-direction:row"><input type="radio" name="pmodo" checked> Presencial</label>
+        <label class="check card" style="padding:0 14px;flex-direction:row"><input type="radio" name="pmodo"> En línea</label></fieldset>
+      <div id="booked" role="status" style="display:none;padding:14px 16px;border-radius:12px;background:var(--accent-soft);color:#0A3D3B;font-size:14px;line-height:1.5"></div>
+    </div>
+    <!-- TEST -->
+    <div class="body" data-ppage="p-test">
+      <a href="#p-inicio" style="font-weight:600;font-size:14px;text-decoration:none">‹ Guardar y salir</a>
+      <div><span class="muted" id="q-count">GAD-7 · pregunta 1 de 7</span>
+        <div style="height:8px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:8px"><div id="q-bar" style="height:100%;background:var(--accent);width:14%"></div></div></div>
+      <p class="muted" style="font-size:14px">Durante las últimas 2 semanas, ¿con qué frecuencia le han molestado los siguientes problemas?</p>
+      <h1 style="font-size:21px;line-height:1.35" id="q-text">[Pregunta 1 del GAD-7: texto oficial en español, pendiente de verificar]</h1>
+      <div id="answers" style="display:flex;flex-direction:column;gap:10px"></div>
+      <p class="muted" style="line-height:1.5">Tus respuestas solo las ve tu psicóloga. No es un diagnóstico: lo revisarán juntas en tu próxima sesión.</p>
+      <div id="q-done" role="status" style="display:none;padding:14px 16px;border-radius:12px;background:var(--accent-soft);color:#0A3D3B;font-size:14px">¡Gracias! Tu psicóloga recibió tus respuestas.</div>
+    </div>
+    <!-- barra inferior -->
+    <div class="footer-bar" id="book-bar" style="display:none"><button class="btn primary" type="button" id="book-btn" style="flex:1;min-height:52px"></button></div>
+    <div class="footer-bar" id="test-bar" style="display:none"><button class="btn" type="button" id="q-back" style="flex:1;min-height:52px">Anterior</button><button class="btn primary" type="button" id="q-next" style="flex:2;min-height:52px">Siguiente</button></div>
+    <nav class="tabbar" aria-label="Menú del paciente">
+      <a href="#p-inicio" data-ptab="p-inicio">⌂<span>Inicio</span></a>
+      <a href="#p-agendar" data-ptab="p-agendar">▦<span>Citas</span></a>
+      <a href="#p-test" data-ptab="p-test">✓<span>Tests</span></a>
+      <span>✉<span>Mensajes</span></span>
+    </nav>
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+  var staffPages=['hoy','agenda','pacientes','ficha','mensajes'];
+  var patientPages=['p-inicio','p-agendar','p-test'];
+  function show(){
+    var h=(location.hash||'#hoy').slice(1);
+    var isPatient=patientPages.indexOf(h)>=0;
+    if(!isPatient&&staffPages.indexOf(h)<0){h='hoy'}
+    document.getElementById('staff').classList.toggle('on',!isPatient);
+    document.getElementById('patient').classList.toggle('on',isPatient);
+    document.getElementById('sw-staff').classList.toggle('on',!isPatient);
+    document.getElementById('sw-patient').classList.toggle('on',isPatient);
+    document.querySelectorAll('[data-page]').forEach(function(m){m.style.display=m.getAttribute('data-page')===h?'flex':'none'});
+    document.querySelectorAll('[data-nav]').forEach(function(a){
+      var t=a.getAttribute('data-nav'); a.classList.toggle('on',t===h||(h==='ficha'&&t==='pacientes'));});
+    document.querySelectorAll('[data-ppage]').forEach(function(p){p.style.display=p.getAttribute('data-ppage')===h?'flex':'none'});
+    document.querySelectorAll('[data-ptab]').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-ptab')===h)});
+    document.getElementById('book-bar').style.display=h==='p-agendar'?'flex':'none';
+    document.getElementById('test-bar').style.display=h==='p-test'?'flex':'none';
+    window.scrollTo(0,0);
+  }
+  window.addEventListener('hashchange',show);
+
+  // Agenda: guardar cita (demostración)
+  document.getElementById('save-appt').addEventListener('click',function(){
+    document.getElementById('save-msg').textContent='Cita guardada (demostración). Se enviará un recordatorio por WhatsApp el día anterior.';
+  });
+
+  // Filtros: resaltar el elegido
+  document.querySelectorAll('.filters').forEach(function(g){
+    g.addEventListener('click',function(e){ if(e.target.tagName!=='BUTTON')return;
+      g.querySelectorAll('button').forEach(function(b){b.classList.remove('on')}); e.target.classList.add('on'); });
+  });
+  document.querySelectorAll('.tabs').forEach(function(g){
+    g.addEventListener('click',function(e){ if(e.target.tagName!=='BUTTON')return;
+      g.querySelectorAll('button').forEach(function(b){b.classList.remove('on');b.setAttribute('aria-selected','false')});
+      e.target.classList.add('on'); e.target.setAttribute('aria-selected','true'); });
+  });
+
+  // Paciente: agendar
+  var days=[{n:'Mié',d:'14',l:'miércoles 14',s:['09:00','11:00']},{n:'Jue',d:'15',l:'jueves 15',s:['12:00','15:00']},{n:'Vie',d:'16',l:'viernes 16',s:['11:00']},{n:'Sáb',d:'17',l:'sábado 17',s:['09:00','11:00']},{n:'Lun',d:'19',l:'lunes 19',s:['09:00','11:00','17:00']}];
+  var day=1, time='12:00';
+  function renderBooking(){
+    var dc=document.getElementById('days'); dc.innerHTML='';
+    days.forEach(function(x,i){ var b=document.createElement('button'); b.type='button'; b.className='pill'+(i===day?' on':'');
+      b.setAttribute('aria-pressed',i===day); b.innerHTML='<span style="font-size:12px;font-weight:600">'+x.n+'</span><b style="font-size:20px">'+x.d+'</b>';
+      b.onclick=function(){day=i; time=days[i].s[0]; document.getElementById('booked').style.display='none'; renderBooking();}; dc.appendChild(b); });
+    var tc=document.getElementById('times'); tc.innerHTML='';
+    days[day].s.forEach(function(t){ var b=document.createElement('button'); b.type='button'; b.className='time-btn'+(t===time?' on':'');
+      b.setAttribute('aria-pressed',t===time); b.textContent=t; b.onclick=function(){time=t; document.getElementById('booked').style.display='none'; renderBooking();}; tc.appendChild(b); });
+    document.getElementById('book-btn').textContent='Confirmar '+days[day].l+' a las '+time;
+  }
+  document.getElementById('book-btn').addEventListener('click',function(){
+    var el=document.getElementById('booked'); el.style.display='block';
+    el.innerHTML='<strong>¡Listo!</strong> Tu cita quedó para el '+days[day].l+' a las '+time+'. Te recordaremos un día antes por WhatsApp.';
+  });
+
+  // Paciente: test
+  var labels=['Nunca','Varios días','Más de la mitad de los días','Casi todos los días'];
+  var q=1, ans={};
+  function renderTest(){
+    document.getElementById('q-count').textContent='GAD-7 · pregunta '+q+' de 7';
+    document.getElementById('q-bar').style.width=Math.round(q/7*100)+'%';
+    document.getElementById('q-text').textContent='[Pregunta '+q+' del GAD-7: texto oficial en español, pendiente de verificar]';
+    var ac=document.getElementById('answers'); ac.innerHTML='';
+    labels.forEach(function(l,v){ var b=document.createElement('button'); b.type='button'; b.className='answer'+(ans[q]===v?' on':'');
+      b.setAttribute('aria-pressed',ans[q]===v); b.textContent=l; b.onclick=function(){ans[q]=v; renderTest();}; ac.appendChild(b); });
+    document.getElementById('q-next').textContent=q===7?'Enviar a mi psicóloga':'Siguiente';
+  }
+  document.getElementById('q-next').addEventListener('click',function(){
+    if(q===7){document.getElementById('q-done').style.display='block';return;} q++; renderTest(); });
+  document.getElementById('q-back').addEventListener('click',function(){ if(q>1){q--; renderTest();} });
+
+  renderBooking(); renderTest(); show();
+})();
+</script>
+</body>
+</html>

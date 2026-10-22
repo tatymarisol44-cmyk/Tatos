@@ -427,6 +427,14 @@ class Instruments:
         current = await self.get(principal, instrument_id)
         if current["author_id"] != principal.id and not principal.has(Role.ADMIN):
             raise PermissionError("only the author (or an admin) can revise an instrument")
+        current_spec = InstrumentSpec.model_validate(current["spec"])
+        phq9_alert = TEMPLATES["phq9"].scoring.alerts[0]
+        is_phq9_template = phq9_alert in current_spec.scoring.alerts or (
+            current_spec.description.startswith("Plantilla de dominio público")
+            and current_spec.name == TEMPLATES["phq9"].name
+        )
+        if is_phq9_template and phq9_alert not in spec.scoring.alerts:
+            raise InstrumentError("the PHQ-9 self-harm alert cannot be removed or changed")
         await self._write(
             principal,
             instrument_id,

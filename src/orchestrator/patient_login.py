@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    UniqueConstraint,
     and_,
     delete,
     insert,
@@ -54,10 +55,11 @@ patient_logins = Table(
 patient_sessions = Table(
     "patient_sessions",
     metadata,
+    Column("tenant", String(64), primary_key=True),
     Column("key_hash", String(64), primary_key=True),
-    Column("tenant", String(64), nullable=False),
     Column("patient_id", String(64), nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False, index=True),
+    UniqueConstraint("key_hash", name="uq_patient_sessions_key_hash"),
 )
 PREFIX = "ps_"
 

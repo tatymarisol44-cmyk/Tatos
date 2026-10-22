@@ -112,7 +112,7 @@ curl -s localhost:8000/v1/insights/summary -H "X-API-Key: key1"
 
 ## Health professions (Ecuador) and the marketing module
 
-Every legal reference in a pack carries the status it really has (read, secondary, to verify); the research notes behind them are kept private. The designs are [ADR 0014](docs/adr/0014-profession-packs.md) and [ADR 0015](docs/adr/0015-social-channels.md).
+Every legal reference in a pack carries the status it really has (read, secondary, to verify); the research notes behind them are kept private. The designs are [ADR 0014](docs/adr/0014-profession-packs.md) and [ADR 0015](docs/adr/0015-social-channels.md). The operator guides are the [consultorio configuration and operations manual](docs/MANUAL_CONFIGURAR_CONSULTORIO.md) and its [social network connection supplement](docs/MANUAL_CONECTAR_REDES_SOCIALES.md).
 
 | Module | What it does |
 |---|---|

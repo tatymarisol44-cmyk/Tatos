@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Presentación Comercial Consultorio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Domine:wght@400..700&family=Nunito+Sans:wght@400;600;700;800&display=swap">
+<style>
+html,body{margin:0;height:100%;background:#0b1518;overflow:hidden;font-family:'Nunito Sans',Arial,sans-serif}
+#stage{position:fixed;inset:0;overflow:hidden}
+#canvas{width:1920px;height:1080px;position:absolute;left:0;top:0;transform-origin:0 0}
+.slide{position:absolute!important;inset:0;width:1920px;height:1080px;box-sizing:border-box;display:none!important}
+.slide.on{display:var(--d)!important}
+.slide h1,.slide h2,.slide h3,.slide p{margin:0}
+.slide table{border-collapse:collapse;width:100%}
+.slide th,.slide td{text-align:left;border-bottom:1px solid #D7E2DF;padding:18px}
+.slide th{font-size:24px;letter-spacing:2px;text-transform:uppercase;color:#1F7A6E}
+#bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:center;gap:16px;padding:10px;color:#BFD6D3;font:14px Arial,sans-serif;opacity:.85}
+#bar button{background:#1C3A44;color:#F3F6F4;border:0;border-radius:6px;padding:8px 14px;font-size:16px;cursor:pointer}
+#bar button:focus-visible{outline:2px solid #7FCFC2}
+
+@page{size:1920px 1080px;margin:0}
+@media print{html,body{overflow:visible;height:auto;background:none}#bar{display:none}#stage,#canvas{position:static;transform:none!important;width:auto;height:auto}
+.slide{position:relative!important;display:var(--d)!important;page-break-after:always;break-after:page}}
+</style>
+</head>
+<body>
+<div id="stage"><div id="canvas">
+<section class="slide" id="cover" data-transition="fade" style="background:#142B33;color:#F3F6F4;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between">
+<p style="font-size:28px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#7FCFC2">Agency Orchestrator Salud</p>
+<div style="display:flex;flex-direction:column;gap:40px">
+<h1 style="font-family:'Domine', Georgia, serif;font-size:112px;font-weight:700;line-height:1.08;color:#F3F6F4">Tu consultorio,<br>en orden y en confianza</h1>
+<p style="font-size:40px;line-height:1.4;color:#BFD6D3;width:1300px">Pacientes, historia clínica, agenda, tests, WhatsApp y marketing en una sola plataforma, con inteligencia artificial que ayuda sin reemplazar al profesional.</p>
+</div>
+<p style="font-size:28px;color:#BFD6D3">Para psicólogas y psiquiatras en Ecuador · Hecha según la LOPDP</p>
+
+</section>
+<section class="slide" id="problema" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">El día a día de un consultorio</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Atender bien a tus pacientes no debería depender de cinco herramientas</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:10px">
+<h3 style="font-size:36px;font-weight:800;color:#142B33">WhatsApp a medianoche</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5A5E">Preguntas de horarios, cambios de cita y, a veces, una persona en crisis, todo en el mismo celular.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:10px">
+<h3 style="font-size:36px;font-weight:800;color:#142B33">Historia en carpetas sueltas</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5A5E">Notas en Word, tests en papel, consentimientos escaneados en el escritorio.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:10px">
+<h3 style="font-size:36px;font-weight:800;color:#142B33">Marketing sin saber si funciona</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5A5E">Publicaciones y mensajes enviados sin medir si de verdad traen pacientes de vuelta.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:10px">
+<h3 style="font-size:36px;font-weight:800;color:#142B33">La LOPDP ya está vigente</h3>
+<p style="font-size:28px;line-height:1.4;color:#4A5A5E">Datos de salud, consentimientos y plazos de 15 días para responder solicitudes de los pacientes.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="solucion" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Una sola plataforma</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Todo el consultorio en un lugar</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">Pacientes</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Ficha, citas, planes, alertas y la app del paciente.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">Historia clínica</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Notas, informes y archivos firmados, por profesión.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">Tests</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">PHQ-9, GAD-7 y tus propios tests, con puntaje y alertas.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">Agenda</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Turnos libres, cero choques y recordatorios automáticos.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">WhatsApp</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Responde con calidez, agenda y deriva las crisis a una persona.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:12px">
+
+<h3 style="font-size:34px;font-weight:800">Marketing</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Campañas medibles y redes con aprobación humana.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="pacientes" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center">
+<div style="display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Gestión de pacientes</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Cada paciente, con su ficha completa</h2>
+<p style="font-size:32px;line-height:1.45;color:#4A5A5E">Recepción da de alta, agenda y confirma. El profesional abre el perfil clínico con seguimiento, tests y documentos. El paciente tiene su propia app.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">Alertas tipo semáforo</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Citas sin confirmar, planes sin respuesta y controles vencidos, en rojo primero.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">Seguimiento clínico</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Asistencia, riesgo de inasistencia con sus razones y tendencia de los tests.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">La app del paciente</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Sus citas, reservas, consentimientos y chat, sin ver nada de nadie más.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="historia" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Historia clínica y gestión documental</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Lo que escribes queda íntegro y en su lugar</h2>
+</div>
+<table style="font-family:'Nunito Sans', Arial, sans-serif;font-size:28px;color:#142B33;padding:18px">
+<tr><th style="width:32%">Documento</th><th style="width:68%">Cómo se cuida</th></tr>
+<tr><td>Notas de sesión e informes</td><td>Solo se agregan: una corrección es una entrada nueva que enmienda la anterior</td></tr>
+<tr><td>Notas de psicoterapia</td><td>Las ve solo su autor; ni colegas ni administración</td></tr>
+<tr><td>Consentimientos firmados</td><td>Se firman fuera y se suben en PDF con su huella SHA-256</td></tr>
+<tr><td>Receta especial</td><td>Valida la hoja contra ACESS-2022-0046; el formulario oficial lo llena el médico</td></tr>
+<tr><td>Información del consultorio</td><td>Horarios, precios y políticas para el asistente; rechaza datos clínicos</td></tr>
+</table>
+
+</section>
+<section class="slide" id="tests" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center">
+<div style="display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Tests psicológicos</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Tus tests, puntuados al instante</h2>
+<p style="font-size:32px;line-height:1.45;color:#4A5A5E">Usa PHQ-9 y GAD-7 o diseña tu propio instrumento: ítems invertidos, subescalas, bandas y alertas por ítem. Cada resultado guarda la versión con la que se puntuó.</p>
+</div>
+<div style="background:#142B33;border-radius:24px;padding:56px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:26px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#7FCFC2">PHQ-9 · ítem 9</p>
+<p style="font-family:'Domine', Georgia, serif;font-size:48px;font-weight:700;line-height:1.2;color:#F3F6F4">Cualquier respuesta mayor que 0 genera una alerta, sea cual sea el puntaje total.</p>
+<p style="font-size:28px;line-height:1.4;color:#BFD6D3">La banda describe la intensidad de los síntomas. El diagnóstico siempre es del profesional.</p>
+</div>
+
+</section>
+<section class="slide" id="agenda" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Agenda y WhatsApp</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">El paciente escribe, elige un número y queda agendado</h2>
+</div>
+<div style="display:flex;gap:24px;align-items:stretch">
+<div style="flex:1;background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<p style="font-family:'Domine', Georgia, serif;font-size:56px;font-weight:700;color:#1F7A6E">1</p>
+<h3 style="font-size:32px;font-weight:800">Escribe por WhatsApp</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">El asistente responde con calidez y ofrece tres turnos libres reales.</p>
+</div>
+<div style="flex:1;background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<p style="font-family:'Domine', Georgia, serif;font-size:56px;font-weight:700;color:#1F7A6E">2</p>
+<h3 style="font-size:32px;font-weight:800">Responde "1", "2" o "3"</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">La reserva la hace el sistema, sin choques de horario, ni con dos personas a la vez.</p>
+</div>
+<div style="flex:1;background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<p style="font-family:'Domine', Georgia, serif;font-size:56px;font-weight:700;color:#1F7A6E">3</p>
+<h3 style="font-size:32px;font-weight:800">Recibe su recordatorio</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Un día antes, sin nada clínico en el mensaje. Tu agenda llega a tu celular.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="crisis" data-transition="fade" style="background:#1F7A6E;color:#F3F6F4;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:48px">
+<p style="font-size:28px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#D9F0EB">Seguridad del paciente</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:96px;font-weight:700;line-height:1.1;color:#F7FBFA">Una crisis nunca la contesta una máquina</h2>
+<div style="display:flex;gap:48px">
+<p style="flex:1;font-size:32px;line-height:1.45;color:#E6F5F2">El paciente recibe al instante un texto revisado con <b>ECU 911</b> y la <b>línea 171, opción 6</b>.</p>
+<p style="flex:1;font-size:32px;line-height:1.45;color:#E6F5F2">Tu guardia recibe el aviso por Telegram, WhatsApp y correo. Sin respuesta en 5 minutos, avisa al siguiente nivel.</p>
+</div>
+
+</section>
+<section class="slide" id="marketing" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center">
+<div style="display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Marketing con ética</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Sabe qué campaña trae pacientes de vuelta</h2>
+<p style="font-size:32px;line-height:1.45;color:#4A5A5E">Cada campaña deja a un grupo sin mensaje para medir el efecto real. El resultado llega con su intervalo de confianza, no con promesas.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">Solo con consentimiento</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Máximo 2 mensajes al mes, con STOP en cada uno.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">Copia revisada</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Bloquea "la cura", "te cura" y cualquier detalle clínico antes de enviar.</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:32px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:32px;font-weight:800">Redes con aprobación</h3>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Infografías y videos generados, con pie de salud, publicados solo cuando una persona aprueba.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="ia" data-transition="fade" style="background:#142B33;color:#F3F6F4;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#7FCFC2">Inteligencia artificial con límites</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1;color:#F3F6F4">La IA ayuda; el profesional decide</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px">
+<div style="background:#1C3A44;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:34px;font-weight:800;color:#F3F6F4">Revisión humana</h3>
+<p style="font-size:26px;line-height:1.45;color:#BFD6D3">Una respuesta con riesgo clínico se retiene hasta que un profesional la aprueba, edita o rechaza.</p>
+</div>
+<div style="background:#1C3A44;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:34px;font-weight:800;color:#F3F6F4">Etiqueta visible</h3>
+<p style="font-size:26px;line-height:1.45;color:#BFD6D3">Cada respuesta dice si es de IA sin revisar o si la aprobó un profesional.</p>
+</div>
+<div style="background:#1C3A44;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:12px">
+<h3 style="font-size:34px;font-weight:800;color:#F3F6F4">Gasto controlado</h3>
+<p style="font-size:26px;line-height:1.45;color:#BFD6D3">Tope mensual por consultorio; si se alcanza, responde con textos fijos y todo lo demás sigue igual.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="privacidad" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Privacidad según la LOPDP</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">La ley de datos, resuelta en el día a día</h2>
+</div>
+<table style="font-family:'Nunito Sans', Arial, sans-serif;font-size:28px;color:#142B33;padding:18px">
+<tr><th style="width:36%">Obligación</th><th style="width:64%">Cómo lo hace la plataforma</th></tr>
+<tr><td>Consentimiento por finalidad</td><td>Marketing, analítica y memoria por separado; sin respuesta es un no</td></tr>
+<tr><td>Necesidad de saber</td><td>Administración y recepción no ven la historia clínica</td></tr>
+<tr><td>Derechos en 15 días</td><td>Exportación y borrado con un registro que avisa antes de vencer</td></tr>
+<tr><td>Brechas: 2, 5 y 3 días</td><td>Plazos calculados solos, con alerta 24 horas antes</td></tr>
+<tr><td>Auditoría</td><td>Quién hizo qué y cuándo, en una cadena que detecta alteraciones</td></tr>
+</table>
+
+</section>
+<section class="slide" id="confianza" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Tecnología que se puede auditar</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Cada cambio se prueba completo antes de llegar a ti</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:24px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:8px">
+<p style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;color:#1F7A6E;font-variant-numeric:tabular-nums">900</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">pruebas automáticas en cada cambio</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:8px">
+<p style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;color:#1F7A6E;font-variant-numeric:tabular-nums">113</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">operaciones probadas contra otro consultorio</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:8px">
+<p style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;color:#1F7A6E;font-variant-numeric:tabular-nums">95%</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">del código cubierto por pruebas</p>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;flex-direction:column;gap:8px">
+<p style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;color:#1F7A6E;font-variant-numeric:tabular-nums">1</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">comando para instalarla en un servidor nuevo</p>
+</div>
+</div>
+<p style="font-size:30px;line-height:1.45;color:#4A5A5E">Imágenes firmadas, ensayo de instalación y de vuelta atrás automática en cada versión, copia de seguridad diaria y accesibilidad WCAG AA.</p>
+
+</section>
+<section class="slide" id="planes" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Planes</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Empieza con un piloto acompañado</h2>
+</div>
+<div style="display:flex;gap:28px;align-items:stretch">
+<div style="flex:1;background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:14px">
+<h3 style="font-size:36px;font-weight:800">Piloto</h3>
+<p style="font-family:'Domine', Georgia, serif;font-size:52px;font-weight:700;color:#1F7A6E">[US$__]</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Un consultorio, acompañamiento en la puesta en marcha y datos de prueba primero.</p>
+</div>
+<div style="flex:1;background:#142B33;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:14px">
+<h3 style="font-size:36px;font-weight:800;color:#F3F6F4">Consultorio</h3>
+<p style="font-family:'Domine', Georgia, serif;font-size:52px;font-weight:700;color:#7FCFC2">[US$__ / mes]</p>
+<p style="font-size:26px;line-height:1.4;color:#BFD6D3">Todos los módulos para [__] profesionales y un tope de uso de IA incluido.</p>
+</div>
+<div style="flex:1;background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:14px">
+<h3 style="font-size:36px;font-weight:800">Centro</h3>
+<p style="font-family:'Domine', Georgia, serif;font-size:52px;font-weight:700;color:#1F7A6E">[A convenir]</p>
+<p style="font-size:26px;line-height:1.4;color:#4A5A5E">Varios profesionales y especialidades, inicio de sesión con MFA y mayor disponibilidad.</p>
+</div>
+</div>
+
+</section>
+<section class="slide" id="empezar" data-transition="fade" style="background:#F3F6F4;color:#142B33;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:56px">
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#1F7A6E">Cómo empezar</p>
+<h2 style="font-family:'Domine', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1">Cuatro pasos hasta tu primer paciente</h2>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;gap:28px;align-items:start">
+<p style="font-family:'Domine', Georgia, serif;font-size:64px;font-weight:700;color:#1F7A6E">1</p>
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:34px;font-weight:800">Demostración</h3><p style="font-size:26px;line-height:1.4;color:#4A5A5E">Recorres la plataforma con un consultorio de prueba y datos inventados.</p></div>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;gap:28px;align-items:start">
+<p style="font-family:'Domine', Georgia, serif;font-size:64px;font-weight:700;color:#1F7A6E">2</p>
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:34px;font-weight:800">Configuración</h3><p style="font-size:26px;line-height:1.4;color:#4A5A5E">Profesionales, horarios, información del consultorio y guardia.</p></div>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;gap:28px;align-items:start">
+<p style="font-family:'Domine', Georgia, serif;font-size:64px;font-weight:700;color:#1F7A6E">3</p>
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:34px;font-weight:800">Documentos legales</h3><p style="font-size:26px;line-height:1.4;color:#4A5A5E">Aviso de privacidad y contrato de encargo revisados por tu abogado.</p></div>
+</div>
+<div style="background:#FBFCFB;border:1px solid #D7E2DF;border-radius:20px;padding:36px;display:flex;gap:28px;align-items:start">
+<p style="font-family:'Domine', Georgia, serif;font-size:64px;font-weight:700;color:#1F7A6E">4</p>
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:34px;font-weight:800">Primeros pacientes</h3><p style="font-size:26px;line-height:1.4;color:#4A5A5E">Arrancas con revisión humana activa y seguimiento semanal.</p></div>
+</div>
+</div>
+
+</section>
+<section class="slide" id="cierre" data-transition="fade" style="background:#142B33;color:#F3F6F4;font-family:'Nunito Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between">
+<p style="font-size:28px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#7FCFC2">Agency Orchestrator Salud</p>
+<div style="display:flex;flex-direction:column;gap:36px">
+<h2 style="font-family:'Domine', Georgia, serif;font-size:96px;font-weight:700;line-height:1.1;color:#F3F6F4">Más tiempo para tus pacientes</h2>
+<p style="font-size:40px;line-height:1.4;color:#BFD6D3;width:1300px">Agenda una demostración y conoce la plataforma con un consultorio de prueba.</p>
+</div>
+<p style="font-size:32px;color:#F3F6F4">[Nombre] · [correo] · [WhatsApp]</p>
+
+</section>
+</div></div>
+<div id="bar"><button id="prev" aria-label="Anterior">◀</button><span id="num"></span><button id="next" aria-label="Siguiente">▶</button><span>Flechas del teclado · F11 pantalla completa</span></div>
+<script>
+const s=[...document.querySelectorAll('.slide')];let i=0;
+s.forEach(x=>{const d=(x.getAttribute('style').match(/display:\s*(flex|grid)/)||[,'flex'])[1];x.style.setProperty('--d',d);});
+function fit(){const h=innerHeight-44,k=Math.min(innerWidth/1920,h/1080),x=(innerWidth-1920*k)/2,y=(h-1080*k)/2;document.getElementById('canvas').style.transform='translate('+x+'px,'+y+'px) scale('+k+')';}
+function go(n){i=Math.max(0,Math.min(s.length-1,n));s.forEach((x,j)=>x.classList.toggle('on',j===i));document.getElementById('num').textContent=(i+1)+' / '+s.length;}
+addEventListener('resize',fit);addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))go(i+1);if(['ArrowLeft','PageUp'].includes(e.key))go(i-1);if(e.key==='Home')go(0);if(e.key==='End')go(s.length-1);});
+document.getElementById('next').onclick=()=>go(i+1);document.getElementById('prev').onclick=()=>go(i-1);
+document.getElementById('canvas').onclick=()=>go(i+1);
+fit();go(0);
+</script>
+</body>
+</html>

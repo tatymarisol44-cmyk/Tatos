@@ -25,6 +25,7 @@ from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
 from orchestrator.checkpoint import Checkpointer
 from orchestrator.clinical_files import ClinicalFiles
+from orchestrator.clinical_metrics import ClinicalMetrics
 from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
@@ -183,6 +184,7 @@ class Orchestrator:
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
+        self.clinical_metrics = ClinicalMetrics(self.db, self.audit)
         self.instruments = Instruments(self.db, self.audit)
         self.agenda = Agenda(self.db, self.audit, settings)
         self.followup = FollowUp(self.db, self.consents)
@@ -252,6 +254,7 @@ class Orchestrator:
             self.crm,
             self.clinical,
             self.instruments,
+            self.clinical_metrics,
             self.clinical_files,
             self.campaigns,
             self.inbox,

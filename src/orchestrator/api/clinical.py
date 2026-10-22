@@ -3,6 +3,7 @@ a psychotherapy note is visible to its author only."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Any, Literal
 
 from fastapi import (
@@ -22,6 +23,7 @@ from pydantic import BaseModel, Field
 from orchestrator.api.security import require_clinician
 from orchestrator.auth import Principal
 from orchestrator.clinical_files import ClinicalFiles, FileRejected
+from orchestrator.clinical_metrics import ClinicalMetricError, ClinicalMetrics
 from orchestrator.clinical_records import MAX_BODY, ClinicalError, ClinicalRecords
 
 router = APIRouter(prefix="/v1/clinical", tags=["clinical"])
@@ -36,8 +38,20 @@ class DocumentIn(BaseModel):
     amends: str | None = Field(default=None, pattern=r"^[0-9a-f]{1,32}$")
 
 
+class ClinicalMetricIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    value: float = Field(allow_inf_nan=False)
+    unit: str = Field(default="", max_length=40)
+    measured_on: date
+    note: str | None = Field(default=None, max_length=2000)
+
+
 def service(request: Request) -> ClinicalRecords:
     return request.app.state.orchestrator.clinical  # type: ignore[no-any-return]
+
+
+def metrics_service(request: Request) -> ClinicalMetrics:
+    return request.app.state.orchestrator.clinical_metrics  # type: ignore[no-any-return]
 
 
 @router.get("/document-types")
@@ -64,6 +78,28 @@ async def list_documents(
 ) -> list[dict[str, Any]]:
     try:
         return await service(request).list(p, patient_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
+
+
+@router.post("/patients/{patient_id}/metrics", status_code=status.HTTP_201_CREATED)
+async def record_metric(
+    patient_id: PatientId, body: ClinicalMetricIn, request: Request, p: Clinician
+) -> dict[str, Any]:
+    try:
+        return await metrics_service(request).record(p, patient_id, **body.model_dump())
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
+    except ClinicalMetricError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+
+@router.get("/patients/{patient_id}/metrics")
+async def list_metrics(
+    patient_id: PatientId, request: Request, p: Clinician
+) -> list[dict[str, Any]]:
+    try:
+        return await metrics_service(request).for_patient(p, patient_id)
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "patient not found") from exc
 
