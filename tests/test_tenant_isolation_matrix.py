@@ -819,6 +819,7 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
         ),
         ("GET", "/v1/clinical/document-types"): ("/v1/clinical/document-types", None),
         ("GET", "/v1/inbox/{conversation_id}"): (f"/v1/inbox/{i['conversation']}", None),
+        ("DELETE", "/v1/inbox/{conversation_id}"): (f"/v1/inbox/{i['conversation']}", None),
         ("POST", "/v1/inbox/{conversation_id}/draft"): (
             f"/v1/inbox/{i['conversation']}/draft",
             None,
@@ -984,6 +985,7 @@ ADDRESSED = {
         ("POST", "/v1/me/workshops/{workshop_id}"),
         ("DELETE", "/v1/me/workshops/{workshop_id}"),
         ("GET", "/v1/inbox/{conversation_id}"),
+        ("DELETE", "/v1/inbox/{conversation_id}"),
         ("POST", "/v1/inbox/{conversation_id}/draft"),
         ("POST", "/v1/inbox/{conversation_id}/reply"),
         ("DELETE", "/v1/inbox/{conversation_id}/drafts/{draft_id}"),
