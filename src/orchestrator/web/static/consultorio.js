@@ -748,7 +748,7 @@ function dialog(title, ...content) {
 }
 
 async function patientsList() {
-  if (!state.patients) state.patients = await api("/v1/crm/patients?limit=500");
+  if (!state.patients) state.patients = await api("/v1/crm/patients?limit=500&include_restricted=false");
   return state.patients;
 }
 
@@ -1296,23 +1296,25 @@ async function hoursCard(prof) {
 }
 
 // --- PACIENTES: the list and a new patient ----------------------------------------------------
+let patientListNotice = "";
 VIEWS.pacientes = async (main, arg) => {
   if (arg === "nuevo") return newPatientView(main);
   const search = el("input", { type: "search", placeholder: "Buscar por nombre", "aria-label": "Buscar paciente por nombre" });
   const box = el("div", { class: "table-box" });
+  const restricted = el("input", { type: "checkbox" });
   let searchTurn = 0;
   const show = async () => {
     const mine = ++searchTurn;
     const q = search.value.trim();
     let rows;
     try {
-      rows = await api(`/v1/crm/patients?limit=500${q ? `&search=${encodeURIComponent(q)}` : ""}`);
+      rows = await api(`/v1/crm/patients?limit=500&include_restricted=${restricted.checked}${q ? `&search=${encodeURIComponent(q)}` : ""}`);
     } catch (err) {
       if (mine !== searchTurn || q !== search.value.trim()) return;
       throw err;
     }
     if (mine !== searchTurn || q !== search.value.trim()) return;
-    if (!q) state.patients = rows;
+    if (!q && !restricted.checked) state.patients = rows;
     box.replaceChildren(rows.length
       ? el("table", {},
         el("thead", {}, el("tr", {}, el("th", { text: "Paciente" }), el("th", { text: "Desde" }), el("th", { text: "Estado" }))),
@@ -1324,6 +1326,9 @@ VIEWS.pacientes = async (main, arg) => {
       : empty(q ? "Ningún paciente coincide con esa búsqueda." : "Aún no hay pacientes. Crea el primero."));
   };
   let timer = null;
+  restricted.addEventListener("change", () => show().catch((err) => {
+    box.replaceChildren(el("p", { class: "alert", role: "alert", text: humanError(err) }));
+  }));
   search.addEventListener("input", () => {
     ++searchTurn;
     clearTimeout(timer);
@@ -1333,7 +1338,10 @@ VIEWS.pacientes = async (main, arg) => {
     }), 250);
   });
   main.replaceChildren(page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
-    el("label", { class: "field" }, "Buscar", search), box);
+    patientListNotice ? el("p", { class: "status done", role: "status", text: patientListNotice }) : null,
+    el("label", { class: "field" }, "Buscar", search),
+    el("label", { class: "check" }, restricted, "Mostrar fichas restringidas"), box);
+  patientListNotice = "";
   await show();
 };
 
@@ -1381,6 +1389,12 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
   visit.addEventListener("click", () => openVisitDialog({ patientId: patient.id }));
   const access = el("button", { class: "btn", type: "button", text: "Acceso a su app" });
   access.addEventListener("click", () => openAccessDialog(patient));
+  const edit = el("button", { class: "btn", type: "button", text: "Editar datos" });
+  edit.addEventListener("click", () => editPatientDialog(patient));
+  const remove = el("button", { class: "btn", type: "button", text: "Eliminar datos del paciente" });
+  remove.addEventListener("click", () => deletePatientDialog(patient));
+  const canEdit = isAdmin() || state.session.roles.includes("reception");
+  const canDelete = isAdmin() || state.session.roles.includes("privacy");
   const tabs = el("div", { class: "tabs", role: "tablist", "aria-label": "Secciones de la ficha" },
     ...TABS.map(([key, label]) => {
       const b = el("button", { type: "button", role: "tab", "aria-selected": String(key === tab), text: label });
@@ -1389,7 +1403,10 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
     }));
   const body = el("div", { class: "stack", role: "tabpanel" }, el("p", { class: "muted", text: "Cargando…" }));
   main.replaceChildren(...[
-    page(patient.display_name, contact, tierChip, patient.restricted ? null : access, visit),
+    page(patient.display_name, contact, tierChip,
+      !patient.restricted && canEdit ? edit : null,
+      !patient.restricted && canDelete ? remove : null,
+      patient.restricted ? null : access, patient.restricted ? null : visit),
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
     tabs, body].filter(Boolean));
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
@@ -1400,6 +1417,86 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
     body.replaceChildren(empty(ROLE_NOTES.clinical));
   }
 };
+
+function editPatientDialog(patient) {
+  const name = el("input", { type: "text", maxlength: "200", required: true, value: patient.display_name });
+  const phone = el("input", { type: "tel", maxlength: "32", value: patient.phone || "" });
+  const email = el("input", { type: "email", maxlength: "254", value: patient.email || "" });
+  const birth = el("input", { type: "date", value: patient.birth_date || "" });
+  const telegram = el("input", { type: "text", maxlength: "64", value: patient.telegram_chat_id || "", autocomplete: "off" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Guardar datos" });
+  const cancel = el("button", { class: "btn", type: "button", text: "Cancelar" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Nombre y apellido", name),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Celular", phone), el("label", { class: "field" }, "Correo", email)),
+    el("label", { class: "field" }, "Fecha de nacimiento", birth),
+    el("label", { class: "field" }, "Chat de Telegram (opcional)", telegram),
+    el("p", { class: "muted", text: "Deja vacío un dato opcional para borrarlo." }),
+    el("div", { class: "row tight" }, save, cancel), status);
+  const d = dialog("Editar datos del paciente", form);
+  cancel.addEventListener("click", () => d.close());
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (save.disabled) return;
+    if (!name.value.trim()) return say(status, "Escribe el nombre del paciente.", "error");
+    if (!form.reportValidity()) return;
+    save.disabled = true;
+    try {
+      await api(`/v1/crm/patients/${encodeURIComponent(patient.id)}`, { method: "PATCH", body: {
+        display_name: name.value.trim(), phone: phone.value.trim() || null,
+        email: email.value.trim() || null, birth_date: birth.value || null,
+        telegram_chat_id: telegram.value.trim() || null,
+      } });
+      state.patients = null;
+      patientNames = {};
+      d.close();
+      route();
+    } catch (err) {
+      say(status, humanError(err), "error");
+      save.disabled = false;
+    }
+  });
+}
+
+function deletePatientDialog(patient) {
+  const confirmation = el("input", { type: "text", autocomplete: "off", spellcheck: "false" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const remove = el("button", { class: "btn primary", type: "submit", disabled: true, text: "Confirmar eliminación" });
+  const cancel = el("button", { class: "btn", type: "button", text: "Cancelar" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: `Se eliminarán los contactos, las conversaciones, los consentimientos y el acceso a la app de ${patient.display_name}.` }),
+    el("p", { text: "El registro saldrá del listado habitual. Si tiene historial clínico, ese historial se conservará restringido; no se elimina con esta acción." }),
+    el("p", { class: "muted", text: "Un registro sin historial perderá también el nombre y la fecha de nacimiento. La eliminación de datos no se puede deshacer." }),
+    el("label", { class: "field" }, "Escribe el nombre del paciente para confirmar", confirmation),
+    el("div", { class: "row tight" }, remove, cancel), status);
+  const d = dialog("Eliminar datos del paciente", form);
+  let busy = false;
+  confirmation.addEventListener("input", () => { remove.disabled = busy || confirmation.value !== patient.display_name; });
+  cancel.addEventListener("click", () => { if (!busy) d.close(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (busy || confirmation.value !== patient.display_name) return;
+    busy = true;
+    remove.disabled = true;
+    cancel.disabled = true;
+    say(status, "Eliminando datos…");
+    try {
+      await api(`/v1/subjects/${encodeURIComponent(patient.id)}`, { method: "DELETE" });
+      state.patients = null;
+      patientNames = {};
+      patientListNotice = "Datos del paciente eliminados. El historial clínico, si existe, permanece restringido.";
+      d.close();
+      location.hash = "#pacientes";
+      refreshBadges();
+    } catch (err) {
+      say(status, err.status === 409 ? "Hay una conversación en curso. Espera a que termine e inténtalo de nuevo." : humanError(err), "error");
+      busy = false;
+      remove.disabled = confirmation.value !== patient.display_name;
+      cancel.disabled = false;
+    }
+  });
+}
 
 /** The patient's personal link to their app: shown once, sent by the professional. */
 async function openAccessDialog(patient) {
@@ -2186,12 +2283,43 @@ async function conversationCard(id) {
     close.disabled = true;
     try { await api(`/v1/inbox/${encodeURIComponent(id)}/close`, { method: "POST" }); refreshBadges(); route(); } catch (err) { say(status, humanError(err), "error"); close.disabled = false; }
   });
+  const remove = el("button", { class: "btn small", type: "button", text: "Eliminar conversación" });
+  remove.addEventListener("click", () => {
+    const confirmation = el("input", { type: "text", autocomplete: "off", spellcheck: "false" });
+    const feedback = el("p", { class: "status", role: "status", "aria-live": "polite" });
+    const erase = el("button", { class: "btn primary", type: "button", disabled: true, text: "Confirmar eliminación" });
+    const cancel = el("button", { class: "btn", type: "button", text: "Cancelar" });
+    const d = dialog("Eliminar conversación",
+      el("p", { text: "Se borrarán esta conversación, sus mensajes y sus borradores del consultorio. No se borrarán la ficha clínica ni los mensajes que conserve la red social. Esta acción no se puede deshacer." }),
+      el("label", { class: "field" }, "Escribe ELIMINAR para confirmar", confirmation),
+      el("div", { class: "row tight" }, erase, cancel), feedback);
+    let busy = false;
+    confirmation.addEventListener("input", () => { erase.disabled = busy || confirmation.value !== "ELIMINAR"; });
+    cancel.addEventListener("click", () => { if (!busy) d.close(); });
+    erase.addEventListener("click", async () => {
+      if (busy || confirmation.value !== "ELIMINAR") return;
+      busy = true;
+      erase.disabled = true;
+      cancel.disabled = true;
+      try {
+        await api(`/v1/inbox/${encodeURIComponent(id)}`, { method: "DELETE" });
+        d.close();
+        location.hash = "#mensajes";
+        refreshBadges();
+      } catch (err) {
+        say(feedback, err.status === 409 ? "Marca la conversación como atendida antes de eliminarla." : humanError(err), "error");
+        busy = false;
+        erase.disabled = confirmation.value !== "ELIMINAR";
+        cancel.disabled = false;
+      }
+    });
+  });
 
   return el("section", { class: "card grow-2", "aria-label": "Conversación" },
     el("div", { class: "head" },
       el("div", { class: "row tight" }, el("span", { class: `ch ${cls}`, text: network }),
         el("strong", { text: c.patient_id ? patientName(c.patient_id) : "Persona sin vincular" })),
-      el("div", { class: "row tight" }, c.patient_id ? link(`#paciente/${encodeURIComponent(c.patient_id)}`, "Ver ficha", "btn small") : null, close)),
+      el("div", { class: "row tight" }, c.patient_id ? link(`#paciente/${encodeURIComponent(c.patient_id)}`, "Ver ficha", "btn small") : null, close, remove)),
     c.attention === "crisis" ? el("div", { class: "alert", role: "alert" }, el("span", { text: "Posible crisis. Ya recibió la contención automática con el ECU 911 y la línea 171 (opción 6). Contáctala tú; la IA no sugiere respuestas aquí." })) : null,
     c.attention === "human" ? el("div", { class: "notice", role: "note" }, el("span", { text: "Pidió hablar con una persona. Respóndele tú." })) : null,
     !c.window_open ? el("div", { class: "notice", role: "note" }, el("span", { text: "Pasaron más de 24 horas desde su último mensaje: la red solo permite responder con plantillas aprobadas." })) : null,

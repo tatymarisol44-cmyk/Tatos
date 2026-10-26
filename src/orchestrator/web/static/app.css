@@ -173,7 +173,7 @@ input, select, textarea {
   .catalog.open { display: flex; }
   .narrow-only { display: inline-block; }
   .topbar { gap: 8px; }
-  .topbar-right { margin-left: 0; width: 100%; }
+  .topbar-right { margin-left: 0; width: 100%; flex-wrap: wrap; }
   #api-key { flex: 1; width: auto; min-width: 0; }
   .msg.user .bubble { max-width: 100%; }
 }

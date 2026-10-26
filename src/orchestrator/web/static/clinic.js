@@ -22,7 +22,7 @@ async function loadPatients() {
   const status = $("#patients-status");
   status.textContent = "Loading patients…";
   try {
-    clinic.patients = await api("GET", "/v1/crm/patients");
+    clinic.patients = await api("GET", "/v1/crm/patients?include_restricted=false");
     renderPatients();
   } catch (err) {
     $("#patients").replaceChildren();
@@ -438,7 +438,7 @@ async function openAgenda() {
   try {
     const pros = await api("GET", "/v1/admin/professionals");
     pick.replaceChildren(...pros.map((p) => el("option", { value: p.professional_id, text: p.display_name })));
-    if (!clinic.patients.length) clinic.patients = await api("GET", "/v1/crm/patients");
+    if (!clinic.patients.length) clinic.patients = await api("GET", "/v1/crm/patients?include_restricted=false");
     const draw = () => renderAgenda(pick.value, body);
     pick.addEventListener("change", draw);
     if (pros.length) await draw();

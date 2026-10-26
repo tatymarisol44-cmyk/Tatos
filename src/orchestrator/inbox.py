@@ -408,6 +408,45 @@ class InboxService:
                 conn, tenant, actor, "inbox.closed", f"inbox_conversation/{conversation_id}"
             )
 
+    async def delete_conversation(self, tenant: str, conversation_id: str, actor: str) -> None:
+        """Remove one conversation and its sealed messages; keep the metadata-only audit."""
+        async with self.db.engine.begin() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        select(inbox_conversations)
+                        .where(self._key(tenant, conversation_id))
+                        .with_for_update()
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise KeyError(conversation_id)
+            if row["attention"] in ("crisis", "human"):
+                raise InboxError("mark the conversation as handled before deleting it")
+            removed = await conn.execute(
+                delete(inbox_messages).where(
+                    and_(
+                        inbox_messages.c.tenant == tenant,
+                        inbox_messages.c.conversation_id == conversation_id,
+                    )
+                )
+            )
+            await conn.execute(
+                delete(inbox_conversations).where(self._key(tenant, conversation_id))
+            )
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "inbox.deleted",
+                f"inbox_conversation/{conversation_id}",
+                subject_id=row["patient_id"],
+                details={"messages": int(removed.rowcount or 0)},
+            )
+
     async def for_patient(self, tenant: str, patient_id: str) -> list[dict[str, Any]]:
         """The open conversations linked to a patient, without their text (briefing.py)."""
         query = select(inbox_conversations).where(
@@ -602,6 +641,15 @@ class InboxService:
         message_id = uuid.uuid4().hex[:16]
         now = utcnow()
         async with self.db.engine.begin() as conn:
+            parent = (
+                await conn.execute(
+                    select(inbox_conversations.c.conversation_id)
+                    .where(self._key(tenant, conversation_id))
+                    .with_for_update()
+                )
+            ).first()
+            if parent is None:
+                raise InboxError("the conversation was deleted")
             await conn.execute(
                 insert(inbox_messages).values(
                     tenant=tenant,

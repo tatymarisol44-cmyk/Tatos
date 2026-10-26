@@ -382,6 +382,139 @@ def test_social_account_read_failure_is_not_shown_as_an_empty_list(
     assert not problems, problems
 
 
+def test_patient_contacts_can_be_cleared_and_unused_registration_deleted(
+    server: str, browser: Any
+) -> None:
+    patient = {
+        "id": "cleanup-demo",
+        "display_name": "Prueba Inicial",
+        "phone": "0990000000",
+        "email": "demo@example.test",
+        "birth_date": "1990-01-01",
+        "telegram_chat_id": "123456",
+    }
+    assert httpx.post(f"{server}/v1/crm/patients", json=patient, headers=SERVICE).status_code == 201
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "keep-demo", "display_name": "Paciente Conservada"},
+        headers=SERVICE,
+    )
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.evaluate("location.hash = '#paciente/cleanup-demo'")
+    page.get_by_role("heading", name="Prueba Inicial", exact=True).wait_for()
+    page.get_by_role("button", name="Editar datos", exact=True).click()
+    edit = page.get_by_role("dialog", name="Editar datos del paciente", exact=True)
+    edit.get_by_label("Nombre y apellido", exact=True).fill("Prueba Corregida")
+    for label in ["Celular", "Correo", "Fecha de nacimiento", "Chat de Telegram (opcional)"]:
+        edit.get_by_label(label, exact=True).fill("")
+    edit.get_by_role("button", name="Guardar datos", exact=True).click()
+    page.get_by_role("heading", name="Prueba Corregida", exact=True).wait_for()
+    updated = httpx.get(f"{server}/v1/crm/patients/cleanup-demo", headers=SERVICE).json()
+    assert all(
+        updated[name] is None for name in ["phone", "email", "birth_date", "telegram_chat_id"]
+    )
+
+    page.get_by_role("button", name="Eliminar datos del paciente", exact=True).click()
+    remove = page.get_by_role("dialog", name="Eliminar datos del paciente", exact=True)
+    assert remove.get_by_role("button", name="Confirmar eliminación", exact=True).is_disabled()
+    remove.get_by_role("button", name="Cancelar", exact=True).click()
+    assert not httpx.get(f"{server}/v1/crm/patients/cleanup-demo", headers=SERVICE).json()[
+        "restricted"
+    ]
+    page.get_by_role("button", name="Eliminar datos del paciente", exact=True).click()
+    remove.get_by_label("Escribe el nombre del paciente para confirmar").fill("Otro nombre")
+    assert remove.get_by_role("button", name="Confirmar eliminación", exact=True).is_disabled()
+    remove.get_by_label("Escribe el nombre del paciente para confirmar").fill("Prueba Corregida")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    remove.get_by_role("button", name="Confirmar eliminación", exact=True).click()
+    page.get_by_role("heading", name="Pacientes", exact=True).wait_for()
+    page.get_by_role("link", name="Paciente Conservada", exact=True).wait_for()
+    assert page.get_by_role("link", name="Prueba Corregida", exact=True).count() == 0
+    erased = httpx.get(f"{server}/v1/crm/patients/cleanup-demo", headers=SERVICE).json()
+    assert erased["display_name"] == "Paciente eliminado" and erased["restricted"]
+    page.get_by_label("Mostrar fichas restringidas", exact=True).check()
+    page.get_by_role("link", name="Paciente eliminado", exact=True).wait_for()
+    assert not problems, problems
+
+
+def test_failed_patient_deletion_keeps_the_record_and_allows_retry(
+    server: str, browser: Any
+) -> None:
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "retry-demo", "display_name": "Prueba Reintento"},
+        headers=SERVICE,
+    )
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.evaluate("location.hash = '#paciente/retry-demo'")
+    page.get_by_role("heading", name="Prueba Reintento", exact=True).wait_for()
+    page.route(
+        "**/v1/subjects/retry-demo",
+        lambda route: route.fulfill(status=503, json={"detail": "unavailable"}),
+    )
+    page.get_by_role("button", name="Eliminar datos del paciente", exact=True).click()
+    remove = page.get_by_role("dialog", name="Eliminar datos del paciente", exact=True)
+    remove.get_by_label("Escribe el nombre del paciente para confirmar").fill("Prueba Reintento")
+    remove.get_by_role("button", name="Confirmar eliminación", exact=True).click()
+    remove.locator(".status.error").wait_for()
+    assert remove.get_by_role("button", name="Confirmar eliminación", exact=True).is_enabled()
+    assert not httpx.get(f"{server}/v1/crm/patients/retry-demo", headers=SERVICE).json()[
+        "restricted"
+    ]
+    remove.get_by_role("button", name="Cancelar", exact=True).click()
+    assert not problems, problems
+
+
+def test_reception_can_edit_contacts_but_has_no_delete_action(server: str, browser: Any) -> None:
+    httpx.post(
+        f"{server}/v1/crm/patients",
+        json={"id": "roles-demo", "display_name": "Prueba Permisos"},
+        headers=SERVICE,
+    )
+    staff = httpx.post(
+        f"{server}/v1/admin/staff",
+        json={"name": "reception.cleanup", "roles": ["reception"]},
+        headers=SERVICE,
+    ).json()
+    page, problems = _signed_in(browser, server, staff["key"])
+    page.evaluate("location.hash = '#paciente/roles-demo'")
+    page.get_by_role("heading", name="Prueba Permisos", exact=True).wait_for()
+    assert page.get_by_role("button", name="Editar datos", exact=True).is_visible()
+    assert page.get_by_role("button", name="Eliminar datos del paciente", exact=True).count() == 0
+    assert not problems, problems
+
+
+def test_an_inbox_conversation_can_be_deleted_with_confirmation(server: str, browser: Any) -> None:
+    httpx.post(
+        f"{server}/v1/social/accounts",
+        json={
+            "network": "whatsapp",
+            "external_id": NUMBER_ID,
+            "handle": "Demo",
+            "secret_ref": "WA_DEMO",
+        },
+        headers=SERVICE,
+    )
+    _whatsapp(server, "Mensaje sintético para limpiar.")
+    key = _staff_key(server)
+    page, problems = _signed_in(browser, server, key)
+    page.click("a[data-nav=mensajes]")
+    page.locator(".thread").first.click()
+    page.get_by_role("button", name="Eliminar conversación", exact=True).click()
+    remove = page.get_by_role("dialog", name="Eliminar conversación", exact=True)
+    assert remove.get_by_role("button", name="Confirmar eliminación", exact=True).is_disabled()
+    remove.get_by_role("button", name="Cancelar", exact=True).click()
+    assert len(httpx.get(f"{server}/v1/inbox", headers={"X-API-Key": key}).json()) == 1
+    page.get_by_role("button", name="Eliminar conversación", exact=True).click()
+    remove.get_by_label("Escribe ELIMINAR para confirmar").fill("ELIMINAR")
+    remove.get_by_role("button", name="Confirmar eliminación", exact=True).click()
+    page.get_by_text("No hay conversaciones todavía.", exact=False).wait_for()
+    assert httpx.get(f"{server}/v1/inbox", headers={"X-API-Key": key}).json() == []
+    assert page.locator("#badge-unread").is_hidden()
+    assert not problems, problems
+
+
 def test_a_patient_record_from_creation_to_documents(server: str, browser: Any) -> None:
     key = _staff_key(server)
     body = {
@@ -790,7 +923,10 @@ def test_patient_search_ignores_an_older_slow_result(
     page.click("a[data-nav=pacientes]")
     page.wait_for_selector("text=Aún no hay pacientes")
     held: list[Any] = []
-    page.route("**/v1/crm/patients?limit=500&search=*", lambda route: held.append(route))
+    page.route(
+        "**/v1/crm/patients?limit=500&include_restricted=false&search=*",
+        lambda route: held.append(route),
+    )
     search = page.get_by_role("searchbox", name="Buscar paciente por nombre")
     search.fill("Ana")
     page.wait_for_timeout(400)
@@ -908,7 +1044,9 @@ def test_late_appointment_dialog_does_not_open_over_settings(server: str, browse
     page, problems = _signed_in(browser, server, _staff_key(server))
     page.wait_for_selector("text=Citas de hoy")
     held: list[Any] = []
-    page.route("**/v1/crm/patients?limit=500", lambda route: held.append(route))
+    page.route(
+        "**/v1/crm/patients?limit=500&include_restricted=false", lambda route: held.append(route)
+    )
     page.evaluate("location.hash = '#agenda/nueva'")
     page.wait_for_timeout(200)
     assert held

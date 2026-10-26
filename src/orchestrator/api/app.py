@@ -561,8 +561,14 @@ def create_app(
         dpo: PrivacyDep,
     ) -> None:
         """Erase one conversation (its full checkpoint history) of the calling tenant."""
-        if not await orch(request).delete_thread(dpo.tenant, thread_id):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found")
+        try:
+            if not await orch(request).delete_thread(dpo.tenant, thread_id):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "thread not found")
+        except ThreadBusyError as exc:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "conversation is still in progress"
+            ) from exc
+        await orch(request).audit.record(dpo.tenant, dpo.id, "thread.erased", f"thread/{thread_id}")
 
     @app.delete("/v1/threads", tags=["privacy"])
     async def delete_all_threads(request: Request, dpo: PrivacyDep) -> dict[str, int]:
