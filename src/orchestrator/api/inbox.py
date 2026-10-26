@@ -118,3 +118,15 @@ async def close_conversation(
         await service(request).close(p.tenant, conversation_id, p.id)
     except KeyError as exc:
         raise _not_found() from exc
+
+
+@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: ConversationId, request: Request, p: Clinician
+) -> None:
+    try:
+        await service(request).delete_conversation(p.tenant, conversation_id, p.id)
+    except KeyError as exc:
+        raise _not_found() from exc
+    except InboxError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc

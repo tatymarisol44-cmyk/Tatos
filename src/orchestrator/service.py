@@ -364,6 +364,14 @@ class Orchestrator:
     async def delete_thread(
         self, tenant: str, thread_id: str, *, reason: str = "deletion_request", archive: bool = True
     ) -> bool:
+        # Use the same cross-replica lease as answering: a running model must not
+        # recreate a checkpoint immediately after the user has deleted its thread.
+        async with self._lease(tenant, thread_id):
+            return await self._delete_thread(tenant, thread_id, reason=reason, archive=archive)
+
+    async def _delete_thread(
+        self, tenant: str, thread_id: str, *, reason: str, archive: bool
+    ) -> bool:
         """Erase one conversation of this tenant and its review (the review is removed even
         when the checkpoint is already gone). Clinical content is archived to the clinical
         record first. False if neither existed."""

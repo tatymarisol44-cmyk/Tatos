@@ -73,7 +73,18 @@ jobs:
       # The image ships ffmpeg for marketing videos; without it here, the video tests
       # would be skipped and only the image would ever render one.
       - name: ffmpeg (video creatives)
-        run: sudo apt-get install -y --no-install-recommends ffmpeg
+        run: |
+          # The Azure mirror can throttle large media dependencies for many minutes.
+          # Keep Ubuntu's signed repositories and package checks on the primary mirror.
+          # Hosted runners also use mirror+file:/etc/apt/apt-mirrors.txt.
+          for sources in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$sources" ]; then
+              sudo sed -i 's|https\?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
       # Chromium for the console's browser test (tests/test_console_e2e.py).
       - run: uv run playwright install --with-deps chromium
       - run: uv run pytest --junitxml=junit.xml --cov-report=xml

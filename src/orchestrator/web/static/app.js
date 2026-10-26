@@ -12,6 +12,41 @@ const state = {
 };
 const POLL_MS = 5000;
 
+function syncThreadActions() {
+  $("#delete-thread").disabled = state.busy || !state.threadId;
+  $("#new-thread").disabled = state.busy;
+}
+
+async function deleteCurrentThread() {
+  const id = state.threadId;
+  if (state.busy || !id) return;
+  if (!confirm("¿Eliminar esta conversación y sus borradores? No se puede deshacer. Si contiene información clínica, se conservará en su ficha clínica.")) return;
+  if (state.threadId !== id || state.busy) return;
+  state.busy = true;
+  syncThreadActions();
+  lockComposer("Eliminando conversación…");
+  const status = el("p", { class: "muted small", role: "status", text: "Eliminando conversación…" });
+  $("#thread").append(status);
+  try {
+    const response = await fetch(`/v1/threads/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers() });
+    if (!response.ok && response.status !== 404) throw await apiError(response);
+    stopHold();
+    state.threadId = null;
+    $("#thread").replaceChildren(el("p", { class: "muted small", role: "status", text: "Conversación eliminada." }));
+    loadReviews();
+  } catch (err) {
+    status.className = "error";
+    status.setAttribute("role", "alert");
+    status.textContent = err.status === 403 ? "Necesitas el rol de administración o privacidad para eliminar conversaciones."
+      : err.status === 409 ? "La conversación está en curso. Espera a que termine e inténtalo de nuevo." : err.message;
+  } finally {
+    state.busy = false;
+    if (state.held) lockComposer("This conversation is waiting for a reviewer.");
+    else lockComposer("");
+    syncThreadActions();
+  }
+}
+
 const store = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { sessionStorage.setItem(key, value); } catch { /* storage unavailable */ } },
@@ -331,6 +366,7 @@ function hold(threadId, bubble, risk) {
 async function send(question) {
   if (state.busy || state.held || !question.trim()) return;
   state.busy = true;
+  syncThreadActions();
   $("#send").disabled = true;
 
   addMessage("user").append(el("div", { class: "bubble", text: question }));
@@ -412,6 +448,7 @@ async function send(question) {
     }
   } finally {
     state.busy = false;
+    syncThreadActions();
     $("#send").disabled = Boolean(state.held);
     scrollDown();
   }
@@ -642,10 +679,13 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#division").addEventListener("change", renderAgents);
   $("#toggle-catalog").addEventListener("click", () => $("#catalog").classList.toggle("open"));
   $("#new-thread").addEventListener("click", () => {
+    if (state.busy) return;
     stopHold();
     state.threadId = null;
+    syncThreadActions();
     $("#thread").replaceChildren(el("p", { class: "muted small", text: "New conversation." }));
   });
+  $("#delete-thread").addEventListener("click", deleteCurrentThread);
   for (const b of document.querySelectorAll(".example")) {
     b.addEventListener("click", () => {
       if (b.hasAttribute("data-team")) setMode("team");

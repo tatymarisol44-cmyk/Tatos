@@ -172,7 +172,12 @@ async def erase_subject(
 ) -> dict[str, Any]:
     """Right to erasure. The clinical record is retained (restricted) where the law
     requires it; conversations are erased per thread (DELETE /v1/threads/{id})."""
-    return await orch(request).rights.erase(p.tenant, subject_id, p.id)
+    try:
+        return await orch(request).rights.erase(p.tenant, subject_id, p.id)
+    except ThreadBusyError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "a conversation is still in progress"
+        ) from exc
 
 
 @router.get("/v1/audit", tags=["privacy"])
@@ -270,8 +275,11 @@ async def list_patients(
     p: CareReader,
     search: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=100, ge=1, le=500),
+    include_restricted: bool = Query(default=True),
 ) -> list[dict[str, Any]]:
-    return await orch(request).crm.list_patients(p.tenant, search=search, limit=limit)
+    return await orch(request).crm.list_patients(
+        p.tenant, search=search, limit=limit, include_restricted=include_restricted
+    )
 
 
 @router.get("/v1/crm/patients/{patient_id}", tags=["crm"])

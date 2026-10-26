@@ -36,8 +36,10 @@ from sqlalchemy import (
     String,
     Table,
     and_,
+    case,
     func,
     insert,
+    or_,
     select,
     update,
 )
@@ -226,7 +228,12 @@ class CrmService:
         return patient
 
     async def list_patients(
-        self, tenant: str, *, search: str | None = None, limit: int = 100
+        self,
+        tenant: str,
+        *,
+        search: str | None = None,
+        limit: int = 100,
+        include_restricted: bool = True,
     ) -> list[dict[str, Any]]:
         query = select(
             patients.c.id,
@@ -235,6 +242,8 @@ class CrmService:
             patients.c.restricted,
             patients.c.created_at,
         ).where(patients.c.tenant == tenant)
+        if not include_restricted:
+            query = query.where(patients.c.restricted.is_(False))
         if search:
             # A bound parameter, with % and _ escaped: "%" finds names containing "%",
             # not every patient of the practice.
@@ -729,12 +738,39 @@ class CrmService:
         }
 
     async def erase_subject(self, tenant: str, patient_id: str) -> dict[str, Any]:
+        # Imports here avoid a cycle: these stores refer to the CRM's patient table.
+        from orchestrator.clinical_files import clinical_files
+        from orchestrator.clinical_records import clinical_documents
+        from orchestrator.instruments import instrument_assignments, instrument_results
+
         if await self._patient(tenant, patient_id) is None:
             return {"patient": "not_found"}
+        # An unused/test registration has no clinical identity to retain. Keep only its
+        # pseudonymous tombstone, so old access keys cannot recreate that patient.
+        # Check in the UPDATE itself; never remove or read clinical content here.
+        retained = or_(
+            *[
+                select(1)
+                .select_from(table)
+                .where(and_(table.c.tenant == tenant, table.c.patient_id == patient_id))
+                .exists()
+                for table in (
+                    appointments,
+                    treatments,
+                    clinical_notes,
+                    clinical_documents,
+                    clinical_files,
+                    instrument_results,
+                    instrument_assignments,
+                )
+            ]
+        )
         query = (
             update(patients)
             .where(and_(patients.c.tenant == tenant, patients.c.id == patient_id))
             .values(
+                display_name=case((retained, patients.c.display_name), else_="Paciente eliminado"),
+                birth_date=case((retained, patients.c.birth_date), else_=None),
                 phone=None,
                 email=None,
                 telegram_chat_id=None,

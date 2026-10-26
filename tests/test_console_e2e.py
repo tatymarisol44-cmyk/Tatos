@@ -92,6 +92,33 @@ def _ask(page: Any, question: str) -> None:
     page.press("#question", "Enter")
 
 
+def test_console_conversation_delete_requires_confirmation_and_removes_checkpoint(
+    server: str, subprocess_loop: None
+) -> None:
+    errors: list[str] = []
+    with sync_api.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = _open(browser, server, SERVICE["X-API-Key"], errors)
+        _ask(page, "Write a short greeting.")
+        erase = page.get_by_role("button", name="Eliminar conversación", exact=True)
+        sync_api.expect(erase).to_be_enabled(timeout=20000)
+        thread_id = page.evaluate("state.threadId")
+        path = f"{server}/v1/threads/{thread_id}"
+        assert httpx.get(path, headers=SERVICE).status_code == 200
+        page.once("dialog", lambda dialog: dialog.dismiss())
+        erase.click()
+        assert httpx.get(path, headers=SERVICE).status_code == 200
+        page.once("dialog", lambda dialog: dialog.accept())
+        erase.click()
+        page.get_by_text("Conversación eliminada.", exact=True).wait_for()
+        assert httpx.get(path, headers=SERVICE).status_code == 404
+        assert erase.is_disabled() and page.locator("#question").is_enabled()
+        page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        assert not errors, errors
+        browser.close()
+
+
 def test_a32_held_answer_is_shown_reviewed_and_never_leaked(
     server: str, subprocess_loop: None
 ) -> None:

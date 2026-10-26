@@ -4,6 +4,7 @@ reads; the AI only drafts, and a person sends. Synthetic ids and numbers only.""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -22,7 +23,7 @@ from orchestrator.api.app import create_app
 from orchestrator.api.channels import _social_messages
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
-from orchestrator.inbox import inbox_conversations, inbox_messages
+from orchestrator.inbox import InboxError, inbox_conversations, inbox_messages
 from orchestrator.llm import FakeLLM
 from orchestrator.sealing import Sealer, SealError
 from orchestrator.service import Orchestrator
@@ -457,6 +458,121 @@ async def test_retention_removes_old_messages(app: tuple[TestClient, Orchestrato
 
 
 # --- sealing ----------------------------------------------------------------------------
+
+
+def test_conversation_deletion_checks_roles_and_tenant_and_keeps_other_messages(
+    app: tuple[TestClient, Orchestrator],
+) -> None:
+    client, orch = app
+    dra = clinician(client)
+    assert post(client, social("instagram", QUESTION, "delete.1", IG_SENDER)) == 200
+    target = only(client, dra, "instagram")["conversation_id"]
+    path = f"/v1/inbox/{target}"
+    assert post(client, social("facebook", "Otro mensaje sintético.", "delete.2", FB_SENDER)) == 200
+    other = only(client, dra, "facebook")["conversation_id"]
+    other_staff = client.post(
+        "/v1/admin/staff", json={"name": "other.dra", "roles": ["reviewer"]}, headers=GLOBEX
+    ).json()
+    reception = client.post(
+        "/v1/admin/staff", json={"name": "reception.delete", "roles": ["reception"]}, headers=ADMIN
+    ).json()
+    assert client.delete(path).status_code == 401
+    for headers in (ADMIN, {"X-API-Key": reception["key"]}):
+        assert client.delete(path, headers=headers).status_code == 403
+    assert client.delete(path, headers={"X-API-Key": other_staff["key"]}).status_code == 404
+    assert client.delete(path, headers=dra).status_code == 204
+    assert client.get(path, headers=dra).status_code == 404
+    assert client.delete(path, headers=dra).status_code == 404
+    assert client.get(f"/v1/inbox/{other}", headers=dra).status_code == 200
+
+    async def stored_ids() -> list[str]:
+        async with orch.db.engine.connect() as conn:
+            return list((await conn.execute(select(inbox_messages.c.conversation_id))).scalars())
+
+    assert client.portal is not None
+    remaining = client.portal.call(stored_ids)
+    assert target not in remaining and other in remaining
+    events = client.get("/v1/audit", headers=ADMIN).json()
+    deleted = [event for event in events if event["action"] == "inbox.deleted"]
+    assert len(deleted) == 1 and deleted[0]["actor"] == "dra.demo"
+    assert QUESTION not in json.dumps(deleted) and IG_SENDER not in json.dumps(deleted)
+
+
+def test_crisis_conversation_must_be_handled_before_deletion(
+    app: tuple[TestClient, Orchestrator],
+) -> None:
+    client, _ = app
+    dra = clinician(client)
+    assert post(client, social("instagram", CRISIS_TEXT, "delete.crisis", IG_SENDER)) == 200
+    target = only(client, dra, "instagram")["conversation_id"]
+    path = f"/v1/inbox/{target}"
+    assert client.delete(path, headers=dra).status_code == 409
+    assert client.get(path, headers=dra).json()["messages"]
+    assert client.post(path + "/close", headers=dra).status_code == 204
+    assert client.delete(path, headers=dra).status_code == 204
+
+
+async def test_a_slow_ai_draft_cannot_recreate_deleted_messages(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    dra = clinician(client)
+    assert post(client, social("instagram", QUESTION, "delete.slow", IG_SENDER)) == 200
+    target = only(client, dra, "instagram")["conversation_id"]
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def delayed(*args: Any, **kwargs: Any) -> str:
+        started.set()
+        await finish.wait()
+        return "Borrador sintético que llega tarde."
+
+    assert orch.inbox.assistant is not None
+    monkeypatch.setattr(orch.inbox.assistant, "draft", delayed)
+    pending = asyncio.create_task(orch.inbox.draft("acme", target, "dra.demo"))
+    await asyncio.wait_for(started.wait(), 5)
+    await orch.inbox.delete_conversation("acme", target, "dra.demo")
+    finish.set()
+    with pytest.raises(InboxError, match="deleted"):
+        await pending
+    async with orch.db.engine.connect() as conn:
+        messages = (await conn.execute(select(inbox_messages))).mappings().all()
+    assert not messages
+
+
+async def test_inbound_work_started_before_deletion_cannot_leave_orphaned_messages(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    dra = clinician(client)
+    assert post(client, social("instagram", QUESTION, "delete.inbound", IG_SENDER)) == 200
+    target = only(client, dra, "instagram")["conversation_id"]
+    row = await orch.inbox._row("acme", target)
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def delayed(*args: Any) -> str:
+        started.set()
+        await finish.wait()
+        return str(target)
+
+    monkeypatch.setattr(orch.inbox, "_conversation", delayed)
+    pending = asyncio.create_task(
+        orch.inbox.record_inbound(
+            "acme",
+            "instagram",
+            row["account_id"],
+            IG_SENDER,
+            "Mensaje sintético que ya estaba en proceso.",
+            "ordinary",
+            "delete.late-inbound",
+        )
+    )
+    await asyncio.wait_for(started.wait(), 5)
+    await orch.inbox.delete_conversation("acme", target, "dra.demo")
+    finish.set()
+    await pending
+    async with orch.db.engine.connect() as conn:
+        assert not (await conn.execute(select(inbox_messages))).first()
+        assert not (await conn.execute(select(inbox_conversations))).first()
 
 
 def test_sealed_text_opens_only_with_its_key_and_tenant() -> None:
