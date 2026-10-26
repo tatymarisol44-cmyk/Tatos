@@ -841,8 +841,9 @@ function openVisitActions(visit) {
 // --- AJUSTES: profile and hours ------------------------------------------------------------------
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
+  if (section === "redes") return socialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
-  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia")];
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
   if (canReadCare()) parts.push(await onCallCard());
@@ -850,6 +851,120 @@ VIEWS.ajustes = async (main, section, which) => {
   parts.push(accountCard());
   main.replaceChildren(...parts);
 };
+
+// Account setup uses credential names only (ADR 0015); tokens stay on the server.
+const SOCIAL_CONNECTIONS = {
+  whatsapp: { name: "WhatsApp", id: "ID del número de WhatsApp Business", ref: "WA_MAIN" },
+  instagram: { name: "Instagram", id: "ID de la cuenta profesional de Instagram", ref: "IG_MAIN" },
+  facebook: { name: "Facebook", id: "ID de la página de Facebook", ref: "FB_MAIN" },
+  tiktok: { name: "TikTok", id: "ID de la cuenta de TikTok", ref: "TT_MAIN" },
+  telegram: { name: "Telegram", id: "ID del bot de Telegram", ref: "TG_MAIN" },
+};
+
+function connectSocialButton() {
+  return isAdmin() ? link("#ajustes/redes", "Conectar redes sociales", "btn primary") : null;
+}
+
+async function socialAccountsView(main) {
+  const head = page("Redes sociales", "Cuentas del consultorio para mensajes y publicaciones.", link("#ajustes", "Volver a Ajustes"));
+  if (!isAdmin()) {
+    main.replaceChildren(head, empty("Pide a la administración del consultorio que conecte las redes sociales."));
+    return;
+  }
+  // A failed read must remain an error, rather than looking like no accounts exist.
+  const accounts = await api("/v1/social/accounts");
+  const list = el("div", { class: "stack", "aria-live": "polite" });
+  const renderAccounts = () => {
+    const active = accounts.filter((a) => a.active !== false);
+    list.replaceChildren(...(active.length ? active.map((account) => {
+      const status = el("p", { class: "status", role: "status" });
+      const disconnect = el("button", { class: "btn small", type: "button", text: "Desconectar" });
+      disconnect.addEventListener("click", async () => {
+        if (!sure(disconnect, "Sí, desconectar")) return;
+        disconnect.disabled = true;
+        try {
+          await api(`/v1/social/accounts/${encodeURIComponent(account.account_id)}`, { method: "DELETE" });
+          account.active = false;
+          renderAccounts();
+        } catch (err) {
+          say(status, humanError(err), "error");
+          disconnect.disabled = false;
+        }
+      });
+      const name = SOCIAL_CONNECTIONS[account.network]?.name || account.network;
+      return el("article", { class: "doc social-account" },
+        el("div", { class: "what" }, el("strong", { text: `${name} · ${account.handle}` }),
+          el("p", { class: "muted", text: account.secret_configured
+            ? "La autorización está configurada en el consultorio."
+            : "Falta preparar la autorización de esta cuenta para poder enviar o publicar." }), status),
+        el("span", { class: `chip ${account.secret_configured ? "ok" : "wait"}`, text: account.secret_configured ? "Configuración lista" : "Pendiente de autorización" }),
+        disconnect);
+    }) : [empty("Todavía no hay cuentas vinculadas. Agrega la primera aquí.")]));
+  };
+  renderAccounts();
+
+  const network = el("select", { "aria-label": "Red social" }, ...Object.entries(SOCIAL_CONNECTIONS).map(([value, item]) => el("option", { value, text: item.name })));
+  const handle = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: @consultorio" });
+  const externalId = el("input", { type: "text", maxlength: "128", required: true, autocomplete: "off", spellcheck: "false" });
+  const idLabel = el("span", { text: SOCIAL_CONNECTIONS.whatsapp.id });
+  const secretRef = el("input", { type: "text", maxlength: "64", value: SOCIAL_CONNECTIONS.whatsapp.ref, autocomplete: "off", spellcheck: "false" });
+  const details = el("details", {}, el("summary", { text: "Configuración de la conexión" }),
+    el("label", { class: "field" }, "Nombre de conexión", secretRef),
+    el("p", { class: "muted", text: "Usa el nombre de conexión preparado por la administración para esta cuenta. La autorización se guarda en el servidor." }));
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Vincular cuenta" });
+  const form = el("form", { class: "stack", novalidate: true },
+    el("label", { class: "field" }, "Red social", network),
+    el("label", { class: "field" }, "Nombre de la cuenta", handle),
+    el("label", { class: "field" }, idLabel, externalId),
+    details, save, status);
+  network.addEventListener("change", () => {
+    const selected = SOCIAL_CONNECTIONS[network.value];
+    idLabel.textContent = selected.id;
+    externalId.value = "";
+    secretRef.value = selected.ref;
+    say(status, "");
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (save.disabled) return;
+    if (!handle.value.trim()) {
+      say(status, "Escribe el nombre de la cuenta.", "error");
+      handle.focus();
+      return;
+    }
+    if (!/^[\w.:@+-]{1,128}$/.test(externalId.value.trim())) {
+      say(status, "Escribe el identificador que te proporciona la red para esta cuenta.", "error");
+      externalId.focus();
+      return;
+    }
+    if (!/^[A-Z][A-Z0-9_]{2,63}$/.test(secretRef.value.trim())) {
+      say(status, "Revisa el nombre de conexión con la administración.", "error");
+      details.open = true;
+      secretRef.focus();
+      return;
+    }
+    save.disabled = true;
+    say(status, "Guardando cuenta…");
+    try {
+      const account = await api("/v1/social/accounts", { method: "POST", body: {
+        network: network.value, external_id: externalId.value.trim(), handle: handle.value.trim(), secret_ref: secretRef.value.trim(),
+      } });
+      accounts.push(account);
+      renderAccounts();
+      handle.value = "";
+      externalId.value = "";
+      say(status, account.secret_configured ? "Cuenta guardada. Su autorización está configurada."
+        : "Cuenta guardada. Falta preparar su autorización antes de enviar o publicar.", account.secret_configured ? "done" : "");
+    } catch (err) {
+      say(status, err.status === 409 ? "Esta cuenta ya está vinculada. Revísala en la lista."
+        : err.status === 422 ? "Revisa los datos de la cuenta y el nombre de conexión." : humanError(err), "error");
+    } finally {
+      save.disabled = false;
+    }
+  });
+  main.replaceChildren(head, card("Cuentas vinculadas", "", list), card("Agregar cuenta", "", form));
+}
 
 const ROLE_NAMES = {
   admin: "administración", owner: "dueña", reviewer: "psicóloga (datos clínicos)", reception: "recepción",
@@ -1544,7 +1659,7 @@ VIEWS.marketing = async (main, tab, arg = "") => {
     body = [empty(ROLE_NOTES[tab] || ROLE_NOTES.marketing)];
   }
   main.replaceChildren(
-    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú."),
+    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú.", connectSocialButton()),
     tabs, ...body);
 };
 

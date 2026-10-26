@@ -249,6 +249,7 @@ td { padding: 12px 16px; border-bottom: 1px solid #EEF1F3; }
   border-radius: 10px; border: 1px solid #EEF1F3; text-decoration: none; color: var(--text);
 }
 .doc .what { flex: 1 1 200px; min-width: 0; }
+.social-account .what { overflow-wrap: anywhere; }
 /* A label keeps its own width inside a column card. */
 .card > .chip, .next-appt > .chip, .stat > .chip { align-self: flex-start; }
 /* A label right after a title keeps a little air from it. */
