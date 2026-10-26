@@ -1430,11 +1430,11 @@ VIEWS.pacientes = async (main, arg) => {
       box.replaceChildren(el("p", { class: "alert", role: "alert", text: humanError(err) }));
     }), 250);
   });
-  main.replaceChildren(page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
+  main.replaceChildren(...[page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
     !canDelete ? el("p", { class: "muted", text: "Para eliminar datos de pacientes necesitas Administración o Privacidad. Revisa tus permisos en Ajustes → Tu cuenta." }) : null,
     patientListNotice ? el("p", { class: "status done", role: "status", text: patientListNotice }) : null,
     el("label", { class: "field" }, "Buscar", search),
-    el("label", { class: "check" }, restricted, "Mostrar fichas restringidas"), box);
+    el("label", { class: "check" }, restricted, "Mostrar fichas restringidas"), box].filter(Boolean));
   patientListNotice = "";
   await show();
 };

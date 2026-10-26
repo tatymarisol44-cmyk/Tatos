@@ -393,6 +393,7 @@ def test_patient_list_actions_preserve_contacts_and_delete_a_test_registration(
     d.get_by_label("Nombre y apellido", exact=True).fill("Registro corregido")
     d.get_by_role("button", name="Guardar datos", exact=True).click()
     page.get_by_role("button", name="Eliminar datos: Registro corregido", exact=True).wait_for()
+    assert "nullnull" not in page.inner_text("#view")
     after = httpx.get(f"{server}/v1/crm/patients/list-cleanup", headers=SERVICE).json()
     assert after["phone"] == original["phone"]
     assert after["email"] == original["email"] and after["birth_date"] == original["birth_date"]
