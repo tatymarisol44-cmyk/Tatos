@@ -76,10 +76,12 @@ jobs:
         run: |
           # The Azure mirror can throttle large media dependencies for many minutes.
           # Keep Ubuntu's signed repositories and package checks on the primary mirror.
-          sources=/etc/apt/sources.list.d/ubuntu.sources
-          if [ -f "$sources" ]; then
-            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"
-          fi
+          # Hosted runners also use mirror+file:/etc/apt/apt-mirrors.txt.
+          for sources in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$sources" ]; then
+              sudo sed -i 's|https\?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$sources"
+            fi
+          done
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version
