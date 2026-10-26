@@ -509,7 +509,10 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             f"/v1/admin/team/{i['member']}/link",
             None,
         ),
-        ("DELETE", "/v1/admin/team/{principal_id}"): (f"/v1/admin/team/{i['member']}", None),
+        ("DELETE", "/v1/admin/team/{principal_id}"): (
+            f"/v1/admin/team/{i['member']}?erase_profile=true",
+            None,
+        ),
         ("POST", "/v1/session/email"): ("/v1/session/email", {"email": i["member_email"]}),
         ("POST", "/v1/auth/sign-in"): (
             "/v1/auth/sign-in",

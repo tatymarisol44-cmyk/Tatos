@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
 from pydantic import BaseModel, Field
 
@@ -148,9 +148,18 @@ async def new_link(principal_id: MemberId, request: Request, p: Admin) -> dict[s
 @router.delete(
     "/v1/admin/team/{principal_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["admin"]
 )
-async def remove_member(principal_id: MemberId, request: Request, p: Admin) -> None:
+async def remove_member(
+    principal_id: MemberId,
+    request: Request,
+    p: Admin,
+    erase_profile: bool = Query(default=False),
+) -> None:
+    """Revoke access; explicit erase_profile also removes the e-mail login and pending
+    credentials, allowing its e-mail to be invited again without reusing the old identity."""
     try:
-        done = await _logins(request).remove(p.tenant, principal_id, p.id)
+        done = await _logins(request).remove(
+            p.tenant, principal_id, p.id, erase_profile=erase_profile
+        )
     except ValueError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     if not done:

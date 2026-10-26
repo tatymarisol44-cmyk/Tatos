@@ -56,6 +56,6 @@ async def add_own_email(body: OwnEmailIn, request: Request, p: Staff) -> dict[st
     name = professional["display_name"] if professional else None
     try:
         return await orch.staff_logins.attach_own_email(p.tenant, p.id, body.email, name)  # type: ignore[no-any-return]
-    except ValueError as exc:
+    except (ValueError, KeyError) as exc:
         code = status.HTTP_422_UNPROCESSABLE_CONTENT if "invalid" in str(exc) else 409
         raise HTTPException(code, str(exc)) from exc

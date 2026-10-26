@@ -977,7 +977,7 @@ const ROLE_CHOICES = [
   ["reception", "Recepción", "agenda, datos de contacto y enlaces de la app"],
   ["owner", "Dueña", "informe del mes, talleres y aprobaciones"],
   ["marketing", "Marketing", "campañas y publicaciones"],
-  ["admin", "Administración", "configura el consultorio y el equipo; no ve historias clínicas"],
+  ["admin", "Administración", "configura el equipo y las redes; edita y elimina contactos de pacientes; no ve historias clínicas"],
   ["privacy", "Privacidad", "pedidos de las pacientes sobre sus datos"],
 ];
 
@@ -1016,6 +1016,7 @@ function accountCard() {
 
 const MEMBER_STATES = {
   active: ["Activa", "ok"], invited: ["Falta usar su enlace", "wait"], key_only: ["Entra con llave", "neutral"],
+  revoked: ["Sin acceso", "neutral"],
 };
 
 /** A personal link to hand over: copy it and send it by WhatsApp (never shown again). */
@@ -1033,13 +1034,15 @@ function linkBox(who, made) {
 }
 
 async function teamCard() {
-  const members = (await api("/v1/admin/team")).filter((m) => m.status !== "revoked");
+  let members = await api("/v1/admin/team");
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
-  const rows = members.map((m) => {
+  const list = el("div", { class: "stack", "aria-live": "polite" });
+  const inactive = el("input", { type: "checkbox", checked: members.length > 0 && members.every((m) => m.status === "revoked") });
+  const memberRow = (m) => {
     const [label, cls] = MEMBER_STATES[m.status] || [m.status, "neutral"];
     const actions = [];
     const shown = el("div");
-    if (m.email && m.id !== state.session.id) {
+    if (m.email && m.id !== state.session.id && m.status !== "revoked") {
       const access = el("button", { class: "btn small", type: "button", text: "Enlace de acceso" });
       access.addEventListener("click", async () => {
         access.disabled = true;
@@ -1050,7 +1053,7 @@ async function teamCard() {
       });
       actions.push(access);
     }
-    if (m.id !== state.session.id) {
+    if (m.id !== state.session.id && m.status !== "revoked") {
       const drop = el("button", { class: "btn small", type: "button", text: "Quitar acceso" });
       drop.addEventListener("click", async () => {
         if (!sure(drop, "Sí, quitar acceso")) return;
@@ -1060,13 +1063,29 @@ async function teamCard() {
       });
       actions.push(drop);
     }
+    if (m.id !== state.session.id) {
+      const erase = el("button", { class: "btn small", type: "button", text: "Eliminar perfil" });
+      erase.addEventListener("click", () => deleteTeamProfileDialog(m));
+      actions.push(erase);
+    }
     return el("div", { class: "stack" },
       el("div", { class: "doc" },
         el("span", { class: "what" }, el("strong", { text: m.name }), el("br"),
           el("span", { class: "muted", text: `${m.email || "sin correo"} · ${roleList(m.roles)}` })),
-        el("span", { class: `chip ${cls}`, text: label }), ...actions),
+        el("span", { class: `chip ${cls}`, text: label }),
+        m.id === state.session.id ? el("span", { class: "chip neutral", text: "Tu cuenta actual" }) : null,
+        ...actions),
+      m.id === state.session.id ? el("p", { class: "muted", text: "Para eliminar esta cuenta, entra con otra cuenta de Administración. Así conservas acceso al consultorio." }) : null,
       shown);
-  });
+  };
+  const showMembers = () => {
+    const visible = members.filter((m) => inactive.checked || m.status !== "revoked");
+    list.replaceChildren(...(visible.length ? visible.map(memberRow) : [empty(members.length
+      ? "No hay perfiles con acceso. Marca «Mostrar perfiles sin acceso» para revisar los que conservan su correo."
+      : "Todavía no hay perfiles registrados en el equipo.")]));
+  };
+  inactive.addEventListener("change", showMembers);
+  showMembers();
 
   const name = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: Ana Pérez" });
   const email = el("input", { type: "email", maxlength: "254", required: true, autocomplete: "off", spellcheck: "false" });
@@ -1090,16 +1109,66 @@ async function teamCard() {
       form.replaceWith(linkBox(made.name, made));
       say(status, `Listo: ${made.name} quedó en el equipo. Ahora envíale su enlace.`, "done");
     } catch (err) {
-      say(status, err.status === 409 ? "Ese correo ya lo usa otra persona del equipo."
-        : err.status === 422 ? "Ese correo no parece válido. Revísalo." : humanError(err), "error");
+      let message = err.status === 409 ? "Ese correo ya está registrado. Revisa los perfiles del equipo antes de volver a invitarlo."
+        : err.status === 422 ? "Ese correo no parece válido. Revísalo." : humanError(err);
+      if (err.status === 409) {
+        try {
+          members = await api("/v1/admin/team");
+          const existing = members.find((m) => (m.email || "").toLowerCase() === email.value.trim().toLowerCase());
+          if (existing?.status === "revoked") {
+            inactive.checked = true;
+            message = "Ese correo pertenece a un perfil sin acceso que se muestra arriba. Si era de prueba, usa «Eliminar perfil» y después podrás volver a invitarlo.";
+          } else if (existing?.id === state.session.id) {
+            message = "Ese correo es el de tu cuenta actual, que ya aparece en el equipo. No necesitas invitarte de nuevo.";
+          }
+          showMembers();
+        } catch { /* Keep the original conflict explicit if refreshing the list fails. */ }
+      }
+      say(status, message, "error");
       invite.disabled = false;
     }
   });
   return card("Equipo", "",
     el("p", { class: "muted", text: "Cada persona entra con su correo, su contraseña y el código de su app autenticadora. Si alguien olvida su contraseña o cambia de celular, dale un «Enlace de acceso». Cuando alguien deja el consultorio, quítale el acceso ese mismo día." }),
-    ...(rows.length ? rows : [empty("Todavía no hay nadie más en el equipo.")]),
+    el("p", { class: "muted", text: "«Quitar acceso» conserva el perfil y su correo. «Eliminar perfil» retira los datos de acceso y permite volver a invitar ese correo con una cuenta nueva; la autoría clínica se conserva." }),
+    el("label", { class: "check" }, inactive, "Mostrar perfiles sin acceso"), list,
     el("details", {}, el("summary", { text: "Agregar a una persona" }), form),
     status);
+}
+
+function deleteTeamProfileDialog(member) {
+  const confirmation = el("input", { type: "text", autocomplete: "off", spellcheck: "false" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const erase = el("button", { class: "btn primary", type: "submit", disabled: true, text: "Confirmar eliminación" });
+  const cancel = el("button", { class: "btn", type: "button", text: "Cancelar" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: `Se quitará el acceso de ${member.name} y se eliminarán su nombre y correo de inicio de sesión, contraseña y configuración de autenticación. Podrás volver a invitar ese correo con una cuenta nueva.` }),
+    el("p", { text: "Su perfil profesional dejará de ofrecer reservas nuevas. Las citas, los registros clínicos y su autoría se conservan; no se transfieren a la cuenta nueva." }),
+    el("p", { class: "muted", text: "Esta eliminación de datos de acceso no se puede deshacer." }),
+    el("label", { class: "field" }, "Escribe el nombre del perfil para confirmar", confirmation),
+    el("div", { class: "row tight" }, erase, cancel), status);
+  const d = dialog("Eliminar perfil del equipo", form);
+  let busy = false;
+  confirmation.addEventListener("input", () => { erase.disabled = busy || confirmation.value !== member.name; });
+  cancel.addEventListener("click", () => { if (!busy) d.close(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (busy || confirmation.value !== member.name) return;
+    busy = true;
+    erase.disabled = true;
+    cancel.disabled = true;
+    say(status, "Eliminando perfil…");
+    try {
+      await api(`/v1/admin/team/${encodeURIComponent(member.id)}?erase_profile=true`, { method: "DELETE" });
+      d.close();
+      route();
+    } catch (err) {
+      say(status, err.status === 409 ? "No puedes eliminar la cuenta con la que estás entrando. Usa otra cuenta de Administración." : humanError(err), "error");
+      busy = false;
+      erase.disabled = confirmation.value !== member.name;
+      cancel.disabled = false;
+    }
+  });
 }
 
 // Tests: start from a public-domain template, paste the official wording of each item.
@@ -1302,6 +1371,28 @@ VIEWS.pacientes = async (main, arg) => {
   const search = el("input", { type: "search", placeholder: "Buscar por nombre", "aria-label": "Buscar paciente por nombre" });
   const box = el("div", { class: "table-box" });
   const restricted = el("input", { type: "checkbox" });
+  const canEdit = isAdmin() || state.session.roles.includes("reception");
+  const canDelete = isAdmin() || state.session.roles.includes("privacy");
+  const actions = (patient) => {
+    if (patient.restricted) return el("td", { class: "muted", text: "Ficha restringida" });
+    const feedback = el("p", { class: "status", role: "status" });
+    const make = (label, open) => {
+      const button = el("button", { class: "btn small", type: "button", text: label, "aria-label": `${label}: ${patient.display_name}` });
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const screen = turn;
+        try {
+          const full = await api(`/v1/crm/patients/${encodeURIComponent(patient.id)}`);
+          if (screen === turn && state.session) open(full);
+        } catch (err) { say(feedback, humanError(err), "error"); }
+        button.disabled = false;
+      });
+      return button;
+    };
+    return el("td", {}, el("div", { class: "row tight" },
+      canEdit ? make("Editar datos", editPatientDialog) : null,
+      canDelete ? make("Eliminar datos", deletePatientDialog) : null), feedback);
+  };
   let searchTurn = 0;
   const show = async () => {
     const mine = ++searchTurn;
@@ -1317,12 +1408,14 @@ VIEWS.pacientes = async (main, arg) => {
     if (!q && !restricted.checked) state.patients = rows;
     box.replaceChildren(rows.length
       ? el("table", {},
-        el("thead", {}, el("tr", {}, el("th", { text: "Paciente" }), el("th", { text: "Desde" }), el("th", { text: "Estado" }))),
+        el("thead", {}, el("tr", {}, el("th", { text: "Paciente" }), el("th", { text: "Desde" }), el("th", { text: "Estado" }),
+          canEdit || canDelete ? el("th", { text: "Acciones" }) : null)),
         el("tbody", {}, ...rows.map((p) => el("tr", {},
           el("td", {}, el("a", { class: "who", href: `#paciente/${encodeURIComponent(p.id)}` },
             el("span", { class: "ini", "aria-hidden": "true", text: initials(p.display_name) }), el("span", { text: p.display_name }))),
           el("td", { text: p.created_at ? longDate(p.created_at.slice(0, 10)) : "" }),
-          el("td", {}, p.restricted ? el("span", { class: "chip neutral", text: "Restringido" }) : el("span", { class: "chip ok", text: "Activo" }))))))
+          el("td", {}, p.restricted ? el("span", { class: "chip neutral", text: "Restringido" }) : el("span", { class: "chip ok", text: "Activo" })),
+          canEdit || canDelete ? actions(p) : null))))
       : empty(q ? "Ningún paciente coincide con esa búsqueda." : "Aún no hay pacientes. Crea el primero."));
   };
   let timer = null;
@@ -1337,10 +1430,11 @@ VIEWS.pacientes = async (main, arg) => {
       box.replaceChildren(el("p", { class: "alert", role: "alert", text: humanError(err) }));
     }), 250);
   });
-  main.replaceChildren(page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
+  main.replaceChildren(...[page("Pacientes", "Toda la información clínica se ve solo con tu rol de psicóloga", link("#pacientes/nuevo", "Nuevo paciente", "btn primary")),
+    !canDelete ? el("p", { class: "muted", text: "Para eliminar datos de pacientes necesitas Administración o Privacidad. Revisa tus permisos en Ajustes → Tu cuenta." }) : null,
     patientListNotice ? el("p", { class: "status done", role: "status", text: patientListNotice }) : null,
     el("label", { class: "field" }, "Buscar", search),
-    el("label", { class: "check" }, restricted, "Mostrar fichas restringidas"), box);
+    el("label", { class: "check" }, restricted, "Mostrar fichas restringidas"), box].filter(Boolean));
   patientListNotice = "";
   await show();
 };
@@ -1407,6 +1501,7 @@ VIEWS.paciente = async (main, id, tab = "resumen") => {
       !patient.restricted && canEdit ? edit : null,
       !patient.restricted && canDelete ? remove : null,
       patient.restricted ? null : access, patient.restricted ? null : visit),
+    !patient.restricted && !canDelete ? el("p", { class: "muted", text: "Para eliminar los datos de esta ficha, entra con Administración o Privacidad. Tus permisos actuales se muestran en Ajustes → Tu cuenta." }) : null,
     patient.restricted ? el("div", { class: "notice", role: "note" }, el("span", { text: "Esta paciente pidió borrar sus datos: la ficha está restringida y solo se conserva la historia clínica que exige la ley." })) : null,
     tabs, body].filter(Boolean));
   const render = { resumen: tabResumen, historia: tabHistoria, tests: tabTests, documentos: tabDocumentos, citas: tabCitas, mensajes: tabMensajes }[tab] || tabResumen;
@@ -1487,7 +1582,7 @@ function deletePatientDialog(patient) {
       patientNames = {};
       patientListNotice = "Datos del paciente eliminados. El historial clínico, si existe, permanece restringido.";
       d.close();
-      location.hash = "#pacientes";
+      if (location.hash === "#pacientes") route(); else location.hash = "#pacientes";
       refreshBadges();
     } catch (err) {
       say(status, err.status === 409 ? "Hay una conversación en curso. Espera a que termine e inténtalo de nuevo." : humanError(err), "error");

@@ -255,7 +255,7 @@ def test_e_mail_sign_in_with_an_authenticator_and_the_team_card(server: str, bro
     admin.fill("input[placeholder='Ej.: Ana Pérez']", "Luis Marketing")
     admin.fill("details input[type=email]", "luis@example.test")
     admin.check("details input[value=marketing]")
-    admin.click("text=Invitar")
+    admin.get_by_role("button", name="Invitar", exact=True).click()
     admin.wait_for_selector("text=Envíale este enlace a Luis Marketing")
     assert "#clave=" in admin.input_value("input[aria-label='Enlace de acceso de Luis Marketing']")
     admin.click(f"{row} >> text=Enlace de acceso")
@@ -275,6 +275,145 @@ def _signed_in(browser: Any, server: str, key: str) -> tuple[Any, list[str]]:
     page.click("#signin-form button[type=submit]")
     page.wait_for_selector("#app:not([hidden])")
     return page, problems
+
+
+def test_revoked_team_profile_can_be_found_erased_and_invited_again(
+    server: str, browser: Any
+) -> None:
+    made = httpx.post(
+        f"{server}/v1/admin/team",
+        json={"name": "Perfil de prueba", "email": "retirado@example.test", "roles": ["marketing"]},
+        headers=SERVICE,
+    ).json()
+    httpx.delete(f"{server}/v1/admin/team/{made['id']}", headers=SERVICE).raise_for_status()
+    page, problems = _signed_in(browser, server, _staff_key(server))
+    page.click("a[data-nav=ajustes]")
+    page.get_by_text("Mostrar perfiles sin acceso", exact=True).wait_for()
+    row = page.locator(".doc").filter(has_text="retirado@example.test")
+    assert row.count() == 0
+    # The duplicate points to the hidden profile instead of calling it another person.
+    page.get_by_text("Agregar a una persona", exact=True).click()
+    page.fill("input[placeholder='Ej.: Ana Pérez']", "Perfil de reemplazo")
+    page.fill("details input[type=email]", "retirado@example.test")
+    page.check("details input[value=marketing]")
+    page.get_by_role("button", name="Invitar", exact=True).click()
+    page.get_by_text("Ese correo pertenece a un perfil sin acceso", exact=False).wait_for()
+    row.get_by_text("Sin acceso", exact=True).wait_for()
+    assert page.get_by_label("Mostrar perfiles sin acceso", exact=True).is_checked()
+    row.get_by_role("button", name="Eliminar perfil", exact=True).click()
+    d = page.get_by_role("dialog", name="Eliminar perfil del equipo", exact=True)
+    confirm = d.get_by_role("button", name="Confirmar eliminación", exact=True)
+    assert confirm.is_disabled()
+    d.get_by_label("Escribe el nombre del perfil para confirmar", exact=True).fill("no coincide")
+    assert confirm.is_disabled()
+    d.get_by_role("button", name="Cancelar", exact=True).click()
+    assert row.is_visible()
+    row.get_by_role("button", name="Eliminar perfil", exact=True).click()
+    d.get_by_label("Escribe el nombre del perfil para confirmar", exact=True).fill(
+        "Perfil de prueba"
+    )
+    pattern = "**/v1/admin/team/*?erase_profile=true"
+    page.route(
+        pattern,
+        lambda route: route.fulfill(
+            status=503, content_type="application/json", body='{"detail":"temporarily unavailable"}'
+        ),
+    )
+    confirm.click()
+    d.locator(".status.error").wait_for()
+    assert d.is_visible() and not confirm.is_disabled()
+    assert any(
+        m["id"] == made["id"] for m in httpx.get(f"{server}/v1/admin/team", headers=SERVICE).json()
+    )
+    page.unroute(pattern)
+    confirm.click()
+    row.wait_for(state="detached")
+    # Reuse the same e-mail by creating a new account, not reviving the old access.
+    page.get_by_text("Agregar a una persona", exact=True).click()
+    page.fill("input[placeholder='Ej.: Ana Pérez']", "Perfil de reemplazo")
+    page.fill("details input[type=email]", "retirado@example.test")
+    page.check("details input[value=marketing]")
+    page.get_by_role("button", name="Invitar", exact=True).click()
+    page.get_by_text("Envíale este enlace a Perfil de reemplazo", exact=False).wait_for()
+    team = httpx.get(f"{server}/v1/admin/team", headers=SERVICE).json()
+    replacement = next(m for m in team if m["email"] == "retirado@example.test")
+    assert replacement["id"] != made["id"]
+    assert all(m["id"] != made["id"] for m in team)
+    assert not problems, problems
+
+
+def test_only_revoked_team_members_are_shown_and_current_account_is_protected(
+    server: str, browser: Any
+) -> None:
+    made = httpx.post(
+        f"{server}/v1/admin/team",
+        json={"name": "Perfil retirado", "email": "solo@example.test", "roles": ["reception"]},
+        headers=SERVICE,
+    ).json()
+    httpx.delete(f"{server}/v1/admin/team/{made['id']}", headers=SERVICE).raise_for_status()
+    page, problems = _signed_in(browser, server, SERVICE["X-API-Key"])
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.click("a[data-nav=ajustes]")
+    row = page.locator(".doc").filter(has_text="solo@example.test")
+    row.get_by_text("Sin acceso", exact=True).wait_for()
+    assert page.get_by_label("Mostrar perfiles sin acceso", exact=True).is_checked()
+    row.get_by_role("button", name="Eliminar perfil", exact=True).click()
+    page.get_by_role("dialog", name="Eliminar perfil del equipo").wait_for()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.get_by_role("button", name="Cancelar", exact=True).click()
+    # A real administrator can see their own row but cannot remove their own login.
+    own_key = _staff_key(server)
+    own, own_problems = _signed_in(browser, server, own_key)
+    own.click("a[data-nav=ajustes]")
+    current = own.locator(".stack").filter(has=own.get_by_text("Tu cuenta actual", exact=True)).last
+    own.get_by_text("Para eliminar esta cuenta", exact=False).wait_for()
+    assert current.get_by_role("button", name="Eliminar perfil", exact=True).count() == 0
+    assert current.get_by_role("button", name="Quitar acceso", exact=True).count() == 0
+    assert not problems and not own_problems, (problems, own_problems)
+
+
+def test_patient_list_actions_preserve_contacts_and_delete_a_test_registration(
+    server: str, browser: Any
+) -> None:
+    original = {
+        "id": "list-cleanup",
+        "display_name": "Registro de prueba",
+        "phone": "+593990000000",
+        "email": "datos@example.test",
+        "birth_date": "1990-01-01",
+    }
+    httpx.post(f"{server}/v1/crm/patients", json=original, headers=SERVICE).raise_for_status()
+    page, problems = _signed_in(browser, server, SERVICE["X-API-Key"])
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.click("a[data-nav=pacientes]")
+    page.get_by_role("button", name="Editar datos: Registro de prueba", exact=True).click()
+    d = page.get_by_role("dialog", name="Editar datos del paciente", exact=True)
+    assert d.get_by_label("Correo", exact=True).input_value() == original["email"]
+    assert d.get_by_label("Fecha de nacimiento", exact=True).input_value() == original["birth_date"]
+    d.get_by_label("Nombre y apellido", exact=True).fill("Registro corregido")
+    d.get_by_role("button", name="Guardar datos", exact=True).click()
+    page.get_by_role("button", name="Eliminar datos: Registro corregido", exact=True).wait_for()
+    assert "nullnull" not in page.inner_text("#view")
+    after = httpx.get(f"{server}/v1/crm/patients/list-cleanup", headers=SERVICE).json()
+    assert after["phone"] == original["phone"]
+    assert after["email"] == original["email"] and after["birth_date"] == original["birth_date"]
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.get_by_role("button", name="Eliminar datos: Registro corregido", exact=True).click()
+    d = page.get_by_role("dialog", name="Eliminar datos del paciente", exact=True)
+    d.get_by_label("Escribe el nombre del paciente para confirmar", exact=True).fill(
+        "Registro corregido"
+    )
+    d.get_by_role("button", name="Confirmar eliminación", exact=True).click()
+    page.get_by_role("heading", name="Pacientes", exact=True).wait_for()
+    page.get_by_text("Datos del paciente eliminados.", exact=False).wait_for()
+    assert (
+        page.get_by_role("button", name="Eliminar datos: Registro corregido", exact=True).count()
+        == 0
+    )
+    saved = httpx.get(f"{server}/v1/crm/patients/list-cleanup", headers=SERVICE).json()
+    assert saved["restricted"] and saved["display_name"] == "Paciente eliminado"
+    assert not saved["email"] and not saved["phone"]
+    assert not problems, problems
 
 
 def test_social_connections_register_show_readiness_and_disconnect(
