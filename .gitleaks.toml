@@ -31,3 +31,13 @@ condition = "AND"
 paths = ['''^docs/evidence/saas-audit-2026-10-19/final-start-manifest\.json$''']
 regexTarget = "secret"
 regexes = ['''^(?:9ecd9b9118f446007c9cac789f4e0af566b1106d30ab038a1d9ccfb5c86a99dc|594e5bf9929a9a39b8c83f0a2bb70b38421a62acdc1e2ec94e3efe2d5ab77980|27917eaa7abc82342bb94f732662ede3d58b2749f77b79f16ff3b58989ce3214|ee498e1c00e1de5655a3cef34cc178d1ba866c2b141c03c338b6a6039d7fc590)$''']
+
+
+# Verified on 2026-10-26 against the exact Git blob in the published evidence branch.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Verified SHA-256 of the prior release secret-scan evidence file"
+condition = "AND"
+paths = ['''^docs/evidence/render-release-2026-10-20/manifest\.json$''']
+regexTarget = "secret"
+regexes = ['''^bc2fa63cb5ba2122741b03d9c636a867962ff31df4fada22b36a073d655519eb$''']
