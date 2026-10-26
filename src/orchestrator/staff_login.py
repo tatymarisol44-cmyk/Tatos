@@ -261,7 +261,7 @@ class StaffLogins:
     def _url(self, token: str) -> str:
         return f"{self.settings.public_base_url.rstrip('/')}/app#clave={token}"
 
-    async def _login(self, conn: Any, *where: Any) -> Any:
+    async def _login(self, conn: Any, *where: Any, lock: bool = False) -> Any:
         query = (
             select(staff_logins, principals.c.revoked_at, principals.c.roles, principals.c.kind)
             .select_from(
@@ -275,6 +275,8 @@ class StaffLogins:
             )
             .where(and_(*where))
         )
+        if lock:
+            query = query.with_for_update(of=principals)
         return (await conn.execute(query)).mappings().first()
 
     async def _row(self, tenant: str, pid: str) -> Any:
@@ -295,6 +297,16 @@ class StaffLogins:
         challenge_id = secrets.token_hex(16)
         now = utcnow()
         async with self.db.engine.begin() as conn:
+            row = await self._login(
+                conn,
+                staff_logins.c.tenant == tenant,
+                staff_logins.c.principal_id == pid,
+                lock=True,
+            )
+            if row is None or row["revoked_at"] is not None or row["kind"] != STAFF:
+                if purpose == SIGN_IN:
+                    raise SignInError()
+                raise LinkError()
             # One open challenge of each kind per person: a new one replaces the old.
             await conn.execute(
                 update(login_challenges)
@@ -385,6 +397,10 @@ class StaffLogins:
             rows = (await conn.execute(query)).mappings().all()
         out = []
         for r in rows:
+            # Erased access profiles leave only the principal used by audit/clinical
+            # authorship. They are not members to invite, recover or remove again.
+            if r["revoked_at"] is not None and r["email"] is None:
+                continue
             if r["revoked_at"] is not None:
                 status = "revoked"
             elif r["email"] is None:
@@ -477,6 +493,15 @@ class StaffLogins:
 
     async def _attach(self, tenant: str, pid: str, actor: str, email: str, name: str) -> None:
         async with self.db.engine.begin() as conn:
+            principal = (
+                await conn.execute(
+                    select(principals.c.kind, principals.c.revoked_at)
+                    .where(and_(principals.c.tenant == tenant, principals.c.id == pid))
+                    .with_for_update()
+                )
+            ).first()
+            if principal is None or principal.kind != STAFF or principal.revoked_at is not None:
+                raise ValueError("this staff account is no longer active")
             await conn.execute(
                 insert(staff_logins).values(
                     tenant=tenant,
@@ -499,7 +524,10 @@ class StaffLogins:
         if row is None or row["revoked_at"] is not None:
             raise KeyError(pid)
         token = secrets.token_urlsafe(32)
-        await self._challenge(tenant, pid, LINK, timedelta(hours=LINK_HOURS), _sha(token))
+        try:
+            await self._challenge(tenant, pid, LINK, timedelta(hours=LINK_HOURS), _sha(token))
+        except LinkError as exc:
+            raise KeyError(pid) from exc
         await self.audit.record(tenant, actor, "auth.link.created", f"principal/{pid}")
         expires = utcnow() + timedelta(hours=LINK_HOURS)
         return {"link": self._url(token), "link_expires_at": expires.isoformat()}
@@ -776,23 +804,73 @@ class StaffLogins:
                     total += int((await conn.execute(delete(table).where(where))).rowcount)
         return total
 
-    async def remove(self, tenant: str, pid: str, actor: str) -> bool:
+    async def remove(
+        self, tenant: str, pid: str, actor: str, *, erase_profile: bool = False
+    ) -> bool:
         """The person leaves the team: access revoked, every session ended. False for an
         unknown or non-staff id; ValueError for one's own access (nobody locks themselves
-        out by mistake)."""
+        out by mistake). With explicit erasure, remove the e-mail login and pending
+        credentials too, freeing its e-mail for a fresh invitation. Stable principals,
+        clinical records and audit authorship remain; an associated professional is
+        disabled for new bookings. All changes commit together."""
         if pid == actor:
             raise ValueError("you cannot remove your own access")
-        async with self.db.engine.connect() as conn:
-            kind = (
+        now = utcnow()
+        async with self.db.engine.begin() as conn:
+            row = (
                 await conn.execute(
-                    select(principals.c.kind).where(
-                        and_(principals.c.tenant == tenant, principals.c.id == pid)
+                    select(principals.c.kind, principals.c.revoked_at)
+                    .where(and_(principals.c.tenant == tenant, principals.c.id == pid))
+                    .with_for_update()
+                )
+            ).first()
+            if row is None or row.kind != STAFF:
+                return False
+            login_where = and_(staff_logins.c.tenant == tenant, staff_logins.c.principal_id == pid)
+            if row.revoked_at is not None:
+                if not erase_profile:
+                    return False
+                login = await conn.execute(select(staff_logins.c.email).where(login_where))
+                if login.first() is None:
+                    return False
+            else:
+                await conn.execute(
+                    update(principals)
+                    .where(and_(principals.c.tenant == tenant, principals.c.id == pid))
+                    .values(revoked_at=now)
+                )
+                await self.audit.record_in(
+                    conn, tenant, actor, "principal.revoked", f"principal/{pid}"
+                )
+            await conn.execute(
+                update(staff_sessions)
+                .where(
+                    and_(
+                        staff_sessions.c.tenant == tenant,
+                        staff_sessions.c.principal_id == pid,
+                        staff_sessions.c.revoked_at.is_(None),
                     )
                 )
-            ).scalar()
-        if kind != STAFF:
-            return False
-        done = await self.principals.revoke(tenant, pid, actor)
-        if done:
-            await self.principals.end_sessions(tenant, pid)
-        return done
+                .values(revoked_at=now)
+            )
+            if erase_profile:
+                from orchestrator.establishment import professionals
+
+                await conn.execute(
+                    delete(login_challenges).where(
+                        and_(
+                            login_challenges.c.tenant == tenant,
+                            login_challenges.c.principal_id == pid,
+                        )
+                    )
+                )
+                await conn.execute(delete(staff_logins).where(login_where))
+                await conn.execute(
+                    update(professionals)
+                    .where(and_(professionals.c.tenant == tenant, professionals.c.staff_id == pid))
+                    .values(active=False)
+                )
+                await self.audit.record_in(
+                    conn, tenant, actor, "auth.profile.erased", f"principal/{pid}"
+                )
+        return True

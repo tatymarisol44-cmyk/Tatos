@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from orchestrator import staff_login
 from orchestrator.api.app import create_app
+from orchestrator.auth import principals, staff_sessions
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.llm import FakeLLM
@@ -285,6 +286,198 @@ def test_removing_a_member_ends_their_sessions(client: TestClient, clock: Clock)
     assert client.post("/v1/admin/team/ana.perez/link", headers=ADMIN).status_code == 404
     team = {t["id"]: t["status"] for t in client.get("/v1/admin/team", headers=ADMIN).json()}
     assert team["ana.perez"] == "revoked"
+
+
+def test_erasing_a_member_frees_the_email_and_keeps_clinical_authorship(
+    client: TestClient, clock: Clock, settings: Settings
+) -> None:
+    settings.tenant_packs = {"acme": "ec-psychologist"}
+    member = add(client, roles=("reviewer",))
+    secret, session = enroll(client, clock, member["link"])
+    client.post(
+        "/v1/crm/patients", json={"id": "history", "display_name": "Ejemplo"}, headers=ADMIN
+    ).raise_for_status()
+    document = client.post(
+        "/v1/clinical/patients/history/documents",
+        json={"doc_type": "session_note", "body": "Historia de ejemplo que se conserva"},
+        headers=session,
+    )
+    assert document.status_code == 201, document.text
+    client.post(
+        "/v1/admin/professionals",
+        json={
+            "professional_id": "prof-example",
+            "display_name": "Profesional de ejemplo",
+            "pack_id": "ec-psychologist",
+            "staff_id": member["id"],
+        },
+        headers=ADMIN,
+    ).raise_for_status()
+    clock.tick()
+    pending_sign_in = client.post("/v1/auth/sign-in", json={"email": ANA, "password": GOOD}).json()
+    recovery = client.post(f"/v1/admin/team/{member['id']}/link", headers=ADMIN).json()
+    pending_enroll = client.post(
+        "/v1/auth/link", json={"token": token_of(recovery["link"]), "password": GOOD}
+    ).json()
+    path = f"/v1/admin/team/{member['id']}?erase_profile=true"
+    assert client.delete(path, headers=OTHER).status_code == 404
+    assert client.delete(path, headers=ADMIN).status_code == 204
+    assert client.get("/v1/session", headers=session).status_code == 401
+    assert client.post("/v1/auth/sign-in", json={"email": ANA, "password": GOOD}).status_code == 401
+    assert (
+        client.post(
+            "/v1/auth/code",
+            json={"challenge": pending_sign_in["challenge"], "code": code(secret, clock)},
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/v1/auth/link", json={"token": token_of(recovery["link"]), "password": GOOD}
+        ).status_code
+        == 410
+    )
+    assert (
+        client.post(
+            "/v1/auth/enroll",
+            json={
+                "challenge": pending_enroll["challenge"],
+                "code": code(unb32(pending_enroll["secret"]), clock),
+            },
+        ).status_code
+        == 410
+    )
+    assert all(m["id"] != member["id"] for m in client.get("/v1/admin/team", headers=ADMIN).json())
+    assert client.delete(path, headers=ADMIN).status_code == 404
+    professionals = client.get("/v1/admin/professionals", headers=ADMIN).json()
+    assert (
+        next(p for p in professionals if p["professional_id"] == "prof-example")["active"] is False
+    )
+
+    async def stored() -> tuple[Any, list[Any], list[Any], list[Any]]:
+        orch = client.app.state.orchestrator  # type: ignore[attr-defined]
+        async with orch.db.engine.connect() as conn:
+            principal = (
+                (await conn.execute(select(principals).where(principals.c.id == member["id"])))
+                .mappings()
+                .one()
+            )
+            logins = list((await conn.execute(select(staff_logins))).all())
+            challenges = list((await conn.execute(select(login_challenges))).all())
+            sessions = list((await conn.execute(select(staff_sessions))).mappings().all())
+            return principal, logins, challenges, sessions
+
+    principal, logins, challenges, sessions = client.portal.call(stored)  # type: ignore[union-attr]
+    assert principal["revoked_at"] is not None
+    assert not logins and not challenges
+    assert sessions and all(s["revoked_at"] is not None for s in sessions)
+    fresh = add(client, roles=("reviewer",))
+    assert fresh["id"] != member["id"]  # authorship is not transferred to the replacement
+    _, reviewer = enroll(client, clock, fresh["link"])
+    records = client.get("/v1/clinical/patients/history/documents", headers=reviewer).json()
+    assert records[0]["document_id"] == document.json()["document_id"]
+    assert records[0]["author_id"] == member["id"]
+    assert records[0]["body"] == "Historia de ejemplo que se conserva"
+    events = client.get("/v1/audit", headers=ADMIN).json()
+    assert any(e["action"] == "auth.profile.erased" for e in events)
+
+
+def test_a_previously_revoked_profile_can_be_erased_then_invited_again(
+    client: TestClient, clock: Clock
+) -> None:
+    member = add(client)
+    path = f"/v1/admin/team/{member['id']}"
+    assert client.delete(path, headers=ADMIN).status_code == 204
+    team = client.get("/v1/admin/team", headers=ADMIN).json()
+    assert team[0]["status"] == "revoked" and team[0]["email"] == ANA
+    duplicate = {"name": "Nueva cuenta", "email": ANA, "roles": ["reception"]}
+    assert client.post("/v1/admin/team", json=duplicate, headers=ADMIN).status_code == 409
+    assert client.delete(path + "?erase_profile=true", headers=ADMIN).status_code == 204
+    assert client.get("/v1/admin/team", headers=ADMIN).json() == []
+    assert client.post("/v1/admin/team", json=duplicate, headers=ADMIN).status_code == 201
+
+
+def test_erasure_requires_an_administrator_and_cannot_remove_the_current_account(
+    client: TestClient, clock: Clock
+) -> None:
+    target = add(client)
+    admin = add(client, "jefa@example.test", roles=("admin",))
+    _, signed_admin = enroll(client, clock, admin["link"])
+    _, reception = enroll(client, clock, target["link"])
+    path = f"/v1/admin/team/{target['id']}?erase_profile=true"
+    assert client.delete(path, headers=reception).status_code == 403
+    assert client.delete(path, headers=OTHER).status_code == 404
+    assert (
+        client.delete(
+            f"/v1/admin/team/{admin['id']}?erase_profile=true", headers=signed_admin
+        ).status_code
+        == 409
+    )
+    assert client.get("/v1/session", headers=signed_admin).status_code == 200
+    assert client.get("/v1/session", headers=reception).status_code == 200
+
+
+def test_late_auth_work_cannot_recreate_an_erased_profile(client: TestClient, clock: Clock) -> None:
+    member = add(client)
+    assert (
+        client.delete(
+            f"/v1/admin/team/{member['id']}?erase_profile=true", headers=ADMIN
+        ).status_code
+        == 204
+    )
+    orch = client.app.state.orchestrator  # type: ignore[attr-defined]
+
+    async def late() -> None:
+        with pytest.raises(ValueError, match="no longer active"):
+            await orch.staff_logins._attach("acme", member["id"], member["id"], ANA, "Ejemplo")
+        with pytest.raises(staff_login.LinkError):
+            await orch.staff_logins._challenge(
+                "acme",
+                member["id"],
+                staff_login.ENROLL,
+                timedelta(minutes=10),
+                "-",
+                "sealed-example",
+            )
+        with pytest.raises(staff_login.SignInError):
+            await orch.staff_logins._challenge(
+                "acme", member["id"], staff_login.SIGN_IN, timedelta(minutes=10), "-"
+            )
+        async with orch.db.engine.connect() as conn:
+            assert not (await conn.execute(select(staff_logins))).all()
+            assert not (await conn.execute(select(login_challenges))).all()
+
+    client.portal.call(late)  # type: ignore[union-attr]
+
+
+def test_profile_erasure_rolls_back_if_the_audit_cannot_be_written(
+    client: TestClient, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    member = add(client)
+    _, session = enroll(client, clock, member["link"])
+    orch = client.app.state.orchestrator  # type: ignore[attr-defined]
+    original = orch.audit.record_in
+
+    async def fail_erasure(conn: Any, tenant: str, actor: str, action: str, resource: str) -> None:
+        if action == "auth.profile.erased":
+            raise RuntimeError("synthetic audit outage")
+        await original(conn, tenant, actor, action, resource)
+
+    monkeypatch.setattr(orch.audit, "record_in", fail_erasure)
+    with pytest.raises(RuntimeError, match="synthetic audit outage"):
+        client.delete(f"/v1/admin/team/{member['id']}?erase_profile=true", headers=ADMIN)
+    monkeypatch.setattr(orch.audit, "record_in", original)
+    assert client.get("/v1/session", headers=session).status_code == 200
+    team = client.get("/v1/admin/team", headers=ADMIN).json()
+    assert team[0]["email"] == ANA and team[0]["status"] == "active"
+    assert (
+        client.post(
+            "/v1/admin/team",
+            json={"name": "Otra", "email": ANA, "roles": ["reception"]},
+            headers=ADMIN,
+        ).status_code
+        == 409
+    )
 
 
 def test_sign_out_everywhere_and_expiry_end_a_session(client: TestClient, clock: Clock) -> None:
