@@ -153,6 +153,18 @@ class InboxService:
         if attention is not None:
             values["attention"] = attention
         async with self.db.engine.begin() as conn:
+            parent = (
+                await conn.execute(
+                    select(inbox_conversations.c.conversation_id)
+                    .where(self._key(tenant, conversation_id))
+                    .with_for_update()
+                )
+            ).first()
+            if parent is None:
+                # Deletion won the race after this notification found its old thread.
+                # Do not leave an orphaned sealed message in the database. A later
+                # notification will obtain a new conversation through _conversation.
+                return conversation_id
             await conn.execute(
                 insert(inbox_messages).values(
                     tenant=tenant,

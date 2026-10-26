@@ -539,6 +539,42 @@ async def test_a_slow_ai_draft_cannot_recreate_deleted_messages(
     assert not messages
 
 
+async def test_inbound_work_started_before_deletion_cannot_leave_orphaned_messages(
+    app: tuple[TestClient, Orchestrator], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, orch = app
+    dra = clinician(client)
+    assert post(client, social("instagram", QUESTION, "delete.inbound", IG_SENDER)) == 200
+    target = only(client, dra, "instagram")["conversation_id"]
+    row = await orch.inbox._row("acme", target)
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def delayed(*args: Any) -> str:
+        started.set()
+        await finish.wait()
+        return str(target)
+
+    monkeypatch.setattr(orch.inbox, "_conversation", delayed)
+    pending = asyncio.create_task(
+        orch.inbox.record_inbound(
+            "acme",
+            "instagram",
+            row["account_id"],
+            IG_SENDER,
+            "Mensaje sintético que ya estaba en proceso.",
+            "ordinary",
+            "delete.late-inbound",
+        )
+    )
+    await asyncio.wait_for(started.wait(), 5)
+    await orch.inbox.delete_conversation("acme", target, "dra.demo")
+    finish.set()
+    await pending
+    async with orch.db.engine.connect() as conn:
+        assert not (await conn.execute(select(inbox_messages))).first()
+        assert not (await conn.execute(select(inbox_conversations))).first()
+
+
 def test_sealed_text_opens_only_with_its_key_and_tenant() -> None:
     sealer = Sealer(b"k" * 32)
     sealed = sealer.seal("acme", "hola, ¿qué tal?")
