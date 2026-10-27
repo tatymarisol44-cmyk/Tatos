@@ -20,6 +20,7 @@ from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
+from orchestrator.billing_store import BillingStore
 from orchestrator.briefing import Briefing
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
@@ -179,6 +180,7 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
+        self.billing = BillingStore(self.db, self.audit, settings)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
@@ -248,6 +250,7 @@ class Orchestrator:
             self.workshops,
             self.reviews,
             self.audit,
+            self.billing,
         )
         self.portal = PatientPortal(self, self.crm, self.campaigns, self.consents, settings)
         self.ready = False

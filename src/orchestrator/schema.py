@@ -15,6 +15,7 @@ from __future__ import annotations
 from orchestrator import (  # noqa: F401  (imported for the tables they register)
     agenda,
     auth,
+    billing_store,
     campaigns,
     clinical_files,
     clinical_records,

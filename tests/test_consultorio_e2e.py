@@ -84,6 +84,148 @@ def browser(subprocess_loop: None) -> Iterator[Any]:
         chromium.close()
 
 
+def test_billing_subscription_transfer_is_verified_by_platform_only(
+    server: str,
+    browser: Any,
+    settings: Settings,
+) -> None:
+    settings.billing_enabled = True
+    settings.billing_monthly_price_cents = 2500  # synthetic price, never a real tariff
+    settings.billing_platform_tenant = "acme"
+    response = httpx.put(
+        server + "/v1/billing/platform/bank",
+        headers=SERVICE,
+        json={"instructions": "Platform demo bank, beneficiary Tatos Demo, account DEMO-001"},
+    )
+    assert response.status_code == 200
+    customer = browser.new_page()
+    problems = _watch(customer)
+    customer.add_init_script('sessionStorage.setItem("consultorio.key", "other-key")')
+    customer.goto(server + "/app#ajustes/pagos")
+    section = customer.get_by_role("region", name="Suscripción de Tatos", exact=True)
+    section.get_by_role(
+        "button", name="Preparar transferencia de la mensualidad", exact=True
+    ).click()
+    dialog = customer.locator("#dialog")
+    dialog.get_by_role("heading", name="Detalle del pago", exact=True).wait_for()
+    assert "25,00" in dialog.inner_text() or "25.00" in dialog.inner_text()
+    assert "Platform demo bank" in dialog.inner_text()
+    dialog.get_by_label("Referencia del movimiento bancario", exact=True).fill(
+        "synthetic-customer-transfer"
+    )
+    dialog.get_by_role("button", name="Informar transferencia", exact=True).click()
+    section.get_by_text("Transferencia por verificar", exact=False).wait_for()
+    assert customer.get_by_role("button", name="Revisar transferencia", exact=True).count() == 0
+    orders = httpx.get(
+        server + "/v1/billing/orders?kind=subscription", headers={"X-API-Key": "other-key"}
+    ).json()
+    invoice_id = orders[0]["invoice_id"]
+    assert (
+        httpx.post(
+            server + f"/v1/billing/orders/{invoice_id}/review",
+            headers={"X-API-Key": "other-key"},
+            json={
+                "approved": True,
+                "note": "Trying to self approve",
+                "bank_transaction_id": "synthetic-bank-id",
+            },
+        ).status_code
+        == 409
+    )
+    operator = browser.new_page()
+    operator_problems = _watch(operator)
+    operator.add_init_script('sessionStorage.setItem("consultorio.key", "test-key")')
+    operator.goto(server + "/app#ajustes/pagos")
+    panel = operator.get_by_role(
+        "region", name="Administración de suscripciones de Tatos", exact=True
+    )
+    panel.get_by_role("button", name="Revisar transferencia", exact=True).click()
+    verify = operator.locator("#dialog")
+    verify.get_by_role("button", name="Confirmar ingreso", exact=True).click()
+    verify.get_by_text("Escribe la nota.", exact=False).wait_for()
+    verify.get_by_label("Identificador del ingreso verificado en el banco", exact=True).fill(
+        "synthetic-bank-id"
+    )
+    verify.get_by_label("Nota de verificación o motivo de corrección", exact=True).fill(
+        "Verificado en el banco de prueba"
+    )
+    verify.get_by_label("Comprobé que el dinero llegó a la cuenta receptora", exact=True).check()
+    verify.get_by_role("button", name="Confirmar ingreso", exact=True).click()
+    panel.get_by_text("Pagado", exact=False).wait_for()
+    customer.reload()
+    section.get_by_text("Pagado", exact=False).wait_for()
+    customer.set_viewport_size({"width": 390, "height": 844})
+    assert customer.evaluate("document.documentElement.scrollWidth<=innerWidth")
+    assert not problems + operator_problems
+    customer.close()
+    operator.close()
+
+
+def test_patient_can_report_own_appointment_transfer_without_marking_it_paid(
+    server: str,
+    browser: Any,
+    settings: Settings,
+) -> None:
+    settings.billing_enabled = True
+    assert (
+        httpx.put(
+            server + "/v1/billing/bank",
+            headers=SERVICE,
+            json={
+                "instructions": "Clinic demo bank, beneficiary Consultorio Demo, account DEMO-002"
+            },
+        ).status_code
+        == 200
+    )
+    response = httpx.post(
+        server + "/v1/crm/patients",
+        headers=SERVICE,
+        json={"id": "patient-billing-demo", "display_name": "Paciente de prueba de pagos"},
+    )
+    assert response.status_code == 201
+    from datetime import timedelta
+
+    from orchestrator.db import utcnow
+
+    visit = httpx.post(
+        server + "/v1/crm/appointments",
+        headers=SERVICE,
+        json={
+            "patient_id": "patient-billing-demo",
+            "starts_at": (utcnow() + timedelta(days=1)).isoformat(),
+            "price": 49.99,
+        },
+    )
+    assert visit.status_code == 201
+    access = httpx.post(
+        server + "/v1/crm/patients/patient-billing-demo/access", headers=SERVICE
+    ).json()
+    for purpose in ["marketing", "analytics", "memory"]:
+        response = httpx.put(
+            server + f"/v1/me/consents/{purpose}",
+            headers={"X-API-Key": access["key"]},
+            json={"granted": False},
+        )
+        assert response.status_code == 200
+    page = browser.new_page(viewport={"width": 390, "height": 844})
+    problems = _watch(page)
+    page.add_init_script('localStorage.setItem("mi.key", ' + json.dumps(access["key"]) + ")")
+    page.goto(server + "/mi/#pagos")
+    page.get_by_role("button", name="Preparar transferencia", exact=True).click()
+    page.get_by_text("Clinic demo bank", exact=False).wait_for()
+    page.get_by_label("Referencia del movimiento bancario", exact=True).fill(
+        "synthetic-patient-transfer"
+    )
+    page.get_by_role("button", name="Informar transferencia", exact=True).click()
+    page.get_by_text("Transferencia por verificar", exact=False).wait_for()
+    rows = httpx.get(server + "/v1/billing/orders", headers=SERVICE).json()
+    assert len(rows) == 1 and rows[0]["state"] == "transfer_review"
+    assert "49,99" in page.inner_text("#view") or "49.99" in page.inner_text("#view")
+    assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
+    assert not problems
+    page.close()
+
+
 def _staff_key(base: str) -> str:
     resp = httpx.post(
         f"{base}/v1/admin/staff",

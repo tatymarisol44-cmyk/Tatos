@@ -828,6 +828,20 @@ function openVisitActions(visit) {
     });
     actions.push(b);
   }
+  if (state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) && !["cancelled", "no_show"].includes(visit.status)) {
+    const collect = el("button", { class: "btn", type: "button", text: "Preparar pago" });
+    collect.addEventListener("click", async () => {
+      collect.disabled = true;
+      const screen = turn;
+      try {
+        const invoice = await api(`/v1/billing/appointments/${encodeURIComponent(visit.id)}`, { method: "POST" });
+        if (screen !== turn) return;
+        $("#dialog").close();
+        billingInvoiceDialog(invoice);
+      } catch (err) { say(status, billingError(err), "error"); collect.disabled = false; }
+    });
+    actions.push(collect);
+  }
   dialog(visit.patient_name,
     el("p", { text: `${longDate(visit.local.slice(0, 10))} · ${visit.local.slice(11)} · ${visit.duration_min} min` }),
     el("p", { class: "muted", text: visit.kind }),
@@ -842,8 +856,10 @@ function openVisitActions(visit) {
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
   if (section === "redes") return socialAccountsView(main);
+  if (section === "pagos") return billingView(main);
   if (section === "test" && which) return testEditor(main, which);
-  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton(),
+    state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) ? link("#ajustes/pagos", "Cobros y suscripción") : null)];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
   if (canReadCare()) parts.push(await onCallCard());
@@ -2464,3 +2480,131 @@ document.addEventListener("DOMContentLoaded", () => {
     signOut();
   }
 });
+
+// Billing: the clinic receives appointments; the platform receives subscriptions.
+const BILLING_STATES = { pending: "Pendiente", transfer_review: "Transferencia por verificar", paid: "Pagado", rejected: "Rechazado", processing: "Procesando", uncertain: "En comprobación", cancelled: "Cancelado" };
+const billingMoney = (cents) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(cents / 100);
+function billingError(err) {
+  if (err instanceof ApiError && err.status === 409) {
+    if (/not enabled/.test(err.detail)) return "Los cobros todavía no están activados. Revisa Cobros y suscripción en Ajustes.";
+    if (/not configured/.test(err.detail)) return "Falta configurar la cuenta receptora o el precio. Revisa Cobros y suscripción en Ajustes.";
+    if (/already used|conflicted/.test(err.detail)) return "Ese movimiento puede estar aplicado a otro pago. Comprueba el registro del banco antes de continuar.";
+    if (/reviewer|operator/.test(err.detail)) return "Este pago debe verificarlo quien recibe el dinero.";
+    if (/being reviewed/.test(err.detail)) return "Esta transferencia ya está pendiente de revisión.";
+    return "No se pudo cambiar el pago. Revisa su estado y vuelve a cargar.";
+  }
+  return humanError(err);
+}
+
+function billingInvoiceDialog(invoice, { review = false, platform = false } = {}) {
+  const status = el("p", { class: "status", role: "status" });
+  const parts = [el("p", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+    el("p", { text: invoice.kind === "subscription" ? "Este pago corresponde al uso de Tatos por todo el consultorio." : "Este pago corresponde a una cita del consultorio." }),
+    el("p", { text: invoice.bank_instructions }),
+    el("p", { class: "muted", text: `Referencia de la orden: ${invoice.invoice_id}` })];
+  if (invoice.transfer_reference) parts.push(el("p", { text: `Referencia informada: ${invoice.transfer_reference}` }));
+  if (invoice.review_note) parts.push(el("p", { text: `Resultado de la revisión: ${invoice.review_note}` }));
+  if (invoice.state === "pending" && isAdmin()) {
+    const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+    const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
+    const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
+      el("p", { class: "muted", text: "Informar la transferencia deja el pago pendiente. La persona que recibe el dinero debe verificar el ingreso." }), send);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); send.disabled = true;
+      try {
+        await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/transfer`, { method: "POST", body: { reference: reference.value.trim() } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); send.disabled = false; }
+    });
+    parts.push(form);
+  }
+  if (review && invoice.state === "transfer_review" && isAdmin()) {
+    const bankId = el("input", { type: "text", minlength: "3", maxlength: "120", autocomplete: "off" });
+    const note = el("textarea", { required: true, minlength: "5", maxlength: "200" });
+    const checked = el("input", { type: "checkbox" });
+    const approve = el("button", { class: "btn primary", type: "button", text: "Confirmar ingreso" });
+    const reject = el("button", { class: "btn", type: "button", text: "Solicitar corrección" });
+    const form = el("div", { class: "stack" }, el("label", { class: "field" }, "Identificador del ingreso verificado en el banco", bankId),
+      el("label", { class: "field" }, "Nota de verificación o motivo de corrección", note),
+      el("label", { class: "check" }, checked, "Comprobé que el dinero llegó a la cuenta receptora"),
+      el("div", { class: "row tight" }, approve, reject));
+    const verify = async (approved) => {
+      if (note.value.trim().length < 5 || (approved && (!checked.checked || bankId.value.trim().length < 3))) {
+        say(status, "Escribe la nota. Para confirmar, verifica el ingreso y escribe su identificador bancario.", "error"); return;
+      }
+      approve.disabled = reject.disabled = true;
+      const path = platform ? `/v1/billing/platform/${encodeURIComponent(invoice.payer_tenant)}/orders/${encodeURIComponent(invoice.invoice_id)}/review`
+        : `/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/review`;
+      try {
+        await api(path, { method: "POST", body: { approved, note: note.value.trim(), bank_transaction_id: approved ? bankId.value.trim() : null } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); approve.disabled = reject.disabled = false; }
+    };
+    approve.addEventListener("click", () => verify(true));
+    reject.addEventListener("click", () => verify(false));
+    parts.push(form);
+  }
+  parts.push(status);
+  dialog("Detalle del pago", ...parts);
+}
+
+function billingRows(invoices, options = {}) {
+  if (!invoices.length) return empty("Todavía no hay órdenes de pago.");
+  return el("div", { class: "stack" }, ...invoices.map((invoice) => {
+    const open = el("button", { class: "btn small", type: "button", text: options.review && invoice.state === "transfer_review" ? "Revisar transferencia" : "Ver pago" });
+    open.addEventListener("click", () => billingInvoiceDialog(invoice, options));
+    return el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+      el("p", { class: "muted", text: invoice.payer_tenant ? `Consultorio: ${invoice.payer_tenant}` : `Referencia: ${invoice.resource_id}` })), open);
+  }));
+}
+
+function billingBankForm(config, platform = false) {
+  const value = platform ? config.platform_bank_instructions : config.clinic_bank_instructions;
+  const input = el("textarea", { required: true, minlength: "10", maxlength: "1500", rows: "4", value });
+  input.value = value;
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar cuenta receptora" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Banco, titular, tipo y número de cuenta", input),
+    el("p", { class: "muted", text: "Comprueba el titular y el número antes de guardar. Estos datos se mostrarán a quien deba realizar la transferencia." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!sure(save, "Confirmar cuenta receptora")) return;
+    save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/bank" : "/v1/billing/bank", { method: "PUT", body: { instructions: input.value.trim() } });
+      route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingView(main) {
+  const config = await api("/v1/billing/configuration");
+  const invoices = await api("/v1/billing/orders");
+  const parts = [page("Cobros y suscripción", "Dos tipos de pago, cada uno con su cuenta receptora.", link("#ajustes", "Volver a Ajustes"))];
+  if (!config.enabled) parts.push(el("p", { class: "notice", text: "Los cobros todavía no están activados. Puedes preparar los datos de la cuenta receptora." }));
+  parts.push(card("Cobros del consultorio", "", el("p", { text: "Tus pacientes pagan sus consultas y citas al consultorio. Desde una cita de la Agenda, pulsa Preparar pago." }),
+    isAdmin() ? billingBankForm(config) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
+    billingRows(invoices, { review: isAdmin() })));
+  if (isAdmin()) {
+    const subscriptions = await api("/v1/billing/orders?kind=subscription");
+    const create = el("button", { class: "btn primary", type: "button", text: "Preparar transferencia de la mensualidad", disabled: !config.enabled || !config.platform_bank_configured || !config.monthly_price_cents });
+    const status = el("p", { class: "status", role: "status" });
+    create.addEventListener("click", async () => {
+      create.disabled = true;
+      try { billingInvoiceDialog(await api("/v1/billing/subscription", { method: "POST" })); }
+      catch (err) { say(status, billingError(err), "error"); }
+      finally { create.disabled = false; }
+    });
+    parts.push(card("Suscripción de Tatos", "", el("p", { text: "Una mensualidad por consultorio para usar toda la aplicación. Este pago lo recibe la operadora de Tatos." }),
+      el("p", { text: config.monthly_price_cents ? `${billingMoney(config.monthly_price_cents)} por mes` : "El precio mensual todavía no está configurado." }),
+      el("p", { class: "muted", text: "Tarjeta automática: pendiente de habilitación. Las transferencias se confirman después de verificar el ingreso." }),
+      create, status, billingRows(subscriptions)));
+  }
+  if (config.platform_operator) {
+    const pending = await api("/v1/billing/platform/subscriptions");
+    parts.push(card("Administración de suscripciones de Tatos", "", billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
+  }
+  main.replaceChildren(...parts);
+}

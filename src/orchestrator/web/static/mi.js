@@ -231,6 +231,50 @@ VIEWS.citas = async (main) => {
       : [el("p", { class: "empty", text: "No tienes citas próximas." })]),
     el("p", { class: "muted", text: "Para cambiar o cancelar una cita, escribe al consultorio." })));
   main.append(await bookingCard());
+  main.append(el("a", { class: "btn", href: "#pagos", text: "Pagos de mis citas" }));
+};
+
+// Transfers are reported by the patient and verified by the clinic that receives them.
+VIEWS.pagos = async (main) => {
+  const [me, invoices] = await Promise.all([api("/v1/me"), api("/v1/me/payments")]);
+  const money = (cents) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(cents / 100);
+  const states = { pending: "Pendiente", transfer_review: "Transferencia por verificar", paid: "Pagado", rejected: "Rechazado", cancelled: "Cancelado" };
+  main.append(el("h1", { class: "title", text: "Pagos de mis citas" }),
+    el("a", { class: "btn", href: "#citas", text: "Volver a mis citas" }));
+  for (const invoice of invoices) {
+    const status = el("p", { class: "status", role: "status" });
+    const card = el("section", { class: "card" }, el("h2", { text: `${money(invoice.amount_cents)} · ${states[invoice.state] || "En comprobación"}` }),
+      el("p", { text: invoice.bank_instructions }), el("p", { class: "muted", text: `Orden: ${invoice.invoice_id}` }));
+    if (invoice.state === "pending") {
+      const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+      const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
+      const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
+        el("p", { class: "muted", text: "El consultorio verificará que el ingreso llegó a su cuenta antes de marcarlo como pagado." }), send);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault(); send.disabled = true;
+        try {
+          await api(`/v1/me/payments/${encodeURIComponent(invoice.invoice_id)}/transfer`, { method: "POST", body: { reference: reference.value.trim() } });
+          route();
+        } catch (err) { say(status, "No se pudo informar la transferencia. Revisa el estado del pago e inténtalo de nuevo.", "error"); send.disabled = false; }
+      });
+      card.append(form);
+    }
+    card.append(status);
+    main.append(card);
+  }
+  for (const visit of [...me.upcoming_appointments, ...me.past_appointments]) {
+    if (["cancelled", "no_show"].includes(visit.status) || invoices.some((x) => x.resource_id === visit.id)) continue;
+    const status = el("p", { class: "status", role: "status" });
+    const pay = button("Preparar transferencia", async () => {
+      pay.disabled = true;
+      try { await api(`/v1/me/appointments/${encodeURIComponent(visit.id)}/payment`, { method: "POST" }); route(); }
+      catch (err) {
+        say(status, err instanceof ApiError && err.status === 409 ? "El consultorio debe activar los cobros y confirmar el valor y la cuenta receptora de esta cita." : humanError(err), "error");
+        pay.disabled = false;
+      }
+    });
+    main.append(el("section", { class: "card" }, el("h2", { text: when(visit.starts_at) }), pay, status));
+  }
 };
 
 async function bookingCard() {
