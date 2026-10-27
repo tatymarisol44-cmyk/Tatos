@@ -40,7 +40,8 @@ from orchestrator.crisis import Intent, classify
 from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.publishers import MessengerSender, PublishError, WhatsAppSender
-from orchestrator.social import channel_accounts, resolve_secret
+from orchestrator.social import channel_accounts
+from orchestrator.social_credentials import ReconnectRequired, SocialCredentials
 
 if TYPE_CHECKING:
     from orchestrator.inbox import InboxService
@@ -171,6 +172,7 @@ class InboundService:
         self.db = db
         self.audit = audit
         self.settings = settings
+        self.credentials = SocialCredentials(db, settings)
         self.transport = transport  # tests replace the network
         self.pseudonym_key = settings.pseudonym_secret()
         self.assistant: WhatsAppAssistant | None = None  # set by the orchestrator
@@ -208,7 +210,7 @@ class InboundService:
             )
 
         outcome, message_id = await self._deliver(
-            row.network, row.external_id, row.secret_ref, row.address, body
+            row.network, row.external_id, row.secret_ref, row.address, body, tenant=tenant
         )
         await self.audit.record(
             tenant,
@@ -454,7 +456,7 @@ class InboundService:
         if account is None:
             return
         outcome, message_id = await self._deliver(
-            network, account.external_id, account.secret_ref, sender, body
+            network, account.external_id, account.secret_ref, sender, body, tenant=tenant
         )
         # The audit names the kind and the outcome, never the number or the text.
         await self.audit.record(
@@ -473,11 +475,14 @@ class InboundService:
                 log.exception("inbox: automatic reply not recorded")
 
     async def _deliver(
-        self, network: str, external_id: str, secret_ref: str, to: str, body: str
+        self, network: str, external_id: str, secret_ref: str, to: str, body: str, *, tenant: str
     ) -> tuple[str, str | None]:
         """(outcome, platform message id): dry_run without a token, else sent, failed or
         uncertain (a transport error: maybe delivered, never retried automatically)."""
-        token = resolve_secret(secret_ref)
+        try:
+            token = await self.credentials.resolve(tenant, secret_ref, network, external_id)
+        except ReconnectRequired:
+            return "failed", None
         if token is None:
             return "dry_run", None
         try:

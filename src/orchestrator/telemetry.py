@@ -16,10 +16,13 @@ _configured = False
 # Telegram puts the bot token in the URL path (/bot<id>:<secret>/sendMessage), and HTTP
 # client libraries log request URLs at INFO.
 _BOT_TOKEN = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
+_OAUTH_QUERY = re.compile(
+    r"(?i)([?&](?:access_token|input_token|fb_exchange_token|client_secret|appsecret_proof|code|state)=)[^&\s\"<>]+"
+)
 
 
 def _scrub(text: str) -> str:
-    return redact_pii(_BOT_TOKEN.sub("bot<redacted>", text))[0]
+    return redact_pii(_OAUTH_QUERY.sub(r"\1<redacted>", _BOT_TOKEN.sub("bot<redacted>", text)))[0]
 
 
 def redact_record(record: logging.LogRecord) -> logging.LogRecord:

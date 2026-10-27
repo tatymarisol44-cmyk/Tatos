@@ -66,6 +66,7 @@ from orchestrator.remote import A2AClient, discover_all
 from orchestrator.router import Router, RoutingDecision
 from orchestrator.self_report import SelfReports
 from orchestrator.social import SocialAccounts
+from orchestrator.social_login import SocialLogin
 from orchestrator.spend import Spend
 from orchestrator.staff_login import StaffLogins
 from orchestrator.subject_rights import SubjectRights
@@ -187,6 +188,7 @@ class Orchestrator:
         self.spend = Spend(self.db, settings)
         self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
+        self.social_login = SocialLogin(self.db, self.audit, self.social, settings)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.oncall = OnCall(self.db, self.audit, settings)
         self.privacy_cases = PrivacyCases(self.db, self.audit)
@@ -419,6 +421,7 @@ class Orchestrator:
                 timedelta(days=self.settings.inbox_retention_days), dry_run=dry_run
             ),
             "sign_in_leftovers": await self.staff_logins.purge(dry_run=dry_run),
+            "social_login_leftovers": await self.social_login.purge(dry_run=dry_run),
         }
 
     async def purge_threads(self, older_than: timedelta, dry_run: bool = False) -> int:

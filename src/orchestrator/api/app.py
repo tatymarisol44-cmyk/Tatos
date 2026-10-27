@@ -38,6 +38,7 @@ from orchestrator.api import (
     publications,
     session,
     social,
+    social_login,
     staff_login,
     workshops,
 )
@@ -218,6 +219,7 @@ def create_app(
     app.include_router(staff_login.router)
     app.include_router(workshops.router)
     app.include_router(social.router)
+    app.include_router(social_login.router)
     app.include_router(publications.router)
     app.include_router(establishment.router)
     app.include_router(clinical.router)

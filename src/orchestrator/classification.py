@@ -105,6 +105,8 @@ TABLE_CLASS: dict[str, DataClass] = {
     "campaign_recipients": DataClass.PERSONAL,
     "campaigns": DataClass.INTERNAL,
     "channel_accounts": DataClass.CREDENTIAL,  # secret_ref names a credential
+    "social_credentials": DataClass.CREDENTIAL,  # sealed OAuth grants, never exported
+    "social_login_flows": DataClass.CREDENTIAL,  # hashed state and short-lived sealed choices
     "channel_alerts": DataClass.HEALTH,  # crisis wording was detected
     "channel_auto_replies": DataClass.PERSONAL,  # pseudonymous number + time, no text
     "channel_optouts": DataClass.PERSONAL,

@@ -57,7 +57,8 @@ from orchestrator.publishers import (
     TikTokPublisher,
 )
 from orchestrator.risk import check_copy
-from orchestrator.social import PUBLISHING, SocialAccounts, check_publish, resolve_secret
+from orchestrator.social import PUBLISHING, SocialAccounts, check_publish
+from orchestrator.social_credentials import ReconnectRequired
 
 Kind = Literal["infographic", "video"]
 MAX_CAPTION = 2200  # TikTok's title limit; Instagram's caption limit is the same size
@@ -427,6 +428,8 @@ class PublicationService:
 
     async def _send(self, tenant: str, pub: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         account = await self.social.get(tenant, pub["account_id"])
+        if not account["active"] and account["secret_ref"].startswith("OAUTH_"):
+            return "failed", {"mode": "live", "error": "social authorization needs reconnection"}
         url = (
             await self.store.signed_url(pub["object_name"])
             if pub["network"] == "instagram"
@@ -439,7 +442,16 @@ class PublicationService:
             public_url=url is not None or pub["network"] != "instagram",
             audited=account["audited"],
         )
-        token = resolve_secret(account["secret_ref"]) if account["active"] else None
+        try:
+            token = (
+                await self.social.credentials.resolve(
+                    tenant, account["secret_ref"], account["network"], account["external_id"]
+                )
+                if account["active"]
+                else None
+            )
+        except ReconnectRequired:
+            return "failed", {"mode": "live", "error": "social authorization needs reconnection"}
         if token is None:  # no credential: record what would happen, send nothing
             return "published", {
                 "mode": "dry_run",
