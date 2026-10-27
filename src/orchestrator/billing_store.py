@@ -310,7 +310,12 @@ class BillingStore:
                 )
             )
             await self.audit.record_in(
-                conn, tenant, actor, "billing.invoice.created", f"billing/{invoice_id}"
+                conn,
+                tenant,
+                actor,
+                "billing.invoice.created",
+                f"billing/{invoice_id}",
+                subject_id=subject,
             )
             row = (
                 (
@@ -436,7 +441,12 @@ class BillingStore:
                 )
             )
             await self.audit.record_in(
-                conn, tenant, actor, "billing.transfer.reported", f"billing/{invoice_id}"
+                conn,
+                tenant,
+                actor,
+                "billing.transfer.reported",
+                f"billing/{invoice_id}",
+                subject_id=row["patient_id"],
             )
             return self._public(await self._row(conn, tenant, invoice_id, patient_id))
 
@@ -509,6 +519,7 @@ class BillingStore:
                 actor,
                 "billing.transfer.approved" if approved else "billing.transfer.rejected",
                 f"billing/{invoice_id}",
+                subject_id=row["patient_id"],
             )
             return self._public(await self._row(conn, tenant, invoice_id))
 

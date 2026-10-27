@@ -241,6 +241,7 @@ async def test_rights_export_includes_every_own_payment_without_other_clinic_or_
     assert len(exported["payments"]) == 202
     assert template["invoice_id"] in {r["invoice_id"] for r in exported["payments"]}
     assert exported["inventory"]["payments"] == 202
+    assert any(e["action"] == "billing.invoice.created" for e in exported["audit"])
     assert {r["kind"] for r in exported["payments"]} == {"appointment"}
     assert all("merchant_id" not in r and "settlement_id" not in r for r in exported["payments"])
     assert await billing.export_subject("acme", "different-patient") == []
