@@ -29,6 +29,7 @@ from orchestrator.social import (
 
 router = APIRouter(prefix="/v1/social", tags=["social"])
 Admin = Annotated[Principal, Depends(requires(Role.ADMIN))]
+Manager = Annotated[Principal, Depends(requires(Role.ADMIN, Role.OWNER, Role.MARKETING))]
 Staff = Annotated[Principal, Depends(require_staff)]
 
 
@@ -161,7 +162,7 @@ async def resolve_alert(
 async def disable_account(
     request: Request,
     account_id: Annotated[str, FastAPIPath(max_length=32, pattern=r"^[0-9a-f]+$")],
-    p: Admin,
+    p: Manager,
 ) -> None:
     # Another tenant's account looks exactly like a missing one.
     if not await orch(request).social.disable(p.tenant, account_id, p.id):

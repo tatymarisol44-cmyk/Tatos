@@ -842,6 +842,7 @@ function openVisitActions(visit) {
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
   if (section === "redes") return socialAccountsView(main);
+  if (section === "redes-manual") return manualSocialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
   const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
@@ -862,10 +863,98 @@ const SOCIAL_CONNECTIONS = {
 };
 
 function connectSocialButton() {
-  return isAdmin() ? link("#ajustes/redes", "Conectar redes sociales", "btn primary") : null;
+  return canConnectSocial() ? link("#ajustes/redes", "Conectar redes sociales", "btn primary") : null;
+}
+
+function canConnectSocial() { return state.session.roles.some((role) => ["admin", "owner", "marketing"].includes(role)); }
+
+const SOCIAL_LOGIN_FLOW = "tatos.social.login";
+function socialLoginError(code) {
+  const messages = {
+    setup_required: "La conexión con Meta todavía necesita la configuración de Tatos. No tienes que introducir identificadores ni claves.",
+    authorization_cancelled: "Cancelaste la autorización. Puedes volver a conectar cuando quieras.",
+    no_accounts: "Meta no devolvió cuentas disponibles. Comprueba que administras la página, la cuenta profesional o el número de negocio.",
+    permissions_missing: "Faltan permisos de Meta para mensajes o publicaciones. Vuelve a autorizar los permisos solicitados.",
+    account_in_use: "Esa cuenta ya está vinculada a otro consultorio. Desconéctala allí antes de cambiarla.",
+    invalid_or_expired: "La conexión caducó. Pulsa Conectar para comenzar otra vez.",
+    too_many_attempts: "Hay varias conexiones pendientes. Espera unos minutos antes de comenzar otra.",
+    provider_unavailable: "No se pudo contactar con Meta. Inicia una conexión nueva cuando tengas internet.",
+  };
+  return messages[code] || "Meta no pudo completar la conexión. Revisa los permisos de tu cuenta y vuelve a intentarlo.";
 }
 
 async function socialAccountsView(main) {
+  const head = page("Redes sociales", "Conecta las cuentas de tu consultorio iniciando sesión en Meta.", link("#ajustes", "Volver a Ajustes"));
+  if (!canConnectSocial()) {
+    main.replaceChildren(head, empty("Pide a administración, la dueña o marketing que conecte las redes del consultorio.")); return;
+  }
+  const [config, accounts] = await Promise.all([api("/v1/social/login/configuration"), api("/v1/social/accounts")]);
+  const feedback = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const cards = [head];
+  for (const network of ["facebook", "instagram", "whatsapp"]) {
+    const name = SOCIAL_CONNECTIONS[network].name;
+    const available = config.providers[network]?.available;
+    const button = el("button", { type: "button", class: "btn primary", text: `Conectar ${name}`, disabled: !available });
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const made = await api(`/v1/social/login/${network}/start`, { method: "POST", body: {} });
+        const url = new URL(made.authorization_url, location.origin);
+        if (!(url.origin === location.origin && url.pathname === "/social-connect") &&
+            !["https://www.facebook.com", "https://www.instagram.com"].includes(url.origin)) throw new Error("invalid_provider");
+        sessionStorage.setItem(SOCIAL_LOGIN_FLOW, made.flow_id);
+        location.assign(url.href);
+      } catch (err) { say(feedback, err instanceof ApiError ? socialLoginError(err.detail) : humanError(err), "error"); button.disabled = false; }
+    });
+    const mine = accounts.filter((a) => a.network === network && a.active !== false);
+    const rows = mine.map((account) => {
+      const disconnect = el("button", { class: "btn small", type: "button", text: `Desconectar ${account.handle}` });
+      disconnect.addEventListener("click", async () => {
+        if (!sure(disconnect, "Sí, desconectar")) return;
+        disconnect.disabled = true;
+        try { await api(`/v1/social/accounts/${encodeURIComponent(account.account_id)}`, { method: "DELETE" }); route(); }
+        catch (err) { say(feedback, humanError(err), "error"); disconnect.disabled = false; }
+      });
+      return el("article", { class: "doc social-account" }, el("div", { class: "what" },
+        el("strong", { text: account.handle }), el("p", { class: "muted", text: account.secret_configured ? "Conectada" : "Vuelve a autorizar esta cuenta para enviar o publicar." })), disconnect);
+    });
+    const requirements = network === "facebook" ? "Elige una página que administres."
+      : network === "instagram" ? "Usa una cuenta profesional de empresa o creador." : "Autoriza el negocio y verifica tu número en el asistente de Meta.";
+    cards.push(card(name, "", el("p", { text: requirements }), ...rows, button,
+      !available ? el("p", { class: "muted", text: "La conexión de Tatos con esta red todavía está pendiente de configuración." }) : null));
+  }
+  let flowId;
+  try { flowId = sessionStorage.getItem(SOCIAL_LOGIN_FLOW); } catch { /* no saved attempt */ }
+  if (flowId) {
+    try {
+      const pending = await api(`/v1/social/login/flows/${encodeURIComponent(flowId)}`);
+      if (pending.status === "ready") {
+        const choices = pending.choices.map((choice) => {
+          const pick = el("button", { type: "button", class: "btn", text: `Conectar ${choice.handle}` });
+          pick.addEventListener("click", async () => {
+            pick.disabled = true;
+            try {
+              await api(`/v1/social/login/flows/${encodeURIComponent(flowId)}/connect`, { method: "POST", body: { choice: choice.choice } });
+              sessionStorage.removeItem(SOCIAL_LOGIN_FLOW); route();
+            } catch (err) { say(feedback, socialLoginError(err.detail), "error"); pick.disabled = false; }
+          });
+          return pick;
+        });
+        cards.splice(1, 0, card("Elige la cuenta que quieres conectar", "", el("p", { text: "Meta autorizó estas cuentas. Elige la que corresponde a este consultorio." }), ...choices));
+      } else if (pending.status === "failed") {
+        say(feedback, socialLoginError(pending.error_code), "error"); sessionStorage.removeItem(SOCIAL_LOGIN_FLOW);
+      } else if (pending.status === "connected") sessionStorage.removeItem(SOCIAL_LOGIN_FLOW);
+    } catch (err) {
+      say(feedback, err.status === 404 ? socialLoginError("invalid_or_expired") : humanError(err), "error");
+      sessionStorage.removeItem(SOCIAL_LOGIN_FLOW);
+    }
+  }
+  cards.push(feedback);
+  if (isAdmin()) cards.push(link("#ajustes/redes-manual", "Configurar Telegram o TikTok", "btn"));
+  main.replaceChildren(...cards);
+}
+
+async function manualSocialAccountsView(main) {
   const head = page("Redes sociales", "Cuentas del consultorio para mensajes y publicaciones.", link("#ajustes", "Volver a Ajustes"));
   if (!isAdmin()) {
     main.replaceChildren(head, empty("Pide a la administración del consultorio que conecte las redes sociales."));
@@ -903,11 +992,11 @@ async function socialAccountsView(main) {
   };
   renderAccounts();
 
-  const network = el("select", { "aria-label": "Red social" }, ...Object.entries(SOCIAL_CONNECTIONS).map(([value, item]) => el("option", { value, text: item.name })));
+  const network = el("select", { "aria-label": "Red social" }, ...Object.entries(SOCIAL_CONNECTIONS).filter(([value]) => ["telegram", "tiktok"].includes(value)).map(([value, item]) => el("option", { value, text: item.name })));
   const handle = el("input", { type: "text", maxlength: "120", required: true, autocomplete: "off", placeholder: "Ej.: @consultorio" });
   const externalId = el("input", { type: "text", maxlength: "128", required: true, autocomplete: "off", spellcheck: "false" });
-  const idLabel = el("span", { text: SOCIAL_CONNECTIONS.whatsapp.id });
-  const secretRef = el("input", { type: "text", maxlength: "64", value: SOCIAL_CONNECTIONS.whatsapp.ref, autocomplete: "off", spellcheck: "false" });
+  const idLabel = el("span", { text: SOCIAL_CONNECTIONS[network.value].id });
+  const secretRef = el("input", { type: "text", maxlength: "64", value: SOCIAL_CONNECTIONS[network.value].ref, autocomplete: "off", spellcheck: "false" });
   const details = el("details", {}, el("summary", { text: "Configuración de la conexión" }),
     el("label", { class: "field" }, "Nombre de conexión", secretRef),
     el("p", { class: "muted", text: "Usa el nombre de conexión preparado por la administración para esta cuenta. La autorización se guarda en el servidor." }));

@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import insert
 
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
@@ -32,6 +33,7 @@ from orchestrator.config import Settings
 from orchestrator.db import utcnow
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
+from orchestrator.social_login import digest, flows
 
 ACME = {"X-API-Key": "test-key"}
 GLOBEX = {"X-API-Key": "other-key"}
@@ -55,6 +57,7 @@ UNSCOPED = {
     ("GET", "/.well-known/agent-card.json"),
     ("GET", "/v1/agents"),
     ("GET", "/v1/social/rules"),
+    ("GET", "/v1/social/login/configuration"),
     ("POST", "/v1/route"),
     ("GET", "/v1/clinical/instrument-templates"),
     # Signing in names no practice; answers never say whether an e-mail exists (ADR 0024).
@@ -430,6 +433,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "reviews": get("/v1/reviews"),
         "thread": get(f"/v1/threads/{ids['thread']}"),
         "accounts": get("/v1/social/accounts"),
+        "social_login": get(f"/v1/social/login/flows/{ids['oauth_flow']}"),
         "publication": get(f"/v1/social/publications/{ids['publication']}"),
         "on_call": get("/v1/admin/on-call"),
         "privacy_cases": get("/v1/privacy/cases"),
@@ -605,6 +609,16 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
         ),
         ("GET", "/v1/social/rules"): ("/v1/social/rules", None),
         ("GET", "/v1/social/accounts"): ("/v1/social/accounts", None),
+        ("GET", "/v1/social/login/configuration"): ("/v1/social/login/configuration", None),
+        ("POST", "/v1/social/login/{provider}/start"): ("/v1/social/login/facebook/start", {}),
+        ("GET", "/v1/social/login/flows/{flow_id}"): (
+            f"/v1/social/login/flows/{i['oauth_flow']}",
+            None,
+        ),
+        ("POST", "/v1/social/login/flows/{flow_id}/connect"): (
+            f"/v1/social/login/flows/{i['oauth_flow']}/connect",
+            {"choice": i["oauth_choice"]},
+        ),
         ("POST", "/v1/social/accounts"): (
             "/v1/social/accounts",
             {
@@ -951,6 +965,8 @@ ADDRESSED = {
         ("POST", "/v1/campaigns/{campaign_id}/cancel"),
         ("GET", "/v1/campaigns/{campaign_id}/results"),
         ("DELETE", "/v1/social/accounts/{account_id}"),
+        ("GET", "/v1/social/login/flows/{flow_id}"),
+        ("POST", "/v1/social/login/flows/{flow_id}/connect"),
         ("POST", "/v1/social/alerts/{alert_id}/reply"),
         ("POST", "/v1/social/alerts/{alert_id}/ack"),
         ("GET", "/v1/social/alerts/{alert_id}/notifications"),
@@ -1032,6 +1048,45 @@ def world(
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     with TestClient(create_app(settings, orch)) as c:
         acme = seed(c)
+        settings.social_login_enabled = True
+        settings.social_login_origin = "https://example.test"
+        settings.meta_app_id = "100"
+        settings.meta_login_config_id = "200"
+        acme.ids["oauth_flow"] = "f1" * 16
+        acme.ids["oauth_choice"] = "e2" * 16
+
+        async def seed_oauth() -> None:
+            payload = [
+                {
+                    "choice": acme.ids["oauth_choice"],
+                    "network": "facebook",
+                    "external_id": "500",
+                    "handle": MARKER,
+                    "token": "synthetic-not-a-token",
+                    "expires_at": None,
+                    "business_id": None,
+                }
+            ]
+            async with orch.db.engine.begin() as conn:
+                await conn.execute(
+                    insert(flows).values(
+                        tenant="acme",
+                        flow_id=acme.ids["oauth_flow"],
+                        actor="service:acme",
+                        network="facebook",
+                        state_hash=digest("synthetic-state"),
+                        binding_hash=digest("synthetic-browser"),
+                        status="ready",
+                        created_at=utcnow(),
+                        expires_at=utcnow() + timedelta(minutes=15),
+                        payload_sealed=orch.social_login.sealer.seal(
+                            "acme/" + acme.ids["oauth_flow"], json.dumps(payload)
+                        ),
+                    )
+                )
+
+        assert c.portal is not None
+        c.portal.call(seed_oauth)
         _ok(
             c.post(
                 "/v1/crm/patients",

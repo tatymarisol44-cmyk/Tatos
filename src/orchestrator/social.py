@@ -8,9 +8,9 @@ Three things are kept apart on purpose:
   means nobody has, and a network whose publishing rules are `to_verify` cannot publish.
 * **Accounts** (`channel_accounts`) say which page, number or profile belongs to which
   tenant and, optionally, to which professional of that establishment.
-* **Credentials never touch the database.** An account stores `secret_ref`, the *name* of
-  a secret; the token itself is read from the environment (`SOCIAL_SECRET_<REF>`), which
-  in production is filled from the secret store. The API only says whether it is set."""
+* **Credentials never reach clients in responses or plaintext storage.** Legacy refs
+  resolve from the environment; login grants use tenant-bound authenticated encryption
+  (`social_credentials`, ADR 0025). The API only says whether authorization is usable."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from sqlalchemy import Boolean, Column, DateTime, Index, String, Table, and_, in
 from orchestrator.db import Database, metadata, utcnow
 from orchestrator.establishment import Professionals
 from orchestrator.governance import AuditLog
+from orchestrator.social_credentials import SocialCredentials, credentials
 
 Network = Literal["whatsapp", "instagram", "facebook", "tiktok", "telegram"]
 NETWORKS: tuple[Network, ...] = ("whatsapp", "instagram", "facebook", "tiktok", "telegram")
@@ -311,6 +312,7 @@ class SocialAccounts:
     ) -> None:
         self.db = db
         self.audit = audit
+        self.credentials = SocialCredentials(db, db.settings)
         # An account given to a professional must name a registered, active one.
         self.professionals = professionals
 
@@ -326,6 +328,12 @@ class SocialAccounts:
         professional_id: str | None = None,
         audited: bool = False,
     ) -> dict[str, Any]:
+        if self.db.settings.social_login_enabled and network in (
+            "facebook",
+            "instagram",
+            "whatsapp",
+        ):
+            raise AccountConflict("use login to connect Meta accounts")
         if not re.fullmatch(REF_PATTERN, secret_ref):
             raise ValueError("secret_ref must be an upper-case name such as WA_CLINIC_MAIN")
         if professional_id is not None and self.professionals is not None:
@@ -338,6 +346,19 @@ class SocialAccounts:
             channel_accounts.c.active.is_(True),
         )
         async with self.db.engine.begin() as conn:
+            claimed = (
+                await conn.execute(
+                    select(credentials.c.tenant).where(
+                        and_(
+                            credentials.c.network == network,
+                            credentials.c.external_id == external_id,
+                            credentials.c.tenant != tenant,
+                        )
+                    )
+                )
+            ).first()
+            if claimed:
+                raise AccountConflict("this account is connected to another practice")
             if (await conn.execute(select(channel_accounts.c.account_id).where(same))).first():
                 raise AccountConflict(f"this {network} account is already connected")
             await conn.execute(
@@ -373,7 +394,12 @@ class SocialAccounts:
             row = (await conn.execute(query)).first()
         if row is None:
             raise KeyError(account_id)
-        return _account(row)
+        result = _account(row)
+        if row.secret_ref.startswith("OAUTH_"):
+            result["secret_configured"] = await self.credentials.configured(
+                tenant, row.secret_ref, row.network, row.external_id
+            )
+        return result
 
     async def list(self, tenant: str, professional_id: str | None = None) -> list[dict[str, Any]]:
         query = select(channel_accounts).where(channel_accounts.c.tenant == tenant)
@@ -381,7 +407,8 @@ class SocialAccounts:
             query = query.where(channel_accounts.c.professional_id == professional_id)
         query = query.order_by(channel_accounts.c.created_at, channel_accounts.c.account_id)
         async with self.db.engine.connect() as conn:
-            return [_account(r) for r in await conn.execute(query)]
+            rows = (await conn.execute(query)).all()
+        return [await self.get(tenant, row.account_id) for row in rows]
 
     async def disable(self, tenant: str, account_id: str, actor: str) -> bool:
         query = (
@@ -396,8 +423,22 @@ class SocialAccounts:
             .values(active=False)
         )
         async with self.db.engine.begin() as conn:
+            ref = (
+                await conn.execute(
+                    select(channel_accounts.c.secret_ref)
+                    .where(
+                        and_(
+                            channel_accounts.c.tenant == tenant,
+                            channel_accounts.c.account_id == account_id,
+                        )
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
             done = (await conn.execute(query)).rowcount == 1
             if done:
+                if ref and ref.startswith("OAUTH_"):
+                    await self.credentials.remove_in(conn, tenant, ref)
                 await self.audit.record_in(
                     conn, tenant, actor, "channel_account.disabled", f"channel_account/{account_id}"
                 )

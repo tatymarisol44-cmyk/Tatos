@@ -31,6 +31,8 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     privacy_cases,
     publishing,
     social,
+    social_credentials,
+    social_login,
     spend,
     staff_login,
     whatsapp_assistant,

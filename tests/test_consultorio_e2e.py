@@ -419,24 +419,26 @@ def test_patient_list_actions_preserve_contacts_and_delete_a_test_registration(
 def test_social_connections_register_show_readiness_and_disconnect(
     server: str, browser: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
-    monkeypatch.delenv("SOCIAL_SECRET_WA_MAIN", raising=False)
-    monkeypatch.setenv("SOCIAL_SECRET_IG_MAIN", "test-social")
+    monkeypatch.delenv("SOCIAL_SECRET_TG_MAIN", raising=False)
+    monkeypatch.setenv("SOCIAL_SECRET_TT_MAIN", "test-social")
     page, problems = _signed_in(browser, server, _staff_key(server))
     page.click("a[data-nav=ajustes]")
     page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
     page.get_by_role("heading", name="Redes sociales", exact=True).wait_for()
-    page.get_by_label("Nombre de la cuenta", exact=True).fill("WhatsApp del consultorio")
-    page.get_by_label("ID del número de WhatsApp Business", exact=True).fill("wa-demo")
+    page.get_by_role("link", name="Configurar Telegram o TikTok", exact=True).click()
+    page.get_by_label("Red social", exact=True).select_option("telegram")
+    page.get_by_label("Nombre de la cuenta", exact=True).fill("Telegram del consultorio")
+    page.get_by_label("ID del bot de Telegram", exact=True).fill("tg-demo")
     page.get_by_role("button", name="Vincular cuenta", exact=True).click()
-    whatsapp = page.locator(".social-account").filter(has_text="WhatsApp del consultorio")
+    whatsapp = page.locator(".social-account").filter(has_text="Telegram del consultorio")
     whatsapp.get_by_text("Pendiente de autorización", exact=True).wait_for()
     assert "Falta preparar su autorización" in page.locator("form .status").inner_text()
 
     # Only the credential's name crosses the API; the actual value stays on the server.
-    page.get_by_label("Red social", exact=True).select_option("instagram")
+    page.get_by_label("Red social", exact=True).select_option("tiktok")
     handle = "@demo <img src=x onerror=alert(1)>"
     page.get_by_label("Nombre de la cuenta", exact=True).fill(handle)
-    page.get_by_label("ID de la cuenta profesional de Instagram", exact=True).fill("ig-demo")
+    page.get_by_label("ID de la cuenta de TikTok", exact=True).fill("tt-demo")
     with page.expect_response(
         lambda response: (
             response.url.endswith("/v1/social/accounts") and response.request.method == "POST"
@@ -445,10 +447,10 @@ def test_social_connections_register_show_readiness_and_disconnect(
         page.get_by_role("button", name="Vincular cuenta", exact=True).click()
     assert response.value.status == 201
     assert response.value.request.post_data_json == {
-        "network": "instagram",
-        "external_id": "ig-demo",
+        "network": "tiktok",
+        "external_id": "tt-demo",
         "handle": handle,
-        "secret_ref": "IG_MAIN",
+        "secret_ref": "TT_MAIN",
     }
     instagram = page.locator(".social-account").filter(has_text=handle)
     instagram.get_by_text("Configuración lista", exact=True).wait_for()
@@ -458,7 +460,7 @@ def test_social_connections_register_show_readiness_and_disconnect(
 
     # A duplicate is refused, keeps the existing account and lets the user correct it.
     page.get_by_label("Nombre de la cuenta", exact=True).fill(handle)
-    page.get_by_label("ID de la cuenta profesional de Instagram", exact=True).fill("ig-demo")
+    page.get_by_label("ID de la cuenta de TikTok", exact=True).fill("tt-demo")
     page.get_by_role("button", name="Vincular cuenta", exact=True).click()
     page.get_by_text("Esta cuenta ya está vinculada. Revísala en la lista.", exact=True).wait_for()
     assert page.locator(".social-account").count() == 2
@@ -472,16 +474,19 @@ def test_social_connections_register_show_readiness_and_disconnect(
     whatsapp.wait_for(state="detached")
     accounts = httpx.get(f"{server}/v1/social/accounts", headers=SERVICE).json()
     assert {a["network"]: a["active"] for a in accounts} == {
-        "whatsapp": False,
-        "instagram": True,
+        "telegram": False,
+        "tiktok": True,
     }
     page.click("a[data-nav=marketing]")
     page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
+    page.get_by_role("link", name="Configurar Telegram o TikTok", exact=True).click()
     instagram.get_by_text("Configuración lista", exact=True).wait_for()
     assert not problems, problems
 
 
-def test_social_connections_remain_admin_only(server: str, browser: Any) -> None:
+def test_social_login_opens_for_marketing_but_manual_setup_remains_admin_only(
+    server: str, browser: Any
+) -> None:
     created = httpx.post(
         f"{server}/v1/admin/staff",
         json={"name": "marketing.demo", "roles": ["marketing"]},
@@ -490,13 +495,17 @@ def test_social_connections_remain_admin_only(server: str, browser: Any) -> None
     assert created.status_code == 201
     page, problems = _signed_in(browser, server, created.json()["key"])
     page.get_by_role("heading", name="Marketing", exact=True).wait_for()
-    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 0
+    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 1
     page.click("a[data-nav=ajustes]")
     page.get_by_role("heading", name="Ajustes", exact=True).wait_for()
-    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 0
+    assert page.get_by_role("link", name="Conectar redes sociales", exact=True).count() == 1
+    page.get_by_role("link", name="Conectar redes sociales", exact=True).click()
+    page.get_by_role("button", name="Conectar Facebook", exact=True).wait_for()
+    assert page.get_by_label("Nombre de la cuenta", exact=True).count() == 0
+    assert page.get_by_role("link", name="Configurar Telegram o TikTok", exact=True).count() == 0
     reads = []
     page.on("request", lambda request: reads.append(request.url))
-    page.evaluate("location.hash = '#ajustes/redes'")
+    page.evaluate("location.hash = '#ajustes/redes-manual'")
     page.get_by_text(
         "Pide a la administración del consultorio que conecte las redes sociales.", exact=True
     ).wait_for()

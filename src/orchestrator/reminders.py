@@ -30,7 +30,8 @@ from orchestrator.crm import ACTIVE_STATUSES, appointments, patients
 from orchestrator.db import Database, aware, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.publishers import PublishError, WhatsAppSender
-from orchestrator.social import channel_accounts, resolve_secret
+from orchestrator.social import channel_accounts
+from orchestrator.social_credentials import ReconnectRequired, SocialCredentials
 
 log = logging.getLogger(__name__)
 SYSTEM_ACTOR = "system:reminders"
@@ -151,7 +152,12 @@ class Reminders:
             if account is not None:
                 if await self.is_opted_out(tenant, "whatsapp", row.phone):
                     return "whatsapp", "opted_out"
-                token = resolve_secret(account.secret_ref)
+                try:
+                    token = await SocialCredentials(self.db, self.settings).resolve(
+                        tenant, account.secret_ref, "whatsapp", account.external_id
+                    )
+                except ReconnectRequired:
+                    return "whatsapp", "failed"
                 if token is None:
                     return "whatsapp", "dry_run"
                 try:

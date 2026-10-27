@@ -45,7 +45,8 @@ from orchestrator.governance import AuditLog
 from orchestrator.inbound import address_key, deliver
 from orchestrator.publishers import PublishError
 from orchestrator.sealing import Sealer
-from orchestrator.social import channel_accounts, resolve_secret
+from orchestrator.social import channel_accounts
+from orchestrator.social_credentials import ReconnectRequired, SocialCredentials
 
 if TYPE_CHECKING:
     from orchestrator.inbound import InboundService
@@ -122,6 +123,7 @@ class InboxService:
         self.db = db
         self.audit = audit
         self.settings = settings
+        self.credentials = SocialCredentials(db, settings)
         self.transport = transport  # tests replace the network
         self.pseudonym_key = settings.pseudonym_secret()
         self.sealer = Sealer(self.pseudonym_key)
@@ -714,7 +716,12 @@ class InboxService:
             account = (await conn.execute(query)).first()
         if account is None:
             raise InboxError("the account is disabled")
-        token = resolve_secret(account.secret_ref)
+        try:
+            token = await self.credentials.resolve(
+                tenant, account.secret_ref, network, account.external_id
+            )
+        except ReconnectRequired:
+            return "failed", None
         if token is None:
             return "dry_run", None
         try:
