@@ -17,7 +17,7 @@ _configured = False
 # client libraries log request URLs at INFO.
 _BOT_TOKEN = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
 _OAUTH_QUERY = re.compile(
-    r"(?i)([?&](?:access_token|input_token|fb_exchange_token|client_secret|appsecret_proof|code|state)=)[^&\s\"<>]+"
+    r"(?i)([?&](?:access_token|input_token|fb_exchange_token|client_secret|appsecret_proof|code|state|(?:hub(?:\.|%2e))?verify_token)=)[^&\s\"<>]+"
 )
 
 
@@ -29,6 +29,12 @@ def redact_record(record: logging.LogRecord) -> logging.LogRecord:
     """Neither credentials embedded in URLs nor personal data (e-mail, phone, cédula,
     card, SSN) may stay in a log record, including the traceback of a logged exception.
     Logs are technical, not the audit trail: they must hold no PHI."""
+    # Uvicorn's AccessFormatter unpacks these five args itself. Keep that structure
+    # while scrubbing the request URL, including Meta's webhook verification token.
+    if record.name == "uvicorn.access" and isinstance(record.args, tuple) and len(record.args) == 5:
+        record.args = tuple(
+            _scrub(value) if isinstance(value, str) else value for value in record.args
+        )
     message = record.getMessage()
     clean = _scrub(message)
     if clean != message:

@@ -403,6 +403,31 @@ def test_oauth_query_secrets_are_redacted_from_logs(caplog: pytest.LogCaptureFix
     assert "synthetic-secret" not in caplog.text and "synthetic-token" not in caplog.text
 
 
+@pytest.mark.parametrize(
+    "parameter", ["hub.verify_token", "hub%2Everify_token", "verify_token", "code", "state"]
+)
+def test_webhook_verification_secret_is_hidden_without_breaking_uvicorn(parameter: str) -> None:
+    from uvicorn.logging import AccessFormatter
+
+    path = (
+        "/v1/channels/meta?hub.mode=subscribe&"
+        f"{parameter}=fake-webhook-private&hub.challenge=challenge"
+    )
+    record = logging.getLogger("uvicorn.access").makeRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1234", "GET", path, "1.1", 200),
+        None,
+    )
+    rendered = AccessFormatter(fmt="%(message)s", use_colors=False).format(record)
+    assert "fake-webhook-private" not in rendered
+    assert "challenge" in rendered and "200" in rendered
+    assert isinstance(record.args, tuple) and len(record.args) == 5
+
+
 def test_sealed_grants_cannot_be_swapped_between_accounts(
     login: tuple[TestClient, Orchestrator, dict[str, Any]],
 ) -> None:
