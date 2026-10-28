@@ -35,11 +35,15 @@ Referencia: [integración oficial del Botón de Pago](https://docs.payphone.app/
 
 ## 4. Solicita el cobro mensual automático
 
+Actualización del 28/10/2026: PayPhone también ofrece **Suscripciones de Business**, con planes y cobros periódicos gestionados por su propio panel mediante un enlace inicial. Requiere validación comercial y habilitación específicas. Esa modalidad es distinta de programar la recurrencia en Tatos mediante la API de tokenización; todavía no se ha habilitado ni integrado ninguna de las dos. [Guía oficial de Suscripciones de Business](https://help.payphone.app/hc/es/articles/51293618777627-Activa-las-Suscripciones-para-tus-clientes-en-tu-Payphone-Business).
+
+Los pasos siguientes corresponden a la modalidad de **API de tokenización**:
+
 1. Solicita a Payphone la habilitación de **tokenización**. Su documentación exige aprobación previa y una integración inicial de Botón de Pago o Cajita operativa en producción.
 2. El alta de Business, por sí sola, no habilita los cargos automáticos. Si Payphone todavía no aprueba la tokenización, la alternativa es la transferencia o un pago individual, cuando sus respectivas integraciones estén activas.
 3. Antes del primer cargo recurrente, el consultorio deberá aceptar expresamente los **USD 100 mensuales**, la fecha de renovación y las condiciones de cancelación. La pantalla y el registro persistente de esa aceptación todavía están pendientes de implementación.
 4. Los datos de tarjeta se introducen en el formulario del proveedor. Tatos deberá conservar únicamente el token y los datos mínimos autorizados, protegidos en el servidor; nunca el CVV ni el número completo de tarjeta.
-5. Tatos debe implementar el calendario mensual y la conciliación: Payphone proporciona la tokenización, pero no programa por sí mismo las renovaciones.
+5. Con la API de tokenización, Tatos debe implementar el calendario mensual y la conciliación. El producto Suscripciones de Business administra su propio calendario, sujeto a su contratación y habilitación.
 6. Verifica una renovación, su comprobante, la cancelación futura, una tarjeta rechazada y la recuperación después de un reinicio antes de habilitar esta opción a los consultorios.
 
 Referencia: [requisitos de tokenización y recurrencia](https://docs.payphone.app/tokenizacion).
