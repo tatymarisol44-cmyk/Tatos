@@ -45,7 +45,8 @@ from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.inbound import channel_alerts
 from orchestrator.publishers import PublishError, WhatsAppSender
-from orchestrator.social import channel_accounts, resolve_secret
+from orchestrator.social import channel_accounts
+from orchestrator.social_credentials import ReconnectRequired, SocialCredentials
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +139,12 @@ class Notifier:
             account = (await conn.execute(query)).first()
         if account is None:
             return "skipped", "no WhatsApp account connected"
-        token = resolve_secret(account.secret_ref)
+        try:
+            token = await SocialCredentials(db, self.settings).resolve(
+                tenant, account.secret_ref, "whatsapp", account.external_id
+            )
+        except ReconnectRequired:
+            return "failed", "social authorization needs reconnection"
         if token is None:
             return "dry_run", None
         try:

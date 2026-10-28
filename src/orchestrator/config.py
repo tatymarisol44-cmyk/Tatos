@@ -170,6 +170,15 @@ class Settings(BaseSettings):
     # Emergency lines in the crisis reply; empty = the verified default (auto_reply.py).
     crisis_help_text: str = Field(default="", max_length=500)
     meta_app_secret: SecretStr | None = None
+    # One provider configuration for Tatos; users authorize their own business assets.
+    social_login_enabled: bool = False
+    social_login_origin: str = Field(default="", pattern=r"^$|^https://[a-z0-9.-]+(?::[0-9]+)?$")
+    meta_app_id: str = Field(default="", pattern=r"^\d*$")
+    meta_login_config_id: str = Field(default="", pattern=r"^\d*$")
+    meta_whatsapp_config_id: str = Field(default="", pattern=r"^\d*$")
+    instagram_app_id: str = Field(default="", pattern=r"^\d*$")
+    instagram_app_secret: SecretStr | None = None
+    social_login_graph_version: str = Field(default="v26.0", pattern=r"^v\d+\.\d+$")
     # Sending (Cloud API). v25.0 is the version in Meta's guide read on 2026-10-07.
     whatsapp_graph_base: str = "https://graph.facebook.com/v25.0"
     facebook_graph_base: str = "https://graph.facebook.com/v26.0"  # Page photos [FB-PHOTOS]

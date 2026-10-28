@@ -68,7 +68,8 @@ async def telegram_webhook(
 
 
 def _whatsapp_configured(orch: Orchestrator) -> tuple[str, str]:
-    token, secret = orch.settings.whatsapp_verify_token, orch.settings.meta_app_secret
+    token = orch.settings.whatsapp_verify_token
+    secret = orch.settings.meta_app_secret or orch.settings.instagram_app_secret
     if token is None or secret is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
     return token.get_secret_value(), secret.get_secret_value()
@@ -161,16 +162,25 @@ async def whatsapp_webhook(
     request: Request,
     signature: Annotated[str | None, Header(alias="X-Hub-Signature-256")] = None,
 ) -> dict[str, Any]:
-    """WhatsApp, Instagram and Facebook notifications: Meta signs all three with the App
-    Secret, so one endpoint (either path) serves the three products."""
+    """Verify each product with its configured app secret before handling notifications.
+    The Instagram Login product can have its own secret on this shared endpoint."""
     orch: Orchestrator = request.app.state.orchestrator
-    _, secret = _whatsapp_configured(orch)
+    _whatsapp_configured(orch)
     body = await request.body()
-    if not signature_ok(secret, body, signature):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad signature")
     try:
         payload = json.loads(body)
     except ValueError:
+        payload = None
+    # Instagram Login can use a distinct product secret. Never accept that secret
+    # for a Page or WhatsApp payload, even when both products share this callback.
+    secret = (
+        (orch.settings.instagram_app_secret or orch.settings.meta_app_secret)
+        if (isinstance(payload, dict) and payload.get("object") == "instagram")
+        else orch.settings.meta_app_secret
+    )
+    if secret is None or not signature_ok(secret.get_secret_value(), body, signature):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad signature")
+    if payload is None:
         return {"ok": True}
     messages = [("whatsapp", *m) for m in _text_messages(payload)] + _social_messages(payload)
     outcomes = [
