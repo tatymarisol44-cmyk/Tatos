@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -31,6 +32,7 @@ from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.db import utcnow
+from orchestrator.dlocal_go import DlocalGo
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 from orchestrator.social_login import digest, flows
@@ -136,7 +138,7 @@ def seed(c: TestClient) -> Acme:
     appt = _ok(
         c.post(
             "/v1/crm/appointments",
-            json={"patient_id": ids["patient"], "starts_at": past},
+            json={"patient_id": ids["patient"], "starts_at": past, "price": 49.99},
             headers=ACME,
         )
     )
@@ -402,6 +404,11 @@ def seed(c: TestClient) -> Acme:
     ids["conversation"] = everyday["conversation_id"]
     draft = _ok(c.post(f"/v1/inbox/{ids['conversation']}/draft", headers=clinician))
     ids["draft"] = draft["message_id"]
+    _ok(
+        c.put("/v1/billing/bank", json={"instructions": MARKER + " bank destination"}, headers=ACME)
+    )
+    invoice = _ok(c.post(f"/v1/billing/appointments/{ids['appointment']}", headers=ACME))
+    ids["billing_invoice"] = invoice["invoice_id"]
     return acme
 
 
@@ -422,6 +429,8 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "docs": get("/v1/knowledge/documents"),
         "principals": get("/v1/admin/principals"),
         "team": get("/v1/admin/team"),
+        "billing_config": get("/v1/billing/configuration"),
+        "billing_orders": get("/v1/billing/orders"),
         "professionals": get("/v1/admin/professionals"),
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
         "instruments": get("/v1/clinical/instruments"),
@@ -451,6 +460,71 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
     i = acme.ids
     p, t = i["patient"], i["thread"]
     return {
+        ("GET", "/v1/billing/configuration"): ("/v1/billing/configuration", None),
+        ("PUT", "/v1/billing/dlocal/account"): (
+            "/v1/billing/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("PUT", "/v1/billing/platform/dlocal/account"): (
+            "/v1/billing/platform/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/reconcile",
+            None,
+        ),
+        ("GET", "/v1/billing/dlocal/subscription"): ("/v1/billing/dlocal/subscription", None),
+        ("POST", "/v1/billing/dlocal/subscription"): (
+            "/v1/billing/dlocal/subscription",
+            {"consent": True},
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/reconcile"): (
+            "/v1/billing/dlocal/subscription/reconcile",
+            None,
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/cancel"): (
+            "/v1/billing/dlocal/subscription/cancel",
+            {"consent": True},
+        ),
+        ("PUT", "/v1/billing/bank"): (
+            "/v1/billing/bank",
+            {"instructions": "Globex bank destination"},
+        ),
+        ("GET", "/v1/billing/orders"): ("/v1/billing/orders", None),
+        ("POST", "/v1/billing/subscription"): ("/v1/billing/subscription", None),
+        ("POST", "/v1/billing/appointments/{appointment_id}"): (
+            f"/v1/billing/appointments/{i['appointment']}",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/transfer"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/transfer",
+            {"reference": "intruder-reference"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/review"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/review",
+            {
+                "approved": True,
+                "note": "Intruder verification",
+                "bank_transaction_id": "intruder-bank-id",
+            },
+        ),
+        ("PUT", "/v1/billing/platform/bank"): (
+            "/v1/billing/platform/bank",
+            {"instructions": "Intruder platform bank"},
+        ),
+        ("GET", "/v1/billing/platform/subscriptions"): ("/v1/billing/platform/subscriptions", None),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/review"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/review",
+            {
+                "approved": True,
+                "note": "Intruder verification",
+                "bank_transaction_id": "intruder-bank-id",
+            },
+        ),
         ("GET", "/healthz"): ("/healthz", None),
         ("GET", "/readyz"): ("/readyz", None),
         ("GET", "/.well-known/agent-card.json"): ("/.well-known/agent-card.json", None),
@@ -904,6 +978,23 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
     """The `/v1/me` routes, called with a globex PATIENT key."""
     t = acme.ids["thread"]
     return {
+        ("GET", "/v1/me/payments"): ("/v1/me/payments", None),
+        ("POST", "/v1/me/appointments/{appointment_id}/payment"): (
+            f"/v1/me/appointments/{acme.ids['appointment']}/payment",
+            None,
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/transfer"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/transfer",
+            {"reference": "intruder-reference"},
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/checkout"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/reconcile"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/reconcile",
+            None,
+        ),
         ("GET", "/v1/me"): ("/v1/me", None),
         ("GET", "/v1/me/appointments"): ("/v1/me/appointments", None),
         ("GET", "/v1/me/treatments"): ("/v1/me/treatments", None),
@@ -942,6 +1033,14 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
 ADDRESSED = {
     key
     for key in (
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"),
+        ("POST", "/v1/billing/appointments/{appointment_id}"),
+        ("POST", "/v1/billing/orders/{invoice_id}/transfer"),
+        ("POST", "/v1/billing/orders/{invoice_id}/review"),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/review"),
+        ("POST", "/v1/me/appointments/{appointment_id}/payment"),
+        ("POST", "/v1/me/payments/{invoice_id}/transfer"),
         ("DELETE", "/v1/knowledge/documents/{doc_id}"),
         ("GET", "/v1/reviews/{thread_id}"),
         ("POST", "/v1/reviews/{thread_id}"),
@@ -1041,12 +1140,16 @@ def world(
     settings: Settings, catalog: Catalog, tmp_path: Any
 ) -> Iterator[tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]]]:
     settings.tenant_packs = {"acme": "dental", "globex": "dental"}
+    settings.billing_enabled = True
     settings.campaign_default_holdout_pct = 0
     settings.media_dir = tmp_path / "media"
     settings.meta_app_secret = SecretStr(APP_SECRET)
     settings.whatsapp_verify_token = SecretStr("verify-synthetic")
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     with TestClient(create_app(settings, orch)) as c:
+        orch.dlocal_billing.gateway = DlocalGo(
+            httpx.MockTransport(lambda request: httpx.Response(401))
+        )
         acme = seed(c)
         settings.social_login_enabled = True
         settings.social_login_origin = "https://example.test"

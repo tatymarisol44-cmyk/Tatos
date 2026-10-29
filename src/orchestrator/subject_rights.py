@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from orchestrator.auth import PrincipalStore
+from orchestrator.billing_store import BillingStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.clinical_files import ClinicalFiles
 from orchestrator.clinical_records import ClinicalRecords
@@ -48,6 +49,7 @@ class SubjectRights:
         workshops: Workshops,
         reviews: ReviewQueue,
         audit: AuditLog,
+        billing: BillingStore,
     ) -> None:
         self.threads = threads
         self.subject_threads = subject_threads
@@ -63,6 +65,7 @@ class SubjectRights:
         self.workshops = workshops
         self.reviews = reviews
         self.audit = audit
+        self.billing = billing
 
     async def _conversations(self, tenant: str, subject_id: str) -> list[dict[str, Any]]:
         out = []
@@ -94,6 +97,7 @@ class SubjectRights:
             "clinical_files": await self.files.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
             "inbox_conversations": await self.inbox.export_subject(tenant, subject_id),
+            "payments": await self.billing.export_subject(tenant, subject_id),
             "workshops": await self.workshops.history(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],
