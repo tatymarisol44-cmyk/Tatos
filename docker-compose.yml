@@ -65,7 +65,7 @@ services:
       retries: 10
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    image: otel/opentelemetry-collector-contrib:0.163.2-386@sha256:bd0aac7fc525d8016b7bba1e35287b1f3a43c1e2d52e2426e2496d8d45668784
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes: [./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro]
     depends_on: [jaeger]
