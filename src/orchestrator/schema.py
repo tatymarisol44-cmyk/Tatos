@@ -20,6 +20,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     clinical_files,
     clinical_records,
     crm,
+    dlocal_billing,
     establishment,
     governance,
     inbound,

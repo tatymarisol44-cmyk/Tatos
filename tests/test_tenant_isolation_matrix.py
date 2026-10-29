@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -31,6 +32,7 @@ from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.db import utcnow
+from orchestrator.dlocal_go import DlocalGo
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 from orchestrator.social_login import digest, flows
@@ -459,6 +461,35 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
     p, t = i["patient"], i["thread"]
     return {
         ("GET", "/v1/billing/configuration"): ("/v1/billing/configuration", None),
+        ("PUT", "/v1/billing/dlocal/account"): (
+            "/v1/billing/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("PUT", "/v1/billing/platform/dlocal/account"): (
+            "/v1/billing/platform/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/reconcile",
+            None,
+        ),
+        ("GET", "/v1/billing/dlocal/subscription"): ("/v1/billing/dlocal/subscription", None),
+        ("POST", "/v1/billing/dlocal/subscription"): (
+            "/v1/billing/dlocal/subscription",
+            {"consent": True},
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/reconcile"): (
+            "/v1/billing/dlocal/subscription/reconcile",
+            None,
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/cancel"): (
+            "/v1/billing/dlocal/subscription/cancel",
+            {"consent": True},
+        ),
         ("PUT", "/v1/billing/bank"): (
             "/v1/billing/bank",
             {"instructions": "Globex bank destination"},
@@ -956,6 +987,14 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
             f"/v1/me/payments/{acme.ids['billing_invoice']}/transfer",
             {"reference": "intruder-reference"},
         ),
+        ("POST", "/v1/me/payments/{invoice_id}/checkout"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/reconcile"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/reconcile",
+            None,
+        ),
         ("GET", "/v1/me"): ("/v1/me", None),
         ("GET", "/v1/me/appointments"): ("/v1/me/appointments", None),
         ("GET", "/v1/me/treatments"): ("/v1/me/treatments", None),
@@ -994,6 +1033,8 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
 ADDRESSED = {
     key
     for key in (
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"),
         ("POST", "/v1/billing/appointments/{appointment_id}"),
         ("POST", "/v1/billing/orders/{invoice_id}/transfer"),
         ("POST", "/v1/billing/orders/{invoice_id}/review"),
@@ -1106,6 +1147,9 @@ def world(
     settings.whatsapp_verify_token = SecretStr("verify-synthetic")
     orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
     with TestClient(create_app(settings, orch)) as c:
+        orch.dlocal_billing.gateway = DlocalGo(
+            httpx.MockTransport(lambda request: httpx.Response(401))
+        )
         acme = seed(c)
         settings.social_login_enabled = True
         settings.social_login_origin = "https://example.test"

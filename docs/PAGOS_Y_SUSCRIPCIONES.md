@@ -1,5 +1,11 @@
 # Cobros del consultorio y suscripción de Tatos
 
+**Actualización 29/10/2026:** la propietaria eligió dLocal Go. El estado vigente,
+la integración local y los pasos de conexión están en [dLocal Go](DLOCAL_GO.md).
+Incluye checkout persistente, planes mensuales del proveedor y conciliación. Sin
+credenciales o pruebas reales todavía; cobros de producción cerrados. Las secciones
+PayPhone siguientes son antecedentes hasta el 28/10 y no son el plan actual de activación.
+
 ## Alcance confirmado por la propietaria
 
 Hay dos cobros diferentes. Los pacientes pagan consultas y citas a su consultorio. Cada consultorio paga una mensualidad a la operadora de Tatos por usar toda la aplicación. Se solicitaron tarjeta automática para la suscripción y la alternativa de transferencia.

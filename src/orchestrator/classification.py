@@ -104,6 +104,10 @@ TABLE_CLASS: dict[str, DataClass] = {
     "audit_heads": DataClass.AUDIT,
     "billing_orders": DataClass.HEALTH,
     "billing_payees": DataClass.PERSONAL,
+    "billing_gateway_accounts": DataClass.CREDENTIAL,
+    "billing_gateway_checkouts": DataClass.CREDENTIAL,
+    "billing_gateway_plans": DataClass.CREDENTIAL,
+    "billing_gateway_renewals": DataClass.PERSONAL,
     "campaign_recipients": DataClass.PERSONAL,
     "campaigns": DataClass.INTERNAL,
     "channel_accounts": DataClass.CREDENTIAL,  # secret_ref names a credential

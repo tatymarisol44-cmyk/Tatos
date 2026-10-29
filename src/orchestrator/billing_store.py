@@ -147,8 +147,8 @@ class BillingStore:
         return {
             "enabled": self.settings.billing_enabled,
             "currency": "USD",
-            "clinic_bank_configured": clinic is not None,
-            "platform_bank_configured": platform is not None,
+            "clinic_bank_configured": bool(clinic and clinic["instructions"]),
+            "platform_bank_configured": bool(platform and platform["instructions"]),
             "monthly_price_cents": self.settings.billing_monthly_price_cents or None,
             "platform_operator": operator,
             "automatic_card_available": False,
@@ -214,6 +214,8 @@ class BillingStore:
     ) -> dict[str, Any]:
         self._enabled()
         async with self.db.engine.begin() as conn:
+            if kind == ChargeKind.SUBSCRIPTION:
+                await self._manual_subscription_allowed(conn, tenant)
             subject = None
             if kind == ChargeKind.APPOINTMENT:
                 query = (
@@ -257,7 +259,7 @@ class BillingStore:
                 )
                 price = None
             if receiver is None:
-                raise BillingError("recipient bank account is not configured")
+                raise BillingError("recipient payment account is not configured")
             old = (
                 (
                     await conn.execute(
@@ -424,15 +426,25 @@ class BillingStore:
         if not 3 <= len(reference) <= 120:
             raise BillingError("transfer reference must contain 3 to 120 characters")
         async with self.db.engine.begin() as conn:
+            await self._manual_subscription_allowed(conn, tenant, invoice_id=invoice_id)
             row = await self._row(conn, tenant, invoice_id, patient_id)
+            if not row["bank_instructions"]:
+                raise BillingError("recipient bank account is not configured")
             invoice = self._invoice(row).notify_transfer()
             if row["state"] == PaymentState.TRANSFER_REVIEW:
                 if row["transfer_reference"] != reference:
                     raise BillingError("a transfer is already being reviewed")
                 return self._public(row)
-            await conn.execute(
+            changed = await conn.execute(
                 update(orders)
-                .where(and_(orders.c.tenant == tenant, orders.c.invoice_id == invoice_id))
+                .where(
+                    and_(
+                        orders.c.tenant == tenant,
+                        orders.c.invoice_id == invoice_id,
+                        orders.c.state == row["state"],
+                        orders.c.method == row["method"],
+                    )
+                )
                 .values(
                     state=invoice.state,
                     transfer_reference=reference,
@@ -440,6 +452,8 @@ class BillingStore:
                     updated_at=utcnow(),
                 )
             )
+            if changed.rowcount != 1:
+                raise BillingError("payment conflicted; reload its state")
             await self.audit.record_in(
                 conn,
                 tenant,
@@ -449,6 +463,40 @@ class BillingStore:
                 subject_id=row["patient_id"],
             )
             return self._public(await self._row(conn, tenant, invoice_id, patient_id))
+
+    async def _manual_subscription_allowed(
+        self,
+        conn: Any,
+        tenant: str,
+        *,
+        invoice_id: str | None = None,
+    ) -> None:
+        from orchestrator.dlocal_billing import plans
+
+        if invoice_id is not None:
+            kind = (
+                await conn.execute(
+                    select(orders.c.kind).where(
+                        and_(orders.c.tenant == tenant, orders.c.invoice_id == invoice_id)
+                    )
+                )
+            ).scalar_one_or_none()
+            if kind != "subscription":
+                return
+        # Serialize mandate creation and transfer reporting on the same recipient.
+        await conn.execute(
+            select(payees.c.merchant_id)
+            .where(
+                and_(
+                    payees.c.tenant == self.settings.billing_platform_tenant,
+                    payees.c.scope == "platform",
+                )
+            )
+            .with_for_update()
+        )
+        plan = (await conn.execute(select(plans.c.state).where(plans.c.tenant == tenant))).first()
+        if plan is not None:
+            raise BillingError("a card plan exists; recipient must reconcile it before a transfer")
 
     async def review_transfer(
         self,

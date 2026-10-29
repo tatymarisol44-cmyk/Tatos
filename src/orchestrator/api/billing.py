@@ -4,16 +4,24 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi import Path as ApiPath
-from pydantic import BaseModel, Field
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field, SecretStr
 
 from orchestrator.api.security import require_patient, requires
 from orchestrator.auth import SERVICE, Principal, Role
 from orchestrator.billing import BillingError, ChargeKind
 from orchestrator.billing_store import BillingStore
+from orchestrator.dlocal_billing import DlocalBilling
+from orchestrator.dlocal_go import Environment
 
-router = APIRouter(tags=["billing"])
+
+async def no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
+router = APIRouter(tags=["billing"], dependencies=[Depends(no_store)])
 Admin = Annotated[Principal, Depends(requires(Role.ADMIN))]
 Reader = Annotated[Principal, Depends(requires(Role.ADMIN, Role.OWNER, Role.RECEPTION))]
 Me = Annotated[Principal, Depends(require_patient)]
@@ -36,6 +44,17 @@ class ReviewIn(BaseModel):
     bank_transaction_id: str | None = Field(default=None, min_length=3, max_length=120)
 
 
+class GatewayIn(BaseModel):
+    environment: Environment = "sandbox"
+    api_key: SecretStr
+    secret_key: SecretStr
+    withdrawals_confirmed: bool = False
+
+
+class ConsentIn(BaseModel):
+    consent: bool = False
+
+
 def store(request: Request) -> BillingStore:
     return request.app.state.orchestrator.billing  # type: ignore[no-any-return]
 
@@ -55,7 +74,110 @@ async def result(call: Any) -> Any:
 
 @router.get("/v1/billing/configuration")
 async def configuration(request: Request, p: Reader) -> dict[str, Any]:
-    return await store(request).configuration(p.tenant, operator=operator(request, p))
+    return {
+        **await store(request).configuration(p.tenant, operator=operator(request, p)),
+        "dlocal": await gateway(request).configuration(p.tenant),
+    }
+
+
+def gateway(request: Request) -> DlocalBilling:
+    return request.app.state.orchestrator.dlocal_billing  # type: ignore[no-any-return]
+
+
+@router.put("/v1/billing/dlocal/account")
+async def connect_gateway(body: GatewayIn, request: Request, p: Admin) -> Any:
+    return await result(
+        gateway(request).connect(
+            p.tenant,
+            "clinic",
+            body.environment,
+            body.api_key.get_secret_value(),
+            body.secret_key.get_secret_value(),
+            body.withdrawals_confirmed,
+            p.id,
+        )
+    )
+
+
+@router.put("/v1/billing/platform/dlocal/account")
+async def connect_platform_gateway(body: GatewayIn, request: Request, p: Admin) -> Any:
+    require_operator(request, p)
+    return await result(
+        gateway(request).connect(
+            p.tenant,
+            "platform",
+            body.environment,
+            body.api_key.get_secret_value(),
+            body.secret_key.get_secret_value(),
+            body.withdrawals_confirmed,
+            p.id,
+            operator=True,
+        )
+    )
+
+
+@router.post("/v1/billing/orders/{invoice_id}/checkout")
+async def checkout(invoice_id: InvoiceId, request: Request, p: Reader) -> Any:
+    return await result(gateway(request).checkout(p.tenant, invoice_id, p.id))
+
+
+@router.post("/v1/billing/orders/{invoice_id}/reconcile")
+async def reconcile(invoice_id: InvoiceId, request: Request, p: Reader) -> Any:
+    return await result(gateway(request).reconcile_payment(p.tenant, invoice_id))
+
+
+@router.get("/v1/billing/dlocal/subscription")
+async def card_subscription(request: Request, p: Admin) -> Any:
+    return await gateway(request).subscription(p.tenant)
+
+
+@router.post("/v1/billing/dlocal/subscription")
+async def subscribe_card(body: ConsentIn, request: Request, p: Admin) -> Any:
+    return await result(gateway(request).subscribe(p.tenant, p.id, body.consent))
+
+
+@router.post("/v1/billing/dlocal/subscription/reconcile")
+async def sync_card_subscription(request: Request, p: Admin) -> Any:
+    return await result(gateway(request).sync_subscription(p.tenant))
+
+
+@router.post("/v1/billing/dlocal/subscription/cancel")
+async def cancel_card_subscription(body: ConsentIn, request: Request, p: Admin) -> Any:
+    if not body.consent:
+        raise HTTPException(409, "subscription cancellation confirmation is required")
+    return await result(gateway(request).sync_subscription(p.tenant, cancel=True))
+
+
+@router.post("/v1/billing/dlocal/hooks/{reference}", include_in_schema=False)
+async def dlocal_hook(
+    reference: InvoiceId,
+    request: Request,
+) -> Response:
+    payload = await request.body()
+    if len(payload) > 8192:
+        raise HTTPException(413, "notification is too large")
+    try:
+        await gateway(request).webhook(reference, payload, request.headers.get("authorization", ""))
+    except PermissionError:
+        raise HTTPException(401, "invalid notification signature") from None
+    except KeyError:
+        raise HTTPException(404, "notification not found") from None
+    except BillingError:
+        raise HTTPException(503, "notification reconciliation pending") from None
+    return Response(status_code=200)
+
+
+@router.get("/v1/billing/dlocal/return", include_in_schema=False)
+async def payment_return() -> HTMLResponse:
+    return HTMLResponse(
+        '<!doctype html><html lang="es"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Volver a Tatos</title><h1>Vuelve a Tatos para comprobar el pago</h1>"
+        "<p>Cierra esta pestaña y pulsa «Comprobar pago» en la aplicación.</p>"
+        '<p><a href="/app#ajustes/pagos">Abrir el consultorio</a> · '
+        '<a href="/mi/">Abrir mi app de paciente</a></p></html>',
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 @router.put("/v1/billing/bank")
@@ -160,5 +282,30 @@ async def patient_transfer(invoice_id: InvoiceId, body: TransferIn, request: Req
     return await result(
         store(request).notify_transfer(
             p.tenant, invoice_id, body.reference, p.id, patient_id=p.subject_id
+        )
+    )
+
+
+@router.post("/v1/me/payments/{invoice_id}/checkout")
+async def patient_checkout(invoice_id: InvoiceId, request: Request, p: Me) -> Any:
+    assert p.subject_id is not None
+    return await result(
+        gateway(request).checkout(
+            p.tenant,
+            invoice_id,
+            p.id,
+            patient_id=p.subject_id,
+        )
+    )
+
+
+@router.post("/v1/me/payments/{invoice_id}/reconcile")
+async def patient_reconcile(invoice_id: InvoiceId, request: Request, p: Me) -> Any:
+    assert p.subject_id is not None
+    return await result(
+        gateway(request).reconcile_payment(
+            p.tenant,
+            invoice_id,
+            patient_id=p.subject_id,
         )
     )

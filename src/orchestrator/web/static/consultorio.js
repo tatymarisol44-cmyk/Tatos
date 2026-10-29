@@ -2593,7 +2593,24 @@ function billingInvoiceDialog(invoice, { review = false, platform = false } = {}
     el("p", { class: "muted", text: `Referencia de la orden: ${invoice.invoice_id}` })];
   if (invoice.transfer_reference) parts.push(el("p", { text: `Referencia informada: ${invoice.transfer_reference}` }));
   if (invoice.review_note) parts.push(el("p", { text: `Resultado de la revisión: ${invoice.review_note}` }));
-  if (invoice.state === "pending" && isAdmin()) {
+  if (invoice.kind === "appointment" && ["pending", "processing", "uncertain"].includes(invoice.state)) {
+    const pay = el("button", { class: "btn", type: "button", text: invoice.state === "pending" ? "Pagar con tarjeta" : "Comprobar pago" });
+    pay.addEventListener("click", async () => {
+      pay.disabled = true;
+      try {
+        const suffix = invoice.state === "pending" ? "checkout" : "reconcile";
+        const data = await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/${suffix}`, { method: "POST" });
+        if (data.checkout_url) {
+          pay.after(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir pago seguro en dLocal Go" }));
+          say(status, data.environment === "sandbox" ? "Pago de prueba: no se mueve dinero. Después vuelve a Tatos y comprueba el pago." : "Completa el pago y vuelve a Tatos para comprobarlo.");
+          invoice.state = "processing"; pay.textContent = "Comprobar pago";
+        } else { $("#dialog").close(); route(); }
+      } catch (err) { say(status, billingError(err), "error"); }
+      finally { pay.disabled = false; }
+    });
+    parts.push(pay);
+  }
+  if (invoice.state === "pending" && invoice.method === "transfer" && invoice.bank_instructions && isAdmin()) {
     const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
     const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
     const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
@@ -2674,7 +2691,7 @@ async function billingView(main) {
   const parts = [page("Cobros y suscripción", "Dos tipos de pago, cada uno con su cuenta receptora.", link("#ajustes", "Volver a Ajustes"))];
   if (!config.enabled) parts.push(el("p", { class: "notice", text: "Los cobros todavía no están activados. Puedes preparar los datos de la cuenta receptora." }));
   parts.push(card("Cobros del consultorio", "", el("p", { text: "Tus pacientes pagan sus consultas y citas al consultorio. Desde una cita de la Agenda, pulsa Preparar pago." }),
-    isAdmin() ? billingBankForm(config) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
+    isAdmin() ? el("div", { class: "stack" }, billingGatewayForm(config.dlocal.clinic), billingBankForm(config)) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
     billingRows(invoices, { review: isAdmin() })));
   if (isAdmin()) {
     const subscriptions = await api("/v1/billing/orders?kind=subscription");
@@ -2688,12 +2705,73 @@ async function billingView(main) {
     });
     parts.push(card("Suscripción de Tatos", "", el("p", { text: "Una mensualidad por consultorio para usar toda la aplicación. Este pago lo recibe la operadora de Tatos." }),
       el("p", { text: config.monthly_price_cents ? `${billingMoney(config.monthly_price_cents)} por mes` : "El precio mensual todavía no está configurado." }),
-      el("p", { class: "muted", text: "Tarjeta automática: pendiente de habilitación. Las transferencias se confirman después de verificar el ingreso." }),
+      await billingSubscriptionCard(config),
       create, status, billingRows(subscriptions)));
   }
   if (config.platform_operator) {
     const pending = await api("/v1/billing/platform/subscriptions");
-    parts.push(card("Administración de suscripciones de Tatos", "", billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
+    parts.push(card("Administración de suscripciones de Tatos", "", billingGatewayForm(config.dlocal.platform, true), billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
   }
   main.replaceChildren(...parts);
+}
+
+function billingGatewayForm(account, platform = false) {
+  const environment = el("select", {}, el("option", { value: "sandbox", text: "Pruebas sin dinero real" }), el("option", { value: "live", text: "Cuenta real aprobada" }));
+  const key = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const secret = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const approved = el("input", { type: "checkbox" });
+  const save = el("button", { type: "submit", class: "btn", text: "Conectar dLocal Go" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: account ? `dLocal Go: ${account.environment === "sandbox" ? "cuenta de pruebas" : "cuenta real"}. ${account.available ? "Disponible." : "Cobros pendientes de activación."}` : "dLocal Go todavía no está conectado." }),
+    el("p", { class: "muted", text: platform ? "Esta cuenta recibe las mensualidades de Tatos." : "Usa la cuenta de este consultorio para recibir sus citas." }),
+    el("label", { class: "field" }, "Entorno", environment),
+    el("label", { class: "field" }, "API Key de dLocal Go", key),
+    el("label", { class: "field" }, "Secret Key de dLocal Go", secret),
+    el("label", { class: "check" }, approved, "Para una cuenta real: dLocal Go aprobó mi cuenta y habilitó los retiros"),
+    el("p", { class: "muted", text: "Obtén las claves en dLocal Go → Integraciones → Integración API. Se guardan cifradas y no vuelven a mostrarse." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/dlocal/account" : "/v1/billing/dlocal/account", { method: "PUT", body: { environment: environment.value, api_key: key.value.trim(), secret_key: secret.value.trim(), withdrawals_confirmed: approved.checked } });
+      key.value = secret.value = ""; route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingSubscriptionCard(config) {
+  const subscription = await api("/v1/billing/dlocal/subscription");
+  const labels = { not_started: "Sin iniciar", preparing: "Preparando", uncertain: "Pendiente de comprobación", awaiting: "Pendiente de autorizar en dLocal Go", active: "Renovación automática activa", cancelled: "Renovación cancelada" };
+  const status = el("p", { class: "status", role: "status" });
+  const consent = el("input", { type: "checkbox" });
+  const start = el("button", { type: "button", class: "btn primary", text: "Configurar tarjeta automática", disabled: !config.dlocal.platform?.available || !["not_started", "awaiting"].includes(subscription.state) });
+  const sync = el("button", { type: "button", class: "btn", text: "Comprobar suscripción", disabled: ["not_started", "preparing", "uncertain"].includes(subscription.state) });
+  const cancel = el("button", { type: "button", class: "btn", text: "Cancelar renovación", disabled: !["awaiting", "active"].includes(subscription.state) });
+  const holder = el("div", { class: "stack" }, el("p", { text: labels[subscription.state] || "En comprobación" }),
+    el("p", { class: "muted", text: config.dlocal.platform?.environment === "sandbox" ? "Entorno de pruebas: no se cobra dinero real." : "La tarjeta y la autorización se completan en dLocal Go. Las transferencias requieren verificar el ingreso." }),
+    el("label", { class: "check" }, consent, `Autorizo la renovación automática de ${billingMoney(config.monthly_price_cents)} cada mes. Puedo cancelar los próximos cobros.`),
+    start, sync, cancel, status);
+  start.addEventListener("click", async () => {
+    if (!consent.checked) { say(status, "Marca la autorización mensual para continuar.", "error"); return; }
+    start.disabled = true;
+    try {
+      const data = await api("/v1/billing/dlocal/subscription", { method: "POST", body: { consent: true } });
+      if (data.checkout_url) holder.append(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Autorizar mensualidad en dLocal Go" }));
+      say(status, "Completa la autorización y luego pulsa Comprobar suscripción."); sync.disabled = false;
+    } catch (err) { say(status, billingError(err), "error"); start.disabled = false; }
+  });
+  sync.addEventListener("click", async () => {
+    sync.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/reconcile", { method: "POST" }); route(); }
+    catch (err) { say(status, billingError(err), "error"); sync.disabled = false; }
+  });
+  cancel.addEventListener("click", async () => {
+    if (!sure(cancel, "Confirmar cancelación de próximos cobros")) return;
+    cancel.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/cancel", { method: "POST", body: { consent: true } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); cancel.disabled = false; }
+  });
+  for (const renewal of subscription.renewals || []) holder.append(el("p", { text: `${renewal.amount_cents ? billingMoney(renewal.amount_cents) : "Renovación"} · ${BILLING_STATES[renewal.state] || "En comprobación"}` }));
+  return holder;
 }

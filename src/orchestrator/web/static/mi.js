@@ -245,7 +245,23 @@ VIEWS.pagos = async (main) => {
     const status = el("p", { class: "status", role: "status" });
     const card = el("section", { class: "card" }, el("h2", { text: `${money(invoice.amount_cents)} · ${states[invoice.state] || "En comprobación"}` }),
       el("p", { text: invoice.bank_instructions }), el("p", { class: "muted", text: `Orden: ${invoice.invoice_id}` }));
-    if (invoice.state === "pending") {
+      if (["pending", "processing", "uncertain"].includes(invoice.state)) {
+        const pay = button(invoice.state === "pending" ? "Pagar con tarjeta" : "Comprobar pago", async () => {
+          pay.disabled = true;
+          try {
+            const action = invoice.state === "pending" ? "checkout" : "reconcile";
+            const data = await api(`/v1/me/payments/${encodeURIComponent(invoice.invoice_id)}/${action}`, { method: "POST" });
+            if (data.checkout_url) {
+              card.append(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir pago seguro en dLocal Go" }));
+              invoice.state = "processing"; pay.textContent = "Comprobar pago";
+              say(status, data.environment === "sandbox" ? "Pago de prueba sin dinero real. Después vuelve para comprobar el pago." : "Después de pagar, vuelve y pulsa Comprobar pago.");
+            } else { route(); }
+          } catch (err) { say(status, "No se pudo comprobar o preparar el pago. Consulta con el consultorio antes de repetirlo.", "error"); }
+          finally { pay.disabled = false; }
+        });
+        card.append(pay);
+      }
+      if (invoice.state === "pending" && invoice.method === "transfer" && invoice.bank_instructions) {
       const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
       const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
       const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
@@ -265,7 +281,7 @@ VIEWS.pagos = async (main) => {
   for (const visit of [...me.upcoming_appointments, ...me.past_appointments]) {
     if (["cancelled", "no_show"].includes(visit.status) || invoices.some((x) => x.resource_id === visit.id)) continue;
     const status = el("p", { class: "status", role: "status" });
-    const pay = button("Preparar transferencia", async () => {
+    const pay = button("Preparar pago", async () => {
       pay.disabled = true;
       try { await api(`/v1/me/appointments/${encodeURIComponent(visit.id)}/payment`, { method: "POST" }); route(); }
       catch (err) {

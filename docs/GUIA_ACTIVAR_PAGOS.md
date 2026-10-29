@@ -1,5 +1,9 @@
 # Activar los pagos de Tatos, paso a paso
 
+**29/10/2026:** continuar con la [guía de dLocal Go](DLOCAL_GO.md), elegida por la
+propietaria. Esta guía PayPhone se conserva como antecedente; no usarla para configurar
+la nueva cuenta. No hay cobros de producción activados.
+
 Preparado el 26 de octubre de 2026. Precio aprobado: **USD 100 al mes por consultorio, por toda la aplicación**. La propietaria todavía no tiene cuenta Payphone Business.
 
 ## 1. Distingue las dos cuentas receptoras

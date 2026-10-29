@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     build_revision: str = Field(default="dev", pattern=r"^(?:dev|[0-9a-f]{7,40})$")
     # Payments stay closed until accounts, price and provider permissions are configured.
     billing_enabled: bool = False
+    billing_dlocal_live_enabled: bool = False
     billing_platform_tenant: str = Field(default="", max_length=64)
     # Owner-approved price, 2026-10-26: USD 100/month per clinic, entire app.
     billing_monthly_price_cents: int = Field(default=10_000, ge=0, le=99_999_999_999)

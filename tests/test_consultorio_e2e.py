@@ -23,6 +23,7 @@ from pydantic import SecretStr
 from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
+from orchestrator.dlocal_go import Credentials, DlocalGo
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 from orchestrator.staff_login import totp_at, unb32
@@ -82,6 +83,77 @@ def browser(subprocess_loop: None) -> Iterator[Any]:
             pytest.skip(f"Chromium not available: {exc}")
         yield chromium
         chromium.close()
+
+
+def test_dlocal_connection_monthly_consent_and_cancellation(
+    server: str,
+    browser: Any,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.test_dlocal_billing import PLATFORM_KEY, PLATFORM_SECRET, Provider
+
+    settings.billing_enabled = True
+    settings.billing_platform_tenant = "acme"
+    settings.public_base_url = "https://synthetic.example"
+    provider = Provider()
+    original = DlocalGo.request
+
+    async def request(
+        self: DlocalGo,
+        credentials: Credentials,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        page: int | None = None,
+    ) -> dict[str, Any]:
+        self.transport = httpx.MockTransport(provider.handle)
+        return await original(self, credentials, method, path, body, page=page)
+
+    monkeypatch.setattr(DlocalGo, "request", request)
+    operator = browser.new_page()
+    errors = _watch(operator)
+    operator.add_init_script('sessionStorage.setItem("consultorio.key", "test-key")')
+    operator.goto(server + "/app#ajustes/pagos")
+    form = (
+        operator.get_by_role("region", name="Administración de suscripciones de Tatos")
+        .locator("form")
+        .first
+    )
+    form.get_by_label("API Key de dLocal Go", exact=True).fill(PLATFORM_KEY)
+    form.get_by_label("Secret Key de dLocal Go", exact=True).fill(PLATFORM_SECRET)
+    form.get_by_role("button", name="Conectar dLocal Go", exact=True).click()
+    sync_api.expect(form.get_by_label("API Key de dLocal Go", exact=True)).to_have_value("")
+    assert "synthetic-api-key" not in operator.content()
+    customer = browser.new_page(viewport={"width": 390, "height": 844})
+    customer_errors = _watch(customer)
+    customer.add_init_script('sessionStorage.setItem("consultorio.key", "other-key")')
+    customer.goto(server + "/app#ajustes/pagos")
+    section = customer.get_by_role("region", name="Suscripción de Tatos", exact=True)
+    section.get_by_role("button", name="Configurar tarjeta automática", exact=True).click()
+    sync_api.expect(
+        section.get_by_text("Marca la autorización mensual para continuar.")
+    ).to_be_visible()
+    section.get_by_label("Autorizo la renovación automática", exact=False).check()
+    section.get_by_role("button", name="Configurar tarjeta automática", exact=True).click()
+    link = section.get_by_role("link", name="Autorizar mensualidad en dLocal Go")
+    sync_api.expect(link).to_be_visible()
+    sync_api.expect(link).to_have_attribute("href", provider.plan["subscribe_url"])
+    # Do not navigate to a real provider from a simulated browser test.
+    provider.activate()
+    section.get_by_role("button", name="Comprobar suscripción", exact=True).click()
+    sync_api.expect(section.get_by_text("Renovación automática activa", exact=True)).to_be_visible()
+    cancel = section.get_by_role("button", name="Cancelar renovación", exact=True)
+    cancel.click()
+    section.get_by_role(
+        "button", name="Confirmar cancelación de próximos cobros", exact=True
+    ).click()
+    sync_api.expect(section.get_by_text("Renovación cancelada", exact=True)).to_be_visible()
+    assert customer.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not errors and not customer_errors
+    customer.close()
+    operator.close()
 
 
 def test_billing_subscription_transfer_is_verified_by_platform_only(
@@ -211,7 +283,7 @@ def test_patient_can_report_own_appointment_transfer_without_marking_it_paid(
     problems = _watch(page)
     page.add_init_script('localStorage.setItem("mi.key", ' + json.dumps(access["key"]) + ")")
     page.goto(server + "/mi/#pagos")
-    page.get_by_role("button", name="Preparar transferencia", exact=True).click()
+    page.get_by_role("button", name="Preparar pago", exact=True).click()
     page.get_by_text("Clinic demo bank", exact=False).wait_for()
     page.get_by_label("Referencia del movimiento bancario", exact=True).fill(
         "synthetic-patient-transfer"

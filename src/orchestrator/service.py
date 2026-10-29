@@ -30,6 +30,7 @@ from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, aware, utcnow
+from orchestrator.dlocal_billing import DlocalBilling
 from orchestrator.engagement import Engagement
 from orchestrator.establishment import Professionals
 from orchestrator.factories import (  # re-exported for callers of the old location
@@ -182,6 +183,7 @@ class Orchestrator:
         self.principals = PrincipalStore(self.db, self.audit)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
         self.billing = BillingStore(self.db, self.audit, settings)
+        self.dlocal_billing = DlocalBilling(self.billing)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
