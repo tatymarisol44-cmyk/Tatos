@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version>
+        <version>4.1.2</version>
         <relativePath/>
     </parent>
 
@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-ai.version>2.0.1</spring-ai.version>
+        <spring-ai.version>2.0.2</spring-ai.version>
         <!-- Security patches over Spring Boot 4.1.1's managed versions (Trivy, 2026-10-07):
              Tomcat 11.0.24 has critical CVEs (e.g. authentication bypass) fixed in 11.0.25;
              Jackson 2.21.5 and 3.1.5 have high CVEs fixed in 2.21.7 and 3.1.7. Same minor
