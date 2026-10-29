@@ -17,7 +17,9 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "pyyaml>=6.0",
-    "langgraph>=0.2.60",
+    # Patched v3 streaming path handling (CVE-2026-118667).
+    "langgraph>=1.2.14",
+    "langgraph-sdk>=0.4.6",
     "litellm>=1.50",
     "qdrant-client>=1.12",
     "mcp>=2.0",

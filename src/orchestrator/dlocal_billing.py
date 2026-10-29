@@ -124,7 +124,11 @@ class DlocalBilling:
             ):
                 raise BillingError("live payments are not enabled for this account")
         try:
-            data = json.loads(self.sealer.open(row["account_id"], row["credentials_sealed"]))
+            data = json.loads(
+                self.sealer.open(
+                    f"{row['tenant']}/{row['scope']}/{row['account_id']}", row["credentials_sealed"]
+                )
+            )
         except (SealError, ValueError):
             raise BillingError("dLocal Go account needs reconnection") from None
         return Credentials(row["environment"], data["api_key"], data["secret_key"])
@@ -183,7 +187,7 @@ class DlocalBilling:
                     environment=environment,
                     key_fingerprint=fingerprint,
                     credentials_sealed=self.sealer.seal(
-                        account_id,
+                        f"{tenant}/{scope}/{account_id}",
                         json.dumps(
                             {
                                 "api_key": api_key,

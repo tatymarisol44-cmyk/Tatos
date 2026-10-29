@@ -168,7 +168,7 @@ async def test_account_scope_credentials_sealed_and_no_secret_readback(configure
         )
     assert KEY not in str(row) and SECRET not in str(row)
     with pytest.raises(SealError):
-        gateway.sealer.open("globex", row["credentials_sealed"])
+        gateway.sealer.open(f"globex/clinic/{row['account_id']}", row["credentials_sealed"])
     public = await gateway.configuration("acme")
     assert public == {
         "clinic": {"environment": "sandbox", "available": True},
