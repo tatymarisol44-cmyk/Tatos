@@ -12,12 +12,16 @@ dependencies = [
     # Keep the patched certificate bundle and transitive file lock when resolving.
     "certifi>=2026.10.19",
     "filelock>=4.2.1",
+    # Patched ASN.1 decoders used by Google authentication (four October advisories).
+    "pyasn1>=0.6.5",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "pyyaml>=6.0",
-    "langgraph>=0.2.60",
+    # Patched v3 streaming path handling (CVE-2026-118667).
+    "langgraph>=1.2.14",
+    "langgraph-sdk>=0.4.6",
     "litellm>=1.50",
     "qdrant-client>=1.12",
     "mcp>=2.0",

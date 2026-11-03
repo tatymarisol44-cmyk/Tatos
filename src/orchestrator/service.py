@@ -20,6 +20,9 @@ from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
+from orchestrator.billing_automation import BillingAutomation
+from orchestrator.billing_followup import PaymentFollowups
+from orchestrator.billing_store import BillingStore
 from orchestrator.briefing import Briefing
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
@@ -29,6 +32,7 @@ from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, aware, utcnow
+from orchestrator.dlocal_billing import DlocalBilling
 from orchestrator.engagement import Engagement
 from orchestrator.establishment import Professionals
 from orchestrator.factories import (  # re-exported for callers of the old location
@@ -180,6 +184,8 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
+        self.billing = BillingStore(self.db, self.audit, settings)
+        self.dlocal_billing = DlocalBilling(self.billing)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
@@ -190,6 +196,8 @@ class Orchestrator:
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.social_login = SocialLogin(self.db, self.audit, self.social, settings)
         self.inbound = InboundService(self.db, self.audit, settings)
+        self.payment_followups = PaymentFollowups(self)
+        self.billing_automation = BillingAutomation(self)
         self.oncall = OnCall(self.db, self.audit, settings)
         self.privacy_cases = PrivacyCases(self.db, self.audit)
         self.publications = PublicationService(
@@ -250,6 +258,7 @@ class Orchestrator:
             self.workshops,
             self.reviews,
             self.audit,
+            self.billing,
         )
         self.portal = PatientPortal(self, self.crm, self.campaigns, self.consents, settings)
         self.ready = False

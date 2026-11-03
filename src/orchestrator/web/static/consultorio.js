@@ -828,6 +828,20 @@ function openVisitActions(visit) {
     });
     actions.push(b);
   }
+  if (state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) && !["cancelled", "no_show"].includes(visit.status)) {
+    const collect = el("button", { class: "btn", type: "button", text: "Preparar pago" });
+    collect.addEventListener("click", async () => {
+      collect.disabled = true;
+      const screen = turn;
+      try {
+        const invoice = await api(`/v1/billing/appointments/${encodeURIComponent(visit.id)}`, { method: "POST" });
+        if (screen !== turn) return;
+        $("#dialog").close();
+        billingInvoiceDialog(invoice);
+      } catch (err) { say(status, billingError(err), "error"); collect.disabled = false; }
+    });
+    actions.push(collect);
+  }
   dialog(visit.patient_name,
     el("p", { text: `${longDate(visit.local.slice(0, 10))} · ${visit.local.slice(11)} · ${visit.duration_min} min` }),
     el("p", { class: "muted", text: visit.kind }),
@@ -842,9 +856,11 @@ function openVisitActions(visit) {
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
   if (section === "redes") return socialAccountsView(main);
+  if (section === "pagos") return billingView(main);
   if (section === "redes-manual") return manualSocialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
-  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton(),
+    state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) ? link("#ajustes/pagos", "Cobros y suscripción") : null)];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
   if (canReadCare()) parts.push(await onCallCard());
@@ -2553,3 +2569,426 @@ document.addEventListener("DOMContentLoaded", () => {
     signOut();
   }
 });
+
+// Billing: the clinic receives appointments; the platform receives subscriptions.
+const BILLING_STATES = { pending: "Pendiente", transfer_review: "Transferencia por verificar", paid: "Pagado", rejected: "Rechazado", processing: "Procesando", uncertain: "En comprobación", cancelled: "Cancelado" };
+const billingMoney = (cents) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(cents / 100);
+function billingError(err) {
+  if (err instanceof ApiError && err.status === 409) {
+    if (/not enabled/.test(err.detail)) return "Los cobros todavía no están activados. Revisa Cobros y suscripción en Ajustes.";
+    if (/not configured/.test(err.detail)) return "Falta configurar la cuenta receptora o el precio. Revisa Cobros y suscripción en Ajustes.";
+    if (/already used|conflicted/.test(err.detail)) return "Ese movimiento puede estar aplicado a otro pago. Comprueba el registro del banco antes de continuar.";
+    if (/reviewer|operator/.test(err.detail)) return "Este pago debe verificarlo quien recibe el dinero.";
+    if (/being reviewed/.test(err.detail)) return "Esta transferencia ya está pendiente de revisión.";
+    const followup = /WhatsApp follow-up blocked: ([a-z_]+)/.exec(err.detail);
+    if (followup) return BILLING_FOLLOWUP_REASONS[followup[1]] || "Comprueba el seguimiento antes de contactar.";
+    if (/contact changed/.test(err.detail)) return "Cambió el contacto. Descarta el borrador anterior desde Gestionar seguimiento.";
+    if (/automatic verification requires/.test(err.detail)) return "Primero prepara el pago con la pasarela. La transferencia directa al banco se verifica manualmente.";
+    if (/manual draft/.test(err.detail)) return "Descarta el borrador manual antes de activar los recordatorios automáticos.";
+    if (/due date/.test(err.detail)) return "Indica el vencimiento del pago para programar el primer recordatorio.";
+    if (/automatic reminders|delivery reconciliation/.test(err.detail)) return "El seguimiento automático está activo o tiene un envío por conciliar. Revisa su estado antes de volver a enviar.";
+    if (/WhatsApp|utility template/.test(err.detail)) return "Conecta la cuenta de WhatsApp del remitente y configura su plantilla de utilidad aprobada.";
+    return "No se pudo cambiar el pago. Revisa su estado y vuelve a cargar.";
+  }
+  return humanError(err);
+}
+
+function billingInvoiceDialog(invoice, { review = false, platform = false } = {}) {
+  const status = el("p", { class: "status", role: "status" });
+  const parts = [el("p", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+    el("p", { text: invoice.kind === "subscription" ? "Este pago corresponde al uso de Tatos por todo el consultorio." : "Este pago corresponde a una cita del consultorio." }),
+    el("p", { text: invoice.bank_instructions }),
+    el("p", { class: "muted", text: `Referencia de la orden: ${invoice.invoice_id}` })];
+  if (invoice.transfer_reference) parts.push(el("p", { text: `Referencia informada: ${invoice.transfer_reference}` }));
+  if (invoice.review_note) parts.push(el("p", { text: `Resultado de la revisión: ${invoice.review_note}` }));
+  if (invoice.kind === "appointment" || platform) {
+    const history = el("button", { type: "button", class: "btn", text: "Ver seguimiento del pago" });
+    history.addEventListener("click", async () => {
+      history.disabled = true;
+      try { const row = await api(billingFollowupPath(invoice, platform) + "/followup"); billingFollowupDialog(row, platform, row.can_record_permission); }
+      catch (err) { say(status, billingError(err), "error"); history.disabled = false; }
+    });
+    parts.push(history);
+  }
+  if (invoice.kind === "appointment" && ["pending", "processing", "uncertain"].includes(invoice.state)) {
+    const pay = el("button", { class: "btn", type: "button", text: invoice.state === "pending" ? "Pagar con tarjeta" : "Comprobar pago" });
+    pay.addEventListener("click", async () => {
+      pay.disabled = true;
+      try {
+        const suffix = invoice.state === "pending" ? "checkout" : "reconcile";
+        const data = await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/${suffix}`, { method: "POST" });
+        if (data.checkout_url) {
+          pay.after(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir pago seguro en dLocal Go" }));
+          say(status, data.environment === "sandbox" ? "Pago de prueba: no se mueve dinero. Después vuelve a Tatos y comprueba el pago." : "Completa el pago y vuelve a Tatos para comprobarlo.");
+          invoice.state = "processing"; pay.textContent = "Comprobar pago";
+        } else { $("#dialog").close(); route(); }
+      } catch (err) { say(status, billingError(err), "error"); }
+      finally { pay.disabled = false; }
+    });
+    parts.push(pay);
+  }
+  if (invoice.state === "pending" && invoice.method === "transfer" && invoice.bank_instructions && isAdmin()) {
+    const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+    const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
+    const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
+      el("p", { class: "muted", text: "Informar la transferencia deja el pago pendiente. La persona que recibe el dinero debe verificar el ingreso." }), send);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); send.disabled = true;
+      try {
+        await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/transfer`, { method: "POST", body: { reference: reference.value.trim() } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); send.disabled = false; }
+    });
+    parts.push(form);
+  }
+  if (review && invoice.state === "transfer_review" && isAdmin()) {
+    const bankId = el("input", { type: "text", minlength: "3", maxlength: "120", autocomplete: "off" });
+    const note = el("textarea", { required: true, minlength: "5", maxlength: "200" });
+    const checked = el("input", { type: "checkbox" });
+    const approve = el("button", { class: "btn primary", type: "button", text: "Confirmar ingreso" });
+    const reject = el("button", { class: "btn", type: "button", text: "Solicitar corrección" });
+    const form = el("div", { class: "stack" }, el("label", { class: "field" }, "Identificador del ingreso verificado en el banco", bankId),
+      el("label", { class: "field" }, "Nota de verificación o motivo de corrección", note),
+      el("label", { class: "check" }, checked, "Comprobé que el dinero llegó a la cuenta receptora"),
+      el("div", { class: "row tight" }, approve, reject));
+    const verify = async (approved) => {
+      if (note.value.trim().length < 5 || (approved && (!checked.checked || bankId.value.trim().length < 3))) {
+        say(status, "Escribe la nota. Para confirmar, verifica el ingreso y escribe su identificador bancario.", "error"); return;
+      }
+      approve.disabled = reject.disabled = true;
+      const path = platform ? `/v1/billing/platform/${encodeURIComponent(invoice.payer_tenant)}/orders/${encodeURIComponent(invoice.invoice_id)}/review`
+        : `/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/review`;
+      try {
+        await api(path, { method: "POST", body: { approved, note: note.value.trim(), bank_transaction_id: approved ? bankId.value.trim() : null } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); approve.disabled = reject.disabled = false; }
+    };
+    approve.addEventListener("click", () => verify(true));
+    reject.addEventListener("click", () => verify(false));
+    parts.push(form);
+  }
+  parts.push(status);
+  dialog("Detalle del pago", ...parts);
+}
+
+function billingRows(invoices, options = {}) {
+  if (!invoices.length) return empty("Todavía no hay órdenes de pago.");
+  return el("div", { class: "stack" }, ...invoices.map((invoice) => {
+    const open = el("button", { class: "btn small", type: "button", text: options.review && invoice.state === "transfer_review" ? "Revisar transferencia" : "Ver pago" });
+    open.addEventListener("click", () => billingInvoiceDialog(invoice, options));
+    return el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+      el("p", { class: "muted", text: invoice.payer_tenant ? `Consultorio: ${invoice.payer_tenant}` : `Referencia: ${invoice.resource_id}` })), open);
+  }));
+}
+
+function billingBankForm(config, platform = false) {
+  const value = platform ? config.platform_bank_instructions : config.clinic_bank_instructions;
+  const input = el("textarea", { required: true, minlength: "10", maxlength: "1500", rows: "4", value });
+  input.value = value;
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar cuenta receptora" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Banco, titular, tipo y número de cuenta", input),
+    el("p", { class: "muted", text: "Comprueba el titular y el número antes de guardar. Estos datos se mostrarán a quien deba realizar la transferencia." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!sure(save, "Confirmar cuenta receptora")) return;
+    save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/bank" : "/v1/billing/bank", { method: "PUT", body: { instructions: input.value.trim() } });
+      route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingView(main) {
+  const config = await api("/v1/billing/configuration");
+  const invoices = await api("/v1/billing/orders");
+  const parts = [page("Cobros y suscripción", "Dos tipos de pago, cada uno con su cuenta receptora.", link("#ajustes", "Volver a Ajustes"))];
+  if (!config.enabled) parts.push(el("p", { class: "notice", text: "Los cobros todavía no están activados. Puedes preparar los datos de la cuenta receptora." }));
+  parts.push(card("Cobros del consultorio", "", el("p", { text: "Tus pacientes pagan sus consultas y citas al consultorio. Desde una cita de la Agenda, pulsa Preparar pago." }),
+    isAdmin() ? el("div", { class: "stack" }, billingGatewayForm(config.dlocal.clinic), billingBankForm(config)) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
+    billingRows(invoices, { review: isAdmin() })));
+  parts.push(await billingFollowupSection());
+  if (isAdmin()) parts.push(await billingAutomaticForm());
+  if (isAdmin()) {
+    const subscriptions = await api("/v1/billing/orders?kind=subscription");
+    const create = el("button", { class: "btn primary", type: "button", text: "Preparar transferencia de la mensualidad", disabled: !config.enabled || !config.platform_bank_configured || !config.monthly_price_cents });
+    const status = el("p", { class: "status", role: "status" });
+    create.addEventListener("click", async () => {
+      create.disabled = true;
+      try { billingInvoiceDialog(await api("/v1/billing/subscription", { method: "POST" })); }
+      catch (err) { say(status, billingError(err), "error"); }
+      finally { create.disabled = false; }
+    });
+    parts.push(card("Suscripción de Tatos", "", el("p", { text: "Una mensualidad por consultorio para usar toda la aplicación. Este pago lo recibe la operadora de Tatos." }),
+      el("p", { text: config.monthly_price_cents ? `${billingMoney(config.monthly_price_cents)} por mes` : "El precio mensual todavía no está configurado." }),
+      await billingSubscriptionCard(config),
+      await billingContactForm(),
+      create, status, billingRows(subscriptions)));
+  }
+  if (config.platform_operator) {
+    const pending = await api("/v1/billing/platform/subscriptions");
+    parts.push(card("Administración de suscripciones de Tatos", "", billingGatewayForm(config.dlocal.platform, true), billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
+    parts.push(await billingFollowupSection(true));
+    parts.push(await billingAutomaticForm(true));
+  }
+  main.replaceChildren(...parts);
+}
+
+const BILLING_FOLLOWUP_REASONS = { paid: "Pagado", payments_not_enabled: "Los cobros todavía no están activados", payment_needs_review: "Comprobar el pago antes de contactar", inactive_record: "Ficha o cita no disponible", paused: "Seguimiento en pausa", phone_missing: "Falta un WhatsApp con código de país", permission_missing: "Falta el permiso para recordatorios de pago", opted_out: "Solicitó no recibir WhatsApp", payment_promised: "Hay una fecha de pago acordada", contact_not_due: "Espera hasta el próximo seguimiento" };
+const BILLING_CONTACT_STATES = { prepared: "Borrador preparado", manual_sent: "Envío registrado por el equipo", discarded: "Borrador descartado", auto_accepted: "WhatsApp aceptó el recordatorio automático", auto_simulated: "Recordatorio automático simulado", auto_uncertain: "Envío automático por conciliar; no se repetirá automáticamente" };
+function billingFollowupPath(row, platform) {
+  return platform ? `/v1/billing/platform/${encodeURIComponent(row.payer_tenant)}/orders/${encodeURIComponent(row.invoice_id)}` : `/v1/billing/orders/${encodeURIComponent(row.invoice_id)}`;
+}
+function billingLocalInput(value) {
+  if (!value) return "";
+  const date = new Date(value); date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+async function billingFollowupSection(platform = false) {
+  const path = platform ? "/v1/billing/platform/followups" : "/v1/billing/followups";
+  const list = el("div", { class: "stack" });
+  const status = el("p", { class: "status", role: "status" });
+  const more = el("button", { class: "btn", type: "button", text: "Cargar más pagos pendientes" });
+  let cursor = "";
+  const load = async () => {
+    more.disabled = true;
+    try {
+      const data = await api(path + (cursor ? `?after=${encodeURIComponent(cursor)}` : ""));
+      if (!data.items.length && !list.children.length) list.append(empty("No hay órdenes de pago pendientes en este seguimiento."));
+      for (const row of data.items) {
+        const autoBlocksManual = row.automatic && (row.automatic.enabled || ["sending", "uncertain"].includes(row.automatic.state));
+        const prepare = el("button", { class: "btn small", type: "button", text: "Preparar WhatsApp", disabled: !!row.blocked_reason || !!autoBlocksManual });
+        const manage = el("button", { class: "btn small", type: "button", text: "Gestionar seguimiento" });
+        const item = el("article", { class: "doc", "data-followup": row.invoice_id },
+          el("div", { class: "what" }, el("strong", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }),
+            el("p", { text: `${BILLING_STATES[row.state] || row.state} · ${autoBlocksManual ? "Seguimiento automático configurado" : BILLING_FOLLOWUP_REASONS[row.blocked_reason] || "Listo para recordar"}` }),
+            el("p", { class: "muted", text: `Referencia: ${row.invoice_id.slice(0, 8)}${row.phone_masked ? " · WhatsApp " + row.phone_masked : ""}` }),
+            row.next_contact_at ? el("p", { class: "muted", text: `Próximo contacto: ${new Date(row.next_contact_at).toLocaleString("es-EC")}` }) : null,
+            row.history[0] ? el("p", { class: "muted", text: `${BILLING_CONTACT_STATES[row.history[0].state] || row.history[0].state} · ${new Date(row.history[0].confirmed_at || row.history[0].created_at).toLocaleString("es-EC")}` }) : null),
+          el("div", { class: "row tight" }, prepare, manage));
+        prepare.addEventListener("click", async () => {
+          prepare.disabled = true;
+          try { billingWhatsAppDialog(row, await api(billingFollowupPath(row, platform) + "/whatsapp", { method: "POST" }), platform); }
+          catch (err) { say(status, billingError(err), "error"); }
+          finally { prepare.disabled = !!row.blocked_reason || !!autoBlocksManual; }
+        });
+        manage.addEventListener("click", () => billingFollowupDialog(row, platform, data.can_record_permission));
+        list.append(item);
+      }
+      cursor = data.next_cursor; more.hidden = !cursor;
+    } catch (err) { say(status, billingError(err), "error"); }
+    finally { more.disabled = false; }
+  };
+  more.addEventListener("click", load);
+  await load();
+  return card(platform ? "Seguimiento de mensualidades" : "Seguimiento de pagos de pacientes", "",
+    el("p", { text: "Revisa los pagos pendientes, acuerda el próximo contacto y prepara recordatorios por WhatsApp. Las transferencias informadas se verifican antes de recordar." }),
+    list, more, status);
+}
+function billingWhatsAppDialog(row, draft, platform) {
+  const status = el("p", { class: "status", role: "status" });
+  const preview = el("textarea", { rows: "6", readonly: true }); preview.value = draft.message;
+  const sent = el("button", { type: "button", class: "btn primary", text: "Lo envié por WhatsApp" });
+  const discard = el("button", { type: "button", class: "btn", text: "Descartar borrador" });
+  const finish = async (didSend) => {
+    sent.disabled = discard.disabled = true;
+    try { await api(billingFollowupPath(row, platform) + `/whatsapp/${encodeURIComponent(draft.event_id)}`, { method: "POST", body: { sent: didSend } }); $("#dialog").close(); route(); }
+    catch (err) { say(status, billingError(err), "error"); sent.disabled = discard.disabled = false; }
+  };
+  sent.addEventListener("click", () => finish(true)); discard.addEventListener("click", () => finish(false));
+  dialog("Recordatorio de pago por WhatsApp",
+    el("p", { text: "Revisa el mensaje. Abre WhatsApp y pulsa Enviar desde la cuenta que corresponde. Después vuelve para registrar el contacto." }),
+    preview, el("a", { class: "btn primary", href: draft.whatsapp_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir WhatsApp" }),
+    el("p", { class: "muted", text: "Abrir el chat deja el mensaje como borrador. El registro del equipo no acredita entrega, lectura ni pago." }),
+    el("div", { class: "row tight" }, sent, discard), status);
+}
+function billingFollowupDialog(row, platform, canPermission) {
+  const next = el("input", { type: "datetime-local", value: billingLocalInput(row.next_contact_at) });
+  const promise = el("input", { type: "datetime-local", value: billingLocalInput(row.promised_for) });
+  const paused = el("input", { type: "checkbox" }); paused.checked = row.paused;
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Guardar seguimiento" });
+  const form = el("form", { class: "stack" },
+    el("label", { class: "field" }, "Próximo contacto", next), el("label", { class: "field" }, "Fecha prometida de pago", promise),
+    el("p", { class: "muted", text: "Las horas corresponden a este dispositivo. Una promesa futura pausa los nuevos recordatorios hasta esa fecha." }),
+    el("label", { class: "check" }, paused, "Pausar recordatorios de este pago"), save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try { await api(billingFollowupPath(row, platform) + "/followup", { method: "PUT", body: { next_contact_at: next.value ? new Date(next.value).toISOString() : null, promised_for: promise.value ? new Date(promise.value).toISOString() : null, paused: paused.checked } }); $("#dialog").close(); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  const parts = [el("p", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }), form];
+  if (!platform) {
+    const automatic = el("input", { type: "checkbox", disabled: !row.can_automate }); automatic.checked = !!row.automatic?.enabled;
+    const due = el("input", { type: "datetime-local", value: billingLocalInput(row.automatic?.due_at) });
+    const autoSave = el("button", { class: "btn", type: "submit", text: "Guardar envío automático", disabled: !row.can_automate });
+    const autoForm = el("form", { class: "stack" }, el("label", { class: "check" }, automatic, "Recordatorios automáticos de este pago"),
+      el("label", { class: "field" }, "Vencimiento del pago para iniciar los recordatorios", due),
+      el("p", { class: "muted", text: "Disponible para pagos registrados en la pasarela y con WhatsApp configurado. Las transferencias bancarias directas requieren revisión." }), autoSave);
+    if (row.automatic) autoForm.append(el("p", { class: "muted", text: `Estado: ${billingAutoState(row.automatic.state)}${row.automatic.last_result ? " · " + billingAutoResult(row.automatic.last_result) : ""}` }));
+    autoForm.addEventListener("submit", async event => {
+      event.preventDefault(); autoSave.disabled = true;
+      try { await api(billingFollowupPath(row, false) + "/automation", { method: "PUT", body: { enabled: automatic.checked, due_at: due.value ? new Date(due.value).toISOString() : null } }); $("#dialog").close(); route(); }
+      catch (err) { say(status, billingError(err), "error"); autoSave.disabled = false; }
+    });
+    parts.push(autoForm);
+  }
+  if (!platform && canPermission && row.subject_id) {
+    const allowed = el("input", { type: "checkbox" }); allowed.checked = row.whatsapp_allowed;
+    const source = el("input", { type: "text", required: true, minlength: "5", maxlength: "128", placeholder: "Ej.: autorización firmada y su fecha" });
+    const record = el("button", { class: "btn", type: "submit", text: "Registrar permiso" });
+    const permission = el("form", { class: "stack" }, el("label", { class: "check" }, allowed, "La persona autorizó recordatorios de pago del consultorio por WhatsApp"), el("label", { class: "field" }, "Origen del permiso o de su retiro", source), record);
+    permission.addEventListener("submit", async (event) => {
+      event.preventDefault(); record.disabled = true;
+      try { await api(`/v1/subjects/${encodeURIComponent(row.subject_id)}/consents/whatsapp_billing`, { method: "PUT", body: { granted: allowed.checked, source: source.value.trim() } }); $("#dialog").close(); route(); }
+      catch (err) { say(status, humanError(err), "error"); record.disabled = false; }
+    });
+    parts.push(permission);
+  }
+  for (const event of row.history) {
+    parts.push(el("p", { class: "muted", text: `${BILLING_CONTACT_STATES[event.state] || event.state} · ${new Date(event.confirmed_at || event.created_at).toLocaleString("es-EC")} · ${event.actor}` }));
+    if (event.state === "prepared") {
+      const discard = el("button", { class: "btn", type: "button", text: "Descartar borrador pendiente" });
+      discard.addEventListener("click", async () => {
+        discard.disabled = true;
+        try { await api(billingFollowupPath(row, platform) + `/whatsapp/${encodeURIComponent(event.event_id)}`, { method: "POST", body: { sent: false } }); $("#dialog").close(); route(); }
+        catch (err) { say(status, billingError(err), "error"); discard.disabled = false; }
+      });
+      parts.push(discard);
+    }
+  }
+  parts.push(status); dialog("Gestionar seguimiento del pago", ...parts);
+}
+function billingAutoState(value) {
+  return ({ scheduled: "Programado", paused: "Pausado", sending: "Enviando", uncertain: "Por conciliar", settled: "Finalizado", limit_reached: "Límite de recordatorios alcanzado" })[value] || value;
+}
+function billingAutoResult(value) {
+  const extra = { live_payments_not_enabled: "Los pagos reales todavía no están habilitados para esta cuenta", daily_contact_limit: "Este contacto ya tiene un recordatorio registrado hoy", claim_conflict: "El recordatorio está en comprobación; se revisará antes de enviar" };
+  if (extra[value]) return extra[value];
+  return ({ accepted: "WhatsApp aceptó el mensaje; entrega sin confirmar", simulated: "Simulado, sin mensaje real", uncertain: "Resultado incierto, sin reintento automático", paid: "Pagado", renewal_no_longer_pending: "La renovación ya no requiere este recordatorio", policy_disabled: "Automatización desactivada", sandbox_delivery_disabled: "Entorno de prueba: envíos reales bloqueados", reconciliation_unavailable: "No se pudo verificar el pago o la conexión", manual_draft_open: "Hay un borrador manual abierto", subscription_not_active: "La suscripción necesita revisión" })[value] || BILLING_FOLLOWUP_REASONS[value] || "Revisar seguimiento";
+}
+async function billingAutomaticForm(platform = false) {
+  const path = platform ? "/v1/billing/platform/automation" : "/v1/billing/automation";
+  const data = await api(path);
+  const enabled = el("input", { type: "checkbox" }); enabled.checked = data.enabled;
+  const account = el("select", {}, el("option", { value: "", text: "Selecciona un WhatsApp conectado" }),
+    ...data.accounts.map(a => el("option", { value: a.account_id, text: a.handle })));
+  account.value = data.account_id || "";
+  const template = el("input", { type: "text", maxlength: "128", value: data.template_name, placeholder: "Nombre exacto de la plantilla aprobada" });
+  const language = el("input", { type: "text", maxlength: "12", value: data.language });
+  const cadence = el("input", { type: "number", min: "1", max: "30", value: String(data.cadence_days), required: true });
+  const maximum = el("input", { type: "number", min: "1", max: "3", value: String(data.maximum), required: true });
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar automatización" });
+  const form = el("form", { class: "stack" }, el("label", { class: "check" }, enabled, "Habilitar recordatorios automáticos por WhatsApp"),
+    el("label", { class: "field" }, "WhatsApp que enviará los recordatorios", account),
+    el("label", { class: "field" }, "Plantilla de utilidad aprobada por Meta", template),
+    el("label", { class: "field" }, "Idioma de la plantilla", language),
+    el("p", { class: "muted", text: "La plantilla debe tener dos variables en el cuerpo: importe y referencia. Sin información clínica." }),
+    el("label", { class: "field" }, "Días entre recordatorios", cadence),
+    el("label", { class: "field" }, "Máximo de recordatorios por pago", maximum), save, status);
+  form.addEventListener("submit", async event => {
+    event.preventDefault(); save.disabled = true;
+    try { await api(path, { method: "PUT", body: { enabled: enabled.checked, account_id: account.value || null, template_name: template.value.trim(), language: language.value.trim(), cadence_days: Number(cadence.value), maximum: Number(maximum.value) } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  const work = el("div", { class: "stack" });
+  for (const target of data.targets) {
+    const pause = el("button", { class: "btn small", type: "button", text: ["settled", "limit_reached"].includes(target.state) ? "Seguimiento finalizado" : target.enabled ? "Pausar automático" : "Reanudar automático" });
+    pause.disabled = ["sending", "uncertain", "settled", "limit_reached"].includes(target.state);
+    const item = el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${platform ? target.tenant + " · Renovación" : "Pago"} ${target.source_id.slice(0, 8)}` }),
+      el("p", { text: `${billingAutoState(target.state)}${target.last_result ? " · " + billingAutoResult(target.last_result) : ""}` }),
+      el("p", { class: "muted", text: `Próximo control: ${new Date(target.next_at).toLocaleString("es-EC")}` })), pause);
+    pause.addEventListener("click", async () => {
+      pause.disabled = true;
+      const endpoint = platform ? `/v1/billing/platform/${encodeURIComponent(target.tenant)}/automation/${encodeURIComponent(target.source_id)}` : `/v1/billing/orders/${encodeURIComponent(target.source_id)}/automation`;
+      try { await api(endpoint, { method: "PUT", body: { enabled: !target.enabled } }); route(); }
+      catch (err) { say(status, billingError(err), "error"); pause.disabled = false; }
+    });
+    work.append(item);
+  }
+  return card(platform ? "Automatización de mensualidades de Tatos" : "Automatización de pagos del consultorio", "",
+    el("p", { text: "Primer recordatorio al día siguiente del vencimiento, desde las 09:00. Consulta la pasarela antes de cada envío y se detiene al confirmar el pago. Las transferencias directas al banco requieren revisión." }),
+    el("p", { class: data.server_enabled ? "muted" : "notice", text: data.server_enabled ? `Horario de envío: ${data.hours}, ${data.timezone}.` : "Los envíos automáticos todavía no están activados en esta instalación. Puedes preparar su configuración." }),
+    !data.accounts.length ? link("#ajustes/redes", "Conectar WhatsApp en Redes sociales") : null, form, work);
+}
+async function billingContactForm() {
+  const contact = await api("/v1/billing/contact");
+  const phone = el("input", { type: "tel", maxlength: "32", required: !contact.configured, placeholder: contact.phone_masked ? `${contact.phone_masked} · deja vacío para conservarlo` : "Número completo con código de país" });
+  const allowed = el("input", { type: "checkbox" }); allowed.checked = contact.whatsapp_allowed;
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar contacto de facturación" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "WhatsApp para la mensualidad de Tatos", phone),
+    el("label", { class: "check" }, allowed, "Tengo el permiso de este contacto para los recordatorios de pago de Tatos"), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try { await api("/v1/billing/contact", { method: "PUT", body: { phone: phone.value.trim() || null, whatsapp_allowed: allowed.checked, source: "Permiso del contacto registrado por administración en Tatos" } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+function billingGatewayForm(account, platform = false) {
+  const environment = el("select", {}, el("option", { value: "sandbox", text: "Pruebas sin dinero real" }), el("option", { value: "live", text: "Cuenta real aprobada" }));
+  const key = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const secret = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const approved = el("input", { type: "checkbox" });
+  const save = el("button", { type: "submit", class: "btn", text: "Conectar dLocal Go" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: account ? `dLocal Go: ${account.environment === "sandbox" ? "cuenta de pruebas" : "cuenta real"}. ${account.available ? "Disponible." : "Cobros pendientes de activación."}` : "dLocal Go todavía no está conectado." }),
+    el("p", { class: "muted", text: platform ? "Esta cuenta recibe las mensualidades de Tatos." : "Usa la cuenta de este consultorio para recibir sus citas." }),
+    el("label", { class: "field" }, "Entorno", environment),
+    el("label", { class: "field" }, "API Key de dLocal Go", key),
+    el("label", { class: "field" }, "Secret Key de dLocal Go", secret),
+    el("label", { class: "check" }, approved, "Para una cuenta real: dLocal Go aprobó mi cuenta y habilitó los retiros"),
+    el("p", { class: "muted", text: "Obtén las claves en dLocal Go → Integraciones → Integración API. Se guardan cifradas y no vuelven a mostrarse." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/dlocal/account" : "/v1/billing/dlocal/account", { method: "PUT", body: { environment: environment.value, api_key: key.value.trim(), secret_key: secret.value.trim(), withdrawals_confirmed: approved.checked } });
+      key.value = secret.value = ""; route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingSubscriptionCard(config) {
+  const subscription = await api("/v1/billing/dlocal/subscription");
+  const labels = { not_started: "Sin iniciar", preparing: "Preparando", uncertain: "Pendiente de comprobación", awaiting: "Pendiente de autorizar en dLocal Go", active: "Renovación automática activa", cancelled: "Renovación cancelada" };
+  const status = el("p", { class: "status", role: "status" });
+  const consent = el("input", { type: "checkbox" });
+  const start = el("button", { type: "button", class: "btn primary", text: "Configurar tarjeta automática", disabled: !config.dlocal.platform?.available || !["not_started", "awaiting"].includes(subscription.state) });
+  const sync = el("button", { type: "button", class: "btn", text: "Comprobar suscripción", disabled: ["not_started", "preparing", "uncertain"].includes(subscription.state) });
+  const cancel = el("button", { type: "button", class: "btn", text: "Cancelar renovación", disabled: !["awaiting", "active"].includes(subscription.state) });
+  const holder = el("div", { class: "stack" }, el("p", { text: labels[subscription.state] || "En comprobación" }),
+    el("p", { class: "muted", text: config.dlocal.platform?.environment === "sandbox" ? "Entorno de pruebas: no se cobra dinero real." : "La tarjeta y la autorización se completan en dLocal Go. Las transferencias requieren verificar el ingreso." }),
+    el("label", { class: "check" }, consent, `Autorizo la renovación automática de ${billingMoney(config.monthly_price_cents)} cada mes. Puedo cancelar los próximos cobros.`),
+    start, sync, cancel, status);
+  start.addEventListener("click", async () => {
+    if (!consent.checked) { say(status, "Marca la autorización mensual para continuar.", "error"); return; }
+    start.disabled = true;
+    try {
+      const data = await api("/v1/billing/dlocal/subscription", { method: "POST", body: { consent: true } });
+      if (data.checkout_url) holder.append(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Autorizar mensualidad en dLocal Go" }));
+      say(status, "Completa la autorización y luego pulsa Comprobar suscripción."); sync.disabled = false;
+    } catch (err) { say(status, billingError(err), "error"); start.disabled = false; }
+  });
+  sync.addEventListener("click", async () => {
+    sync.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/reconcile", { method: "POST" }); route(); }
+    catch (err) { say(status, billingError(err), "error"); sync.disabled = false; }
+  });
+  cancel.addEventListener("click", async () => {
+    if (!sure(cancel, "Confirmar cancelación de próximos cobros")) return;
+    cancel.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/cancel", { method: "POST", body: { consent: true } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); cancel.disabled = false; }
+  });
+  for (const renewal of subscription.renewals || []) holder.append(el("p", { text: `${renewal.amount_cents ? billingMoney(renewal.amount_cents) : "Renovación"} · ${BILLING_STATES[renewal.state] || "En comprobación"}` }));
+  return holder;
+}

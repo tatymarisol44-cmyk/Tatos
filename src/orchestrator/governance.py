@@ -62,6 +62,7 @@ class Purpose(StrEnum):
     MEMORY = "memory"  # long-term semantic memory of preferences
     PHOTOS = "photos"  # before/after images in marketing
     ANALYTICS = "analytics"  # profiling: segments, value ranking, campaign targeting
+    WHATSAPP_BILLING = "whatsapp_billing"  # separate permission for invoice reminders
 
 
 audit_events = Table(
