@@ -85,6 +85,127 @@ def browser(subprocess_loop: None) -> Iterator[Any]:
         chromium.close()
 
 
+def test_payment_followup_whatsapp_draft_promise_and_history(
+    server: str,
+    browser: Any,
+    settings: Settings,
+) -> None:
+    settings.billing_enabled = True
+    assert (
+        httpx.put(
+            server + "/v1/billing/bank",
+            headers=SERVICE,
+            json={"instructions": "Fictional clinic bank account"},
+        ).status_code
+        == 200
+    )
+    assert (
+        httpx.post(
+            server + "/v1/crm/patients",
+            headers=SERVICE,
+            json={
+                "id": "followup-demo",
+                "display_name": "Ficticia Seguimiento",
+                "phone": "+12025550123",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        httpx.put(
+            server + "/v1/subjects/followup-demo/consents/whatsapp_billing",
+            headers=SERVICE,
+            json={"granted": True, "source": "Fictional signed permission"},
+        ).status_code
+        == 200
+    )
+    from datetime import timedelta
+
+    from orchestrator.db import utcnow
+
+    visit = httpx.post(
+        server + "/v1/crm/appointments",
+        headers=SERVICE,
+        json={
+            "patient_id": "followup-demo",
+            "starts_at": (utcnow() + timedelta(days=1)).isoformat(),
+            "duration_min": 50,
+            "kind": "follow_up",
+            "price": 49.99,
+        },
+    )
+    assert visit.status_code == 201, visit.text
+    order = httpx.post(server + f"/v1/billing/appointments/{visit.json()['id']}", headers=SERVICE)
+    assert order.status_code == 200, order.text
+    fid = order.json()["invoice_id"]
+    page = browser.new_page(viewport={"width": 390, "height": 844})
+    problems = _watch(page)
+    page.add_init_script('sessionStorage.setItem("consultorio.key", "test-key")')
+    page.goto(server + "/app#ajustes/pagos")
+    section = page.get_by_role("region", name="Seguimiento de pagos de pacientes", exact=True)
+    row = section.locator(f'[data-followup="{fid}"]')
+    row.get_by_role("button", name="Gestionar seguimiento", exact=True).click()
+    modal = page.locator("#dialog")
+    modal.get_by_label("Fecha prometida de pago", exact=True).fill("2032-01-20T10:00")
+    modal.get_by_role("button", name="Guardar seguimiento", exact=True).click()
+    sync_api.expect(
+        row.get_by_role("button", name="Preparar WhatsApp", exact=True)
+    ).to_be_disabled()
+    row.get_by_role("button", name="Gestionar seguimiento", exact=True).click()
+    modal.get_by_label("Fecha prometida de pago", exact=True).fill("")
+    modal.get_by_role("button", name="Guardar seguimiento", exact=True).click()
+    row.get_by_role("button", name="Preparar WhatsApp", exact=True).click()
+    sync_api.expect(
+        modal.get_by_role("heading", name="Recordatorio de pago por WhatsApp")
+    ).to_be_visible()
+    assert "USD 49.99" in modal.locator("textarea").input_value()
+    assert "Ficticia" not in modal.locator("textarea").input_value()
+    link = modal.get_by_role("link", name="Abrir WhatsApp", exact=True)
+    assert link.get_attribute("href").startswith("https://wa.me/12025550123?")
+    # Intentionally do not open WhatsApp: this tests an explicit manual contact report.
+    modal.get_by_role("button", name="Lo envié por WhatsApp", exact=True).click()
+    sync_api.expect(row.get_by_text("Envío registrado por el equipo", exact=False)).to_be_visible()
+    sync_api.expect(
+        row.get_by_role("button", name="Preparar WhatsApp", exact=True)
+    ).to_be_disabled()
+    assert httpx.get(server + "/v1/billing/orders", headers=SERVICE).json()[0]["state"] == "pending"
+    assert (
+        httpx.post(
+            server + f"/v1/billing/orders/{fid}/transfer",
+            headers=SERVICE,
+            json={"reference": "fictional-transfer"},
+        ).status_code
+        == 200
+    )
+    assert (
+        httpx.post(
+            server + f"/v1/billing/orders/{fid}/review",
+            headers=SERVICE,
+            json={
+                "approved": True,
+                "note": "Fictional bank verification",
+                "bank_transaction_id": "fictional-bank-event",
+            },
+        ).status_code
+        == 200
+    )
+    page.reload()
+    sync_api.expect(
+        section.get_by_text("No hay órdenes de pago pendientes en este seguimiento.", exact=True)
+    ).to_be_visible()
+    page.get_by_role("region", name="Cobros del consultorio", exact=True).get_by_role(
+        "button", name="Ver pago", exact=True
+    ).click()
+    modal.get_by_role("button", name="Ver seguimiento del pago", exact=True).click()
+    sync_api.expect(
+        modal.get_by_text("Envío registrado por el equipo", exact=False)
+    ).to_be_visible()
+    modal.get_by_role("button", name="Cerrar", exact=True).click()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not problems, problems
+    page.close()
+
+
 def test_dlocal_connection_monthly_consent_and_cancellation(
     server: str,
     browser: Any,

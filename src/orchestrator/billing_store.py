@@ -392,6 +392,8 @@ class BillingStore:
         Platform subscriptions belong to the clinic, never to an individual patient.
         No provider credentials or internal settlement identifiers are exposed.
         """
+        from orchestrator.billing_followup import events, followups
+
         async with self.db.engine.connect() as conn:
             rows = (
                 (
@@ -410,7 +412,68 @@ class BillingStore:
                 .mappings()
                 .all()
             )
-        return [self._public(row) for row in rows]
+            owned = and_(
+                orders.c.tenant == tenant,
+                orders.c.patient_id == patient_id,
+                orders.c.kind == ChargeKind.APPOINTMENT,
+            )
+            history = (
+                (
+                    await conn.execute(
+                        select(events)
+                        .join(
+                            orders,
+                            and_(
+                                orders.c.tenant == events.c.tenant,
+                                orders.c.invoice_id == events.c.invoice_id,
+                            ),
+                        )
+                        .where(owned)
+                        .order_by(events.c.created_at)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            schedules = (
+                (
+                    await conn.execute(
+                        select(followups)
+                        .join(
+                            orders,
+                            and_(
+                                orders.c.tenant == followups.c.tenant,
+                                orders.c.invoice_id == followups.c.invoice_id,
+                            ),
+                        )
+                        .where(owned)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        schedule_by_invoice = {
+            r["invoice_id"]: {
+                key: r[key] for key in ("next_contact_at", "promised_for", "paused", "updated_at")
+            }
+            for r in schedules
+        }
+        history_by_invoice: dict[str, list[dict[str, Any]]] = {}
+        for event in history:
+            history_by_invoice.setdefault(event["invoice_id"], []).append(
+                {
+                    key: event[key]
+                    for key in ("event_id", "state", "actor", "created_at", "confirmed_at")
+                }
+            )
+        return [
+            {
+                **self._public(row),
+                "followup": schedule_by_invoice.get(row["invoice_id"]),
+                "whatsapp_followup_history": history_by_invoice.get(row["invoice_id"], []),
+            }
+            for row in rows
+        ]
 
     async def notify_transfer(
         self,

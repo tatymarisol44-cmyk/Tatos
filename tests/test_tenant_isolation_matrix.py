@@ -461,6 +461,49 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
     p, t = i["patient"], i["thread"]
     return {
         ("GET", "/v1/billing/configuration"): ("/v1/billing/configuration", None),
+        ("GET", "/v1/billing/contact"): ("/v1/billing/contact", None),
+        ("PUT", "/v1/billing/contact"): (
+            "/v1/billing/contact",
+            {
+                "phone": "+12025550123",
+                "whatsapp_allowed": True,
+                "source": "Fictional opt-in",
+            },
+        ),
+        ("GET", "/v1/billing/followups"): ("/v1/billing/followups", None),
+        ("GET", "/v1/billing/orders/{invoice_id}/followup"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/followup",
+            None,
+        ),
+        ("GET", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/followup"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/followup",
+            None,
+        ),
+        ("PUT", "/v1/billing/orders/{invoice_id}/followup"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/followup",
+            {"paused": True},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/whatsapp",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp/{event_id}"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/whatsapp/" + "0" * 32,
+            {"sent": True},
+        ),
+        ("GET", "/v1/billing/platform/followups"): ("/v1/billing/platform/followups", None),
+        ("PUT", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/followup"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/followup",
+            {"paused": True},
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/whatsapp"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/whatsapp",
+            None,
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/whatsapp/{event_id}"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/whatsapp/" + "0" * 32,
+            {"sent": True},
+        ),
         ("PUT", "/v1/billing/dlocal/account"): (
             "/v1/billing/dlocal/account",
             {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
@@ -1033,6 +1076,10 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
 ADDRESSED = {
     key
     for key in (
+        ("GET", "/v1/billing/orders/{invoice_id}/followup"),
+        ("PUT", "/v1/billing/orders/{invoice_id}/followup"),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp"),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp/{event_id}"),
         ("POST", "/v1/billing/orders/{invoice_id}/checkout"),
         ("POST", "/v1/billing/orders/{invoice_id}/reconcile"),
         ("POST", "/v1/billing/appointments/{appointment_id}"),

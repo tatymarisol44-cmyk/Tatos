@@ -5,6 +5,11 @@ credenciales, cuenta aprobada, pruebas contra el sandbox del proveedor o cobros 
 El código y las pantallas se verificaron con transporte HTTP simulado. No se ha
 publicado este borrador ni ejecutado su migración en producción.
 
+Actualización 03/11: el borrador añade [seguimiento de pagos por WhatsApp](SEGUIMIENTO_PAGOS_WHATSAPP.md)
+para órdenes registradas, con borrador revisado, próximo contacto e historial.
+El envío es manual; no hay mensajes automáticos o nuevas pruebas reales de dLocal Go.
+La migración 0028 también sigue pendiente de publicación y aplicación remota.
+
 ## Destinatarios
 
 - La operadora de Tatos recibe USD 100 mensuales por consultorio para toda la app.

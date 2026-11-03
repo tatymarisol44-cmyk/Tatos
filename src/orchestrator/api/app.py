@@ -27,6 +27,7 @@ from orchestrator import __version__
 from orchestrator.api import (
     a2a,
     billing,
+    billing_followup,
     business,
     channels,
     clinical,
@@ -214,6 +215,7 @@ def create_app(
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(billing.router)
+    app.include_router(billing_followup.router)
     app.include_router(patients.router)
     app.include_router(channels.router)
     app.include_router(inbox.router)

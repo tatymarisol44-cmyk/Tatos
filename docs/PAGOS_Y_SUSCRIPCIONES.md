@@ -1,5 +1,10 @@
 # Cobros del consultorio y suscripción de Tatos
 
+**Actualización 03/11/2026:** [seguimiento de pagos por WhatsApp](SEGUIMIENTO_PAGOS_WHATSAPP.md)
+preparado en el borrador: órdenes pendientes, próximo contacto, promesas, pausa e
+historial. Apertura y envío manual desde WhatsApp, con permiso específico. Sin
+despliegue o mensajes reales; la conexión de dLocal Go sigue pendiente.
+
 **Actualización 29/10/2026:** la propietaria eligió dLocal Go. El estado vigente,
 la integración local y los pasos de conexión están en [dLocal Go](DLOCAL_GO.md).
 Incluye checkout persistente, planes mensuales del proveedor y conciliación. Sin

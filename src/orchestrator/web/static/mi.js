@@ -481,7 +481,7 @@ VIEWS.perfil = async (main) => {
       el("ul", {}, ...tier.benefits.map((b) => el("li", { text: b }))),
       tier.next ? el("p", { class: "muted", text: `Siguiente nivel: ${tier.next.name}. ${tier.next.how}` }) : null,
       el("p", { class: "muted", text: "Los niveles dependen del tiempo que llevas con nosotros y de los talleres a los que asistes, nunca de cuántas sesiones tomas. No son descuentos." })));
-  const labels = { marketing: "Novedades del consultorio", analytics: "Ayudarnos a mejorar lo que publicamos", memory: "Recordar tus preferencias" };
+  const labels = { marketing: "Novedades del consultorio", analytics: "Ayudarnos a mejorar lo que publicamos", memory: "Recordar tus preferencias", whatsapp_billing: "Recordatorios de pagos de este consultorio por WhatsApp" };
   const current = prompt.consents || {};
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const rows = Object.keys(labels).map((purpose) => {
