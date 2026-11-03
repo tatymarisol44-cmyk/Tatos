@@ -27,7 +27,7 @@ from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.crm import appointments, patients
 from orchestrator.db import utcnow
-from orchestrator.dlocal_billing import DlocalBilling, checkouts, renewals
+from orchestrator.dlocal_billing import DlocalBilling, accounts, checkouts, renewals
 from orchestrator.dlocal_go import DlocalGo
 from orchestrator.governance import Purpose
 from orchestrator.llm import FakeLLM
@@ -361,6 +361,19 @@ async def test_direct_bank_transfer_is_not_automatically_verified(auto_world: An
         )
     with pytest.raises(BillingError, match="registered with the gateway"):
         await o.billing_automation.configure_order("acme", fid, True, now, "admin")
+
+
+async def test_live_delivery_requires_live_gate_and_recipient_confirmation(auto_world: Any) -> None:
+    o, _, sent, _, now = auto_world
+    async with o.db.engine.begin() as conn:
+        await conn.execute(update(accounts).values(environment="live", withdrawals_confirmed=True))
+    await o.billing_automation.due(now)
+    assert not sent
+    o.settings.billing_dlocal_live_enabled = True
+    async with o.db.engine.begin() as conn:
+        await conn.execute(update(targets).values(next_at=now))
+    result = await o.billing_automation.due(now)
+    assert len(sent) == 1 and result["accepted"] == 1
 
 
 async def test_other_tenant_cannot_enroll_foreign_invoice_or_sender(auto_world: Any) -> None:

@@ -2866,6 +2866,8 @@ function billingAutoState(value) {
   return ({ scheduled: "Programado", paused: "Pausado", sending: "Enviando", uncertain: "Por conciliar", settled: "Finalizado", limit_reached: "Límite de recordatorios alcanzado" })[value] || value;
 }
 function billingAutoResult(value) {
+  const extra = { live_payments_not_enabled: "Los pagos reales todavía no están habilitados para esta cuenta", daily_contact_limit: "Este contacto ya tiene un recordatorio registrado hoy", claim_conflict: "El recordatorio está en comprobación; se revisará antes de enviar" };
+  if (extra[value]) return extra[value];
   return ({ accepted: "WhatsApp aceptó el mensaje; entrega sin confirmar", simulated: "Simulado, sin mensaje real", uncertain: "Resultado incierto, sin reintento automático", paid: "Pagado", renewal_no_longer_pending: "La renovación ya no requiere este recordatorio", policy_disabled: "Automatización desactivada", sandbox_delivery_disabled: "Entorno de prueba: envíos reales bloqueados", reconciliation_unavailable: "No se pudo verificar el pago o la conexión", manual_draft_open: "Hay un borrador manual abierto", subscription_not_active: "La suscripción necesita revisión" })[value] || BILLING_FOLLOWUP_REASONS[value] || "Revisar seguimiento";
 }
 async function billingAutomaticForm(platform = false) {

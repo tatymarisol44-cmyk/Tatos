@@ -507,15 +507,19 @@ class BillingAutomation:
                 raise BillingError("payment_needs_review")
             async with self.db.engine.connect() as conn:
                 account = (
-                    await conn.execute(
-                        select(accounts.c.environment).where(
-                            and_(
-                                accounts.c.tenant == tenant,
-                                accounts.c.scope == "clinic",
+                    (
+                        await conn.execute(
+                            select(accounts.c.environment, accounts.c.withdrawals_confirmed).where(
+                                and_(
+                                    accounts.c.tenant == tenant,
+                                    accounts.c.scope == "clinic",
+                                )
                             )
                         )
                     )
-                ).scalar_one()
+                    .mappings()
+                    .one()
+                )
             context["order"] = {**context["order"], "state": "pending"}
         else:
             await self.o.dlocal_billing.sync_subscription(tenant)
@@ -538,15 +542,19 @@ class BillingAutomation:
                     .first()
                 )
                 account = (
-                    await conn.execute(
-                        select(accounts.c.environment).where(
-                            and_(
-                                accounts.c.tenant == self.o.settings.billing_platform_tenant,
-                                accounts.c.scope == "platform",
+                    (
+                        await conn.execute(
+                            select(accounts.c.environment, accounts.c.withdrawals_confirmed).where(
+                                and_(
+                                    accounts.c.tenant == self.o.settings.billing_platform_tenant,
+                                    accounts.c.scope == "platform",
+                                )
                             )
                         )
                     )
-                ).scalar_one()
+                    .mappings()
+                    .one()
+                )
             if plan["state"] != "active":
                 raise BillingError("subscription_not_active")
             phone = (
@@ -573,7 +581,11 @@ class BillingAutomation:
         reason = self.o.payment_followups._reason(context, now)
         if reason:
             raise BillingError(reason)
-        simulated = account == "sandbox"
+        simulated = account["environment"] == "sandbox"
+        if not simulated and (
+            not self.o.settings.billing_dlocal_live_enabled or not account["withdrawals_confirmed"]
+        ):
+            raise BillingError("live_payments_not_enabled")
         if simulated and not (self.o.settings.app_env == "test" and self.transport is not None):
             raise BillingError("sandbox_delivery_disabled")
         return context, context["sender"], simulated
@@ -861,6 +873,7 @@ class BillingAutomation:
                     "contact_not_due",
                     "policy_disabled",
                     "sandbox_delivery_disabled",
+                    "live_payments_not_enabled",
                     "subscription_not_active",
                     "manual_draft_open",
                     "daily_contact_limit",
