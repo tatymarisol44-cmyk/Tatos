@@ -243,6 +243,9 @@ class PaymentFollowups:
             "sender": sender,
             "follow": dict(follow) if follow else {},
             "history": [dict(r) for r in history],
+            "automatic": await self.o.billing_automation.target(tenant, "order:" + invoice_id)
+            if not platform
+            else None,
         }
 
     def _reason(self, context: dict[str, Any], now: datetime) -> str | None:
@@ -295,6 +298,8 @@ class PaymentFollowups:
             "promised_for": aware(follow.get("promised_for")),
             "paused": follow.get("paused", False),
             "history": history,
+            "automatic": context.get("automatic"),
+            "can_automate": order["kind"] == "appointment" and order["method"] == "card",
         }
 
     async def listing(
@@ -383,6 +388,9 @@ class PaymentFollowups:
     ) -> dict[str, Any]:
         self.o.billing._enabled()
         context = await self._context(tenant, invoice_id, platform)
+        automatic = context.get("automatic")
+        if automatic and (automatic["enabled"] or automatic["state"] in ("sending", "uncertain")):
+            raise BillingError("automatic reminders are active or require delivery reconciliation")
         order = context["order"]
         if order["method"] == "card":
             if platform:

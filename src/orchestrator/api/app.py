@@ -27,6 +27,7 @@ from orchestrator import __version__
 from orchestrator.api import (
     a2a,
     billing,
+    billing_automation,
     billing_followup,
     business,
     channels,
@@ -122,6 +123,10 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
         except Exception:
             log.exception("appointment reminders pass failed")
         try:
+            await orch.billing_automation.due()
+        except Exception:
+            log.error("billing automation pass failed; automatic sends remain guarded")
+        try:
             await orch.publications.publish_due()
         except Exception:
             log.exception("scheduled publications pass failed")
@@ -215,6 +220,7 @@ def create_app(
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
     app.include_router(billing.router)
+    app.include_router(billing_automation.router)
     app.include_router(billing_followup.router)
     app.include_router(patients.router)
     app.include_router(channels.router)

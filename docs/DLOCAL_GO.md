@@ -1,5 +1,10 @@
 # dLocal Go en Tatos
 
+Actualización 03/11, petición posterior: [confirmación y recordatorios automáticos](AUTOMATIZACION_PAGOS_WHATSAPP.md)
+preparados detrás de un gate nuevo, cerrado por defecto. La propietaria eligió un
+recordatorio diario después del vencimiento, máximo tres. Proveedores simulados;
+no hay activación real o publicación. La transferencia bancaria directa se revisa manualmente.
+
 Preparación del 29/10/2026. La propietaria eligió dLocal Go. **No hay todavía
 credenciales, cuenta aprobada, pruebas contra el sandbox del proveedor o cobros reales.**
 El código y las pantallas se verificaron con transporte HTTP simulado. No se ha

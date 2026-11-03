@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -88,6 +90,7 @@ renewals = Table(
     Column("tenant", String(64), primary_key=True),
     Column("execution_id", String(128), primary_key=True),
     Column("subscription_id", String(128), nullable=False),
+    Column("provider_created_at", String(48), nullable=True),
     Column("state", String(24), nullable=False),
     Column("amount_cents", BigInteger, nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
@@ -440,9 +443,16 @@ class DlocalBilling:
                 .where(checkouts.c.reference == row["reference"])
                 .values(payment_id=payment_id, updated_at=utcnow())
             )
-            return self.billing._public(
-                await self.billing._row(conn, tenant, invoice_id, patient_id)
-            )
+            return {
+                **self.billing._public(
+                    await self.billing._row(conn, tenant, invoice_id, patient_id)
+                ),
+                "provider_status": response["status"],
+                "provider_status_detail": response.get("status_detail")
+                if isinstance(response.get("status_detail"), str)
+                and re.fullmatch(r"[A-Z_]{1,64}", response["status_detail"])
+                else None,
+            }
 
     async def subscribe(self, tenant: str, actor: str, consent: bool) -> dict[str, Any]:
         self.billing._enabled()
@@ -647,6 +657,7 @@ class DlocalBilling:
                         tenant=tenant,
                         execution_id=identifier(execution.get("id")),
                         subscription_id=sub_id,
+                        provider_created_at=self._execution_time(execution.get("created_at")),
                         state=result[raw_state],
                         amount_cents=paid_cents,
                         updated_at=utcnow(),
@@ -670,17 +681,25 @@ class DlocalBilling:
                     )
                 ).first()
                 if exists:
-                    if exists[0] != "paid":
-                        await conn.execute(
-                            update(renewals)
-                            .where(
-                                and_(
-                                    renewals.c.tenant == tenant,
-                                    renewals.c.execution_id == values["execution_id"],
-                                )
+                    changes: dict[str, Any]
+                    if exists[0] == "paid":
+                        changes = {
+                            k: v
+                            for k, v in values.items()
+                            if k in ("provider_created_at", "updated_at") and v is not None
+                        }
+                    else:
+                        changes = values
+                    await conn.execute(
+                        update(renewals)
+                        .where(
+                            and_(
+                                renewals.c.tenant == tenant,
+                                renewals.c.execution_id == values["execution_id"],
                             )
-                            .values(**values)
                         )
+                        .values(**changes)
+                    )
                 else:
                     await conn.execute(insert(renewals).values(**values))
             await self.audit.record_in(
@@ -691,6 +710,17 @@ class DlocalBilling:
                 "billing/subscription",
             )
         return await self.subscription(tenant)
+
+    @staticmethod
+    def _execution_time(value: Any) -> str | None:
+        # Provider examples omit timezone. Keep that fact; never invent a local due date.
+        if not isinstance(value, str) or len(value) > 48:
+            return None
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return value
 
     async def webhook(self, reference: str, payload: bytes, authorization: str) -> None:
         async with self.db.engine.connect() as conn:

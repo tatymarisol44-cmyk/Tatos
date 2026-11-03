@@ -2583,6 +2583,11 @@ function billingError(err) {
     const followup = /WhatsApp follow-up blocked: ([a-z_]+)/.exec(err.detail);
     if (followup) return BILLING_FOLLOWUP_REASONS[followup[1]] || "Comprueba el seguimiento antes de contactar.";
     if (/contact changed/.test(err.detail)) return "Cambió el contacto. Descarta el borrador anterior desde Gestionar seguimiento.";
+    if (/automatic verification requires/.test(err.detail)) return "Primero prepara el pago con la pasarela. La transferencia directa al banco se verifica manualmente.";
+    if (/manual draft/.test(err.detail)) return "Descarta el borrador manual antes de activar los recordatorios automáticos.";
+    if (/due date/.test(err.detail)) return "Indica el vencimiento del pago para programar el primer recordatorio.";
+    if (/automatic reminders|delivery reconciliation/.test(err.detail)) return "El seguimiento automático está activo o tiene un envío por conciliar. Revisa su estado antes de volver a enviar.";
+    if (/WhatsApp|utility template/.test(err.detail)) return "Conecta la cuenta de WhatsApp del remitente y configura su plantilla de utilidad aprobada.";
     return "No se pudo cambiar el pago. Revisa su estado y vuelve a cargar.";
   }
   return humanError(err);
@@ -2706,6 +2711,7 @@ async function billingView(main) {
     isAdmin() ? el("div", { class: "stack" }, billingGatewayForm(config.dlocal.clinic), billingBankForm(config)) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
     billingRows(invoices, { review: isAdmin() })));
   parts.push(await billingFollowupSection());
+  if (isAdmin()) parts.push(await billingAutomaticForm());
   if (isAdmin()) {
     const subscriptions = await api("/v1/billing/orders?kind=subscription");
     const create = el("button", { class: "btn primary", type: "button", text: "Preparar transferencia de la mensualidad", disabled: !config.enabled || !config.platform_bank_configured || !config.monthly_price_cents });
@@ -2726,12 +2732,13 @@ async function billingView(main) {
     const pending = await api("/v1/billing/platform/subscriptions");
     parts.push(card("Administración de suscripciones de Tatos", "", billingGatewayForm(config.dlocal.platform, true), billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
     parts.push(await billingFollowupSection(true));
+    parts.push(await billingAutomaticForm(true));
   }
   main.replaceChildren(...parts);
 }
 
 const BILLING_FOLLOWUP_REASONS = { paid: "Pagado", payments_not_enabled: "Los cobros todavía no están activados", payment_needs_review: "Comprobar el pago antes de contactar", inactive_record: "Ficha o cita no disponible", paused: "Seguimiento en pausa", phone_missing: "Falta un WhatsApp con código de país", permission_missing: "Falta el permiso para recordatorios de pago", opted_out: "Solicitó no recibir WhatsApp", payment_promised: "Hay una fecha de pago acordada", contact_not_due: "Espera hasta el próximo seguimiento" };
-const BILLING_CONTACT_STATES = { prepared: "Borrador preparado", manual_sent: "Envío registrado por el equipo", discarded: "Borrador descartado" };
+const BILLING_CONTACT_STATES = { prepared: "Borrador preparado", manual_sent: "Envío registrado por el equipo", discarded: "Borrador descartado", auto_accepted: "WhatsApp aceptó el recordatorio automático", auto_simulated: "Recordatorio automático simulado", auto_uncertain: "Envío automático por conciliar; no se repetirá automáticamente" };
 function billingFollowupPath(row, platform) {
   return platform ? `/v1/billing/platform/${encodeURIComponent(row.payer_tenant)}/orders/${encodeURIComponent(row.invoice_id)}` : `/v1/billing/orders/${encodeURIComponent(row.invoice_id)}`;
 }
@@ -2752,11 +2759,12 @@ async function billingFollowupSection(platform = false) {
       const data = await api(path + (cursor ? `?after=${encodeURIComponent(cursor)}` : ""));
       if (!data.items.length && !list.children.length) list.append(empty("No hay órdenes de pago pendientes en este seguimiento."));
       for (const row of data.items) {
-        const prepare = el("button", { class: "btn small", type: "button", text: "Preparar WhatsApp", disabled: !!row.blocked_reason });
+        const autoBlocksManual = row.automatic && (row.automatic.enabled || ["sending", "uncertain"].includes(row.automatic.state));
+        const prepare = el("button", { class: "btn small", type: "button", text: "Preparar WhatsApp", disabled: !!row.blocked_reason || !!autoBlocksManual });
         const manage = el("button", { class: "btn small", type: "button", text: "Gestionar seguimiento" });
         const item = el("article", { class: "doc", "data-followup": row.invoice_id },
           el("div", { class: "what" }, el("strong", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }),
-            el("p", { text: `${BILLING_STATES[row.state] || row.state} · ${BILLING_FOLLOWUP_REASONS[row.blocked_reason] || "Listo para recordar"}` }),
+            el("p", { text: `${BILLING_STATES[row.state] || row.state} · ${autoBlocksManual ? "Seguimiento automático configurado" : BILLING_FOLLOWUP_REASONS[row.blocked_reason] || "Listo para recordar"}` }),
             el("p", { class: "muted", text: `Referencia: ${row.invoice_id.slice(0, 8)}${row.phone_masked ? " · WhatsApp " + row.phone_masked : ""}` }),
             row.next_contact_at ? el("p", { class: "muted", text: `Próximo contacto: ${new Date(row.next_contact_at).toLocaleString("es-EC")}` }) : null,
             row.history[0] ? el("p", { class: "muted", text: `${BILLING_CONTACT_STATES[row.history[0].state] || row.history[0].state} · ${new Date(row.history[0].confirmed_at || row.history[0].created_at).toLocaleString("es-EC")}` }) : null),
@@ -2765,7 +2773,7 @@ async function billingFollowupSection(platform = false) {
           prepare.disabled = true;
           try { billingWhatsAppDialog(row, await api(billingFollowupPath(row, platform) + "/whatsapp", { method: "POST" }), platform); }
           catch (err) { say(status, billingError(err), "error"); }
-          finally { prepare.disabled = !!row.blocked_reason; }
+          finally { prepare.disabled = !!row.blocked_reason || !!autoBlocksManual; }
         });
         manage.addEventListener("click", () => billingFollowupDialog(row, platform, data.can_record_permission));
         list.append(item);
@@ -2813,6 +2821,21 @@ function billingFollowupDialog(row, platform, canPermission) {
     catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
   });
   const parts = [el("p", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }), form];
+  if (!platform) {
+    const automatic = el("input", { type: "checkbox", disabled: !row.can_automate }); automatic.checked = !!row.automatic?.enabled;
+    const due = el("input", { type: "datetime-local", value: billingLocalInput(row.automatic?.due_at) });
+    const autoSave = el("button", { class: "btn", type: "submit", text: "Guardar envío automático", disabled: !row.can_automate });
+    const autoForm = el("form", { class: "stack" }, el("label", { class: "check" }, automatic, "Recordatorios automáticos de este pago"),
+      el("label", { class: "field" }, "Vencimiento del pago para iniciar los recordatorios", due),
+      el("p", { class: "muted", text: "Disponible para pagos registrados en la pasarela y con WhatsApp configurado. Las transferencias bancarias directas requieren revisión." }), autoSave);
+    if (row.automatic) autoForm.append(el("p", { class: "muted", text: `Estado: ${billingAutoState(row.automatic.state)}${row.automatic.last_result ? " · " + billingAutoResult(row.automatic.last_result) : ""}` }));
+    autoForm.addEventListener("submit", async event => {
+      event.preventDefault(); autoSave.disabled = true;
+      try { await api(billingFollowupPath(row, false) + "/automation", { method: "PUT", body: { enabled: automatic.checked, due_at: due.value ? new Date(due.value).toISOString() : null } }); $("#dialog").close(); route(); }
+      catch (err) { say(status, billingError(err), "error"); autoSave.disabled = false; }
+    });
+    parts.push(autoForm);
+  }
   if (!platform && canPermission && row.subject_id) {
     const allowed = el("input", { type: "checkbox" }); allowed.checked = row.whatsapp_allowed;
     const source = el("input", { type: "text", required: true, minlength: "5", maxlength: "128", placeholder: "Ej.: autorización firmada y su fecha" });
@@ -2838,6 +2861,58 @@ function billingFollowupDialog(row, platform, canPermission) {
     }
   }
   parts.push(status); dialog("Gestionar seguimiento del pago", ...parts);
+}
+function billingAutoState(value) {
+  return ({ scheduled: "Programado", paused: "Pausado", sending: "Enviando", uncertain: "Por conciliar", settled: "Finalizado", limit_reached: "Límite de recordatorios alcanzado" })[value] || value;
+}
+function billingAutoResult(value) {
+  return ({ accepted: "WhatsApp aceptó el mensaje; entrega sin confirmar", simulated: "Simulado, sin mensaje real", uncertain: "Resultado incierto, sin reintento automático", paid: "Pagado", renewal_no_longer_pending: "La renovación ya no requiere este recordatorio", policy_disabled: "Automatización desactivada", sandbox_delivery_disabled: "Entorno de prueba: envíos reales bloqueados", reconciliation_unavailable: "No se pudo verificar el pago o la conexión", manual_draft_open: "Hay un borrador manual abierto", subscription_not_active: "La suscripción necesita revisión" })[value] || BILLING_FOLLOWUP_REASONS[value] || "Revisar seguimiento";
+}
+async function billingAutomaticForm(platform = false) {
+  const path = platform ? "/v1/billing/platform/automation" : "/v1/billing/automation";
+  const data = await api(path);
+  const enabled = el("input", { type: "checkbox" }); enabled.checked = data.enabled;
+  const account = el("select", {}, el("option", { value: "", text: "Selecciona un WhatsApp conectado" }),
+    ...data.accounts.map(a => el("option", { value: a.account_id, text: a.handle })));
+  account.value = data.account_id || "";
+  const template = el("input", { type: "text", maxlength: "128", value: data.template_name, placeholder: "Nombre exacto de la plantilla aprobada" });
+  const language = el("input", { type: "text", maxlength: "12", value: data.language });
+  const cadence = el("input", { type: "number", min: "1", max: "30", value: String(data.cadence_days), required: true });
+  const maximum = el("input", { type: "number", min: "1", max: "3", value: String(data.maximum), required: true });
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar automatización" });
+  const form = el("form", { class: "stack" }, el("label", { class: "check" }, enabled, "Habilitar recordatorios automáticos por WhatsApp"),
+    el("label", { class: "field" }, "WhatsApp que enviará los recordatorios", account),
+    el("label", { class: "field" }, "Plantilla de utilidad aprobada por Meta", template),
+    el("label", { class: "field" }, "Idioma de la plantilla", language),
+    el("p", { class: "muted", text: "La plantilla debe tener dos variables en el cuerpo: importe y referencia. Sin información clínica." }),
+    el("label", { class: "field" }, "Días entre recordatorios", cadence),
+    el("label", { class: "field" }, "Máximo de recordatorios por pago", maximum), save, status);
+  form.addEventListener("submit", async event => {
+    event.preventDefault(); save.disabled = true;
+    try { await api(path, { method: "PUT", body: { enabled: enabled.checked, account_id: account.value || null, template_name: template.value.trim(), language: language.value.trim(), cadence_days: Number(cadence.value), maximum: Number(maximum.value) } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  const work = el("div", { class: "stack" });
+  for (const target of data.targets) {
+    const pause = el("button", { class: "btn small", type: "button", text: ["settled", "limit_reached"].includes(target.state) ? "Seguimiento finalizado" : target.enabled ? "Pausar automático" : "Reanudar automático" });
+    pause.disabled = ["sending", "uncertain", "settled", "limit_reached"].includes(target.state);
+    const item = el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${platform ? target.tenant + " · Renovación" : "Pago"} ${target.source_id.slice(0, 8)}` }),
+      el("p", { text: `${billingAutoState(target.state)}${target.last_result ? " · " + billingAutoResult(target.last_result) : ""}` }),
+      el("p", { class: "muted", text: `Próximo control: ${new Date(target.next_at).toLocaleString("es-EC")}` })), pause);
+    pause.addEventListener("click", async () => {
+      pause.disabled = true;
+      const endpoint = platform ? `/v1/billing/platform/${encodeURIComponent(target.tenant)}/automation/${encodeURIComponent(target.source_id)}` : `/v1/billing/orders/${encodeURIComponent(target.source_id)}/automation`;
+      try { await api(endpoint, { method: "PUT", body: { enabled: !target.enabled } }); route(); }
+      catch (err) { say(status, billingError(err), "error"); pause.disabled = false; }
+    });
+    work.append(item);
+  }
+  return card(platform ? "Automatización de mensualidades de Tatos" : "Automatización de pagos del consultorio", "",
+    el("p", { text: "Primer recordatorio al día siguiente del vencimiento, desde las 09:00. Consulta la pasarela antes de cada envío y se detiene al confirmar el pago. Las transferencias directas al banco requieren revisión." }),
+    el("p", { class: data.server_enabled ? "muted" : "notice", text: data.server_enabled ? `Horario de envío: ${data.hours}, ${data.timezone}.` : "Los envíos automáticos todavía no están activados en esta instalación. Puedes preparar su configuración." }),
+    !data.accounts.length ? link("#ajustes/redes", "Conectar WhatsApp en Redes sociales") : null, form, work);
 }
 async function billingContactForm() {
   const contact = await api("/v1/billing/contact");

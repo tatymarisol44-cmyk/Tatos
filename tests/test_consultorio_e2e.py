@@ -85,6 +85,33 @@ def browser(subprocess_loop: None) -> Iterator[Any]:
         chromium.close()
 
 
+def test_payment_automation_policy_can_be_prepared_without_sending(
+    server: str,
+    browser: Any,
+    settings: Settings,
+) -> None:
+    settings.billing_enabled = True
+    page = browser.new_page(viewport={"width": 390, "height": 844})
+    problems = _watch(page)
+    page.add_init_script('sessionStorage.setItem("consultorio.key", "test-key")')
+    page.goto(server + "/app#ajustes/pagos")
+    region = page.get_by_role("region", name="Automatización de pagos del consultorio", exact=True)
+    sync_api.expect(
+        region.get_by_text("Los envíos automáticos todavía no están activados", exact=False)
+    ).to_be_visible()
+    region.get_by_label("Plantilla de utilidad aprobada por Meta", exact=True).fill("payment_due")
+    region.get_by_label("Días entre recordatorios", exact=True).fill("1")
+    region.get_by_label("Máximo de recordatorios por pago", exact=True).fill("1")
+    region.get_by_role("button", name="Guardar automatización", exact=True).click()
+    sync_api.expect(region.get_by_label("Días entre recordatorios", exact=True)).to_have_value("1")
+    data = httpx.get(server + "/v1/billing/automation", headers=SERVICE).json()
+    assert not data["enabled"] and not data["server_enabled"]
+    assert data["maximum"] == 1 and data["cadence_days"] == 1
+    assert not problems, problems
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.close()
+
+
 def test_payment_followup_whatsapp_draft_promise_and_history(
     server: str,
     browser: Any,

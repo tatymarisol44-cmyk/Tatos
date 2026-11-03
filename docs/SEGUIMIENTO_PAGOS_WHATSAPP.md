@@ -1,5 +1,10 @@
 # Seguimiento de pagos por WhatsApp
 
+La propietaria pidió después [verificación y envío automático](AUTOMATIZACION_PAGOS_WHATSAPP.md):
+un recordatorio diario después del vencimiento, máximo tres. Ese circuito nuevo
+tiene activación separada, cerrada por defecto. Esta guía describe el modo manual
+que sigue disponible para los cobros sin automatización.
+
 Preparación del 03/11/2026 para el borrador de pagos de Tatos. Estas pantallas y la
 migración 0028 están verificadas localmente, sin publicar. La conexión real de
 [dLocal Go](DLOCAL_GO.md) sigue pendiente de credenciales y pruebas del proveedor.

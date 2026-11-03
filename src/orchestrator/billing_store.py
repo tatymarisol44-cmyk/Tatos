@@ -392,6 +392,7 @@ class BillingStore:
         Platform subscriptions belong to the clinic, never to an individual patient.
         No provider credentials or internal settlement identifiers are exposed.
         """
+        from orchestrator.billing_automation import targets
         from orchestrator.billing_followup import events, followups
 
         async with self.db.engine.connect() as conn:
@@ -452,6 +453,30 @@ class BillingStore:
                 .mappings()
                 .all()
             )
+            automatic = (
+                (
+                    await conn.execute(
+                        select(targets)
+                        .join(
+                            orders,
+                            and_(
+                                orders.c.tenant == targets.c.tenant,
+                                orders.c.invoice_id == targets.c.source_id,
+                                targets.c.kind == "order",
+                            ),
+                        )
+                        .where(owned)
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        auto_by_invoice = {
+            r["source_id"]: {
+                k: r[k] for k in ("enabled", "due_at", "next_at", "state", "last_result")
+            }
+            for r in automatic
+        }
         schedule_by_invoice = {
             r["invoice_id"]: {
                 key: r[key] for key in ("next_contact_at", "promised_for", "paused", "updated_at")
@@ -471,6 +496,7 @@ class BillingStore:
                 **self._public(row),
                 "followup": schedule_by_invoice.get(row["invoice_id"]),
                 "whatsapp_followup_history": history_by_invoice.get(row["invoice_id"], []),
+                "automatic_followup": auto_by_invoice.get(row["invoice_id"]),
             }
             for row in rows
         ]

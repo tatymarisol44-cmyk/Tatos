@@ -471,6 +471,21 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             },
         ),
         ("GET", "/v1/billing/followups"): ("/v1/billing/followups", None),
+        ("GET", "/v1/billing/automation"): ("/v1/billing/automation", None),
+        ("PUT", "/v1/billing/automation"): ("/v1/billing/automation", {"enabled": False}),
+        ("GET", "/v1/billing/platform/automation"): ("/v1/billing/platform/automation", None),
+        ("PUT", "/v1/billing/platform/automation"): (
+            "/v1/billing/platform/automation",
+            {"enabled": False},
+        ),
+        ("PUT", "/v1/billing/orders/{invoice_id}/automation"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/automation",
+            {"enabled": True},
+        ),
+        ("PUT", "/v1/billing/platform/{payer_tenant}/automation/{execution_id}"): (
+            "/v1/billing/platform/acme/automation/17",
+            {"enabled": False},
+        ),
         ("GET", "/v1/billing/orders/{invoice_id}/followup"): (
             f"/v1/billing/orders/{i['billing_invoice']}/followup",
             None,
@@ -1077,6 +1092,7 @@ ADDRESSED = {
     key
     for key in (
         ("GET", "/v1/billing/orders/{invoice_id}/followup"),
+        ("PUT", "/v1/billing/orders/{invoice_id}/automation"),
         ("PUT", "/v1/billing/orders/{invoice_id}/followup"),
         ("POST", "/v1/billing/orders/{invoice_id}/whatsapp"),
         ("POST", "/v1/billing/orders/{invoice_id}/whatsapp/{event_id}"),

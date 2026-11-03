@@ -20,6 +20,7 @@ from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
+from orchestrator.billing_automation import BillingAutomation
 from orchestrator.billing_followup import PaymentFollowups
 from orchestrator.billing_store import BillingStore
 from orchestrator.briefing import Briefing
@@ -196,6 +197,7 @@ class Orchestrator:
         self.social_login = SocialLogin(self.db, self.audit, self.social, settings)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.payment_followups = PaymentFollowups(self)
+        self.billing_automation = BillingAutomation(self)
         self.oncall = OnCall(self.db, self.audit, settings)
         self.privacy_cases = PrivacyCases(self.db, self.audit)
         self.publications = PublicationService(
