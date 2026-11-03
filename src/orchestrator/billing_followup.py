@@ -364,8 +364,8 @@ class PaymentFollowups:
             payer = row["tenant"]
             key = and_(followups.c.tenant == payer, followups.c.invoice_id == invoice_id)
             values = dict(
-                next_contact_at=next_contact_at,
-                promised_for=promised_for,
+                next_contact_at=aware(next_contact_at),
+                promised_for=aware(promised_for),
                 paused=paused,
                 updated_at=utcnow(),
             )

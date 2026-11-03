@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -287,12 +287,13 @@ class BillingAutomation:
                 raise BillingError(
                     "automatic send requires delivery reconciliation before resuming"
                 )
-            due = due_at or (aware(old["due_at"]) if old else None)
+            due = aware(due_at) or (aware(old["due_at"]) if old else None)
             if due is None:
                 raise BillingError("choose the payment due date before scheduling reminders")
             first_contact = (
                 due.astimezone(ZoneInfo(self.o.settings.clinic_timezone)) + timedelta(days=1)
             ).replace(hour=9, minute=0, second=0, microsecond=0)
+            first_contact = first_contact.astimezone(UTC)
             values = dict(
                 enabled=enabled,
                 due_at=due,
@@ -594,7 +595,7 @@ class BillingAutomation:
         result = {"reconciled": 0, "accepted": 0, "simulated": 0, "blocked": 0}
         if not self.active():
             return result
-        now = now or utcnow()
+        now = aware(now) or utcnow()
         result["reconciled"] = await self.reconcile_due(now)
         await self.close_settled(now)
         await self.enroll_renewals(now)
@@ -892,10 +893,12 @@ class BillingAutomation:
                             state="settled"
                             if reason in ("paid", "renewal_no_longer_pending")
                             else "scheduled",
-                            next_at=(
-                                now.astimezone(ZoneInfo(self.o.settings.clinic_timezone))
-                                + timedelta(days=1)
-                            ).replace(hour=9, minute=0, second=0, microsecond=0)
+                            next_at=aware(
+                                (
+                                    now.astimezone(ZoneInfo(self.o.settings.clinic_timezone))
+                                    + timedelta(days=1)
+                                ).replace(hour=9, minute=0, second=0, microsecond=0)
+                            )
                             if reason == "daily_contact_limit"
                             else now + timedelta(minutes=5),
                             updated_at=utcnow(),
@@ -905,6 +908,7 @@ class BillingAutomation:
         return result
 
     async def close_settled(self, now: datetime) -> None:
+        now = aware(now) or utcnow()
         async with self.db.engine.begin() as conn:
             settled = (
                 select(orders.c.invoice_id)

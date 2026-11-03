@@ -11,6 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -289,6 +290,18 @@ async def test_owner_daily_rule_starts_next_day_and_stops_at_three(auto_world: A
     for day in (1, 2, 3, 4):
         await o.billing_automation.due(now + timedelta(days=day))
     assert len(sent) == 3
+
+
+async def test_due_date_with_local_offset_is_stored_in_utc_and_first_contact_is_nine(
+    auto_world: Any,
+) -> None:
+    o, _, _, fid, now = auto_world
+    local = ZoneInfo("America/Guayaquil")
+    due = now.astimezone(local).replace(hour=17)
+    configured = await o.billing_automation.configure_order("acme", fid, True, due, "admin")
+    assert configured["due_at"].hour == 22
+    assert configured["next_at"].hour == 14
+    assert configured["next_at"].astimezone(local) == (due + timedelta(days=1)).replace(hour=9)
 
 
 async def test_same_recipient_only_gets_one_reminder_per_sender_per_day(auto_world: Any) -> None:
