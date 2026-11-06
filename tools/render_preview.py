@@ -68,6 +68,15 @@ class ProtectedPreview:
             await self.app(scope, receive, send)
             return
         headers = dict(scope.get("headers", []))
+        # A shared invitation or a link from the review guide is a top-level HTML
+        # navigation, not a cross-origin script/API request. Keep Basic Auth and
+        # strict origin checks; allow only these document entry points to navigate.
+        document_navigation = (
+            scope["method"] in ("GET", "HEAD")
+            and scope["path"] in {"/", "/lab", "/app", "/mi", "/mi/"}
+            and headers.get(b"sec-fetch-mode") == b"navigate"
+            and headers.get(b"sec-fetch-dest") == b"document"
+        )
         response: Any = None
         if scope["path"] == "/preview-healthz" and scope["method"] in ("GET", "HEAD"):
             ready = bool(self.app.state.orchestrator.ready)
@@ -75,9 +84,9 @@ class ProtectedPreview:
                 {"ready": ready, "environment": "private_preview", "real_operations": False},
                 status_code=200 if ready else 503,
             )
-        elif headers.get(b"sec-fetch-site", b"none") not in (
-            b"none",
-            b"same-origin",
+        elif (
+            headers.get(b"sec-fetch-site", b"none") not in (b"none", b"same-origin")
+            and not document_navigation
         ) or headers.get(b"origin") not in (None, self.origin.encode()):
             response = Response("Same origin required", status_code=403)
         elif headers.get(b"host") != urlsplit(self.origin).netloc.encode():

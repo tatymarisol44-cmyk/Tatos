@@ -49,4 +49,5 @@ def test_private_lab_has_fake_state_real_app_and_no_cross_origin_bootstrap(tmp_p
         )
         assert b"private-tools.js" in client.get("/app").content
         assert b"patient-surveys.js" in client.get("/mi/").content
-        assert client.post("/v1/auth/sign-in").status_code == 403
+        assert client.post("/v1/auth/sign-in").status_code == 422
+        assert client.post("/v1/auth/register").status_code == 403

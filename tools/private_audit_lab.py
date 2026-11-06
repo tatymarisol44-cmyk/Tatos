@@ -367,7 +367,18 @@ def make_app(media: Path, *, base_url: str = BASE) -> Any:
         origin = request.headers.get("origin")
         if origin and origin not in allowed_origins:
             return Response("Same origin required", status_code=403)
-        if request.url.path.startswith(("/v1/auth/", "/v1/session/email")):
+        # Exercise the existing invitation/password/MFA flow only against this
+        # disposable in-memory staff store. No real accounts or mail transport.
+        preview_auth_paths = {
+            "/v1/auth/link",
+            "/v1/auth/enroll",
+            "/v1/auth/sign-in",
+            "/v1/auth/code",
+            "/v1/auth/sign-out",
+        }
+        if request.url.path.startswith("/v1/session/email") or (
+            request.url.path.startswith("/v1/auth/") and request.url.path not in preview_auth_paths
+        ):
             return Response(
                 "Real account registration is disabled in this disposable lab", status_code=403
             )
@@ -406,6 +417,8 @@ def make_app(media: Path, *, base_url: str = BASE) -> Any:
             "<p>Ajustes → Fuentes de Tests / Prototipo fiscal. "
             "Marketing → Planes y diseños / Encuestas. Cobros → Ver pago → Saldo "
             "y avisos de ensayo. No cargues datos reales. "
+            "Las invitaciones permiten ensayar contraseña y autenticador con cuentas "
+            "temporales: usa datos ficticios y una contraseña exclusiva para esta prueba. "
             "Al cerrar el proceso se pierde el estado.</p></html>",
             headers={**UI_HEADERS, "Cache-Control": "no-store"},
         )
