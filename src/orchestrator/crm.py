@@ -20,6 +20,7 @@ Privacy:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -82,6 +83,15 @@ appointments = Table(
     Column("professional_id", String(64), nullable=True, index=True),
     # When the day-before reminder was claimed (reminders.py): one per visit.
     Column("reminded_at", DateTime(timezone=True), nullable=True),
+    Column("buffer_minutes", Integer, nullable=False, default=0, server_default="0"),
+    Column("service_id", String(32), nullable=True),
+    Column(
+        "consultation_mode",
+        String(16),
+        nullable=False,
+        default="in_person",
+        server_default="in_person",
+    ),
 )
 ACTIVE_STATUSES = ("scheduled", "confirmed")
 
@@ -182,6 +192,9 @@ class CrmService:
         self.db = db
         self.audit = audit
         self.settings = settings
+        self.after_completed: Callable[[Any, str, str, str, datetime], Awaitable[None]] | None = (
+            None
+        )
 
     # --- patients ------------------------------------------------------------
     async def create_patient(
@@ -322,6 +335,10 @@ class CrmService:
         price: float,
         actor: str,
         professional_id: str | None = None,
+        buffer_minutes: int = 0,
+        service_id: str | None = None,
+        consultation_mode: str = "in_person",
+        expected_schedule_version: int | None = None,
     ) -> dict[str, Any]:
         await self._require_active(tenant, patient_id)
         aid = uuid.uuid4().hex[:12]
@@ -329,7 +346,15 @@ class CrmService:
         start = _utc(starts_at)
         async with self.db.engine.begin() as conn:
             if professional_id is not None:
-                await self._claim_time(conn, tenant, professional_id, start, duration_min)
+                await self._claim_time(
+                    conn,
+                    tenant,
+                    professional_id,
+                    start,
+                    duration_min,
+                    buffer_minutes=buffer_minutes,
+                    expected_version=expected_schedule_version,
+                )
             await conn.execute(
                 insert(appointments).values(
                     tenant=tenant,
@@ -343,6 +368,9 @@ class CrmService:
                     created_at=now,
                     updated_at=now,
                     professional_id=professional_id,
+                    buffer_minutes=buffer_minutes,
+                    service_id=service_id,
+                    consultation_mode=consultation_mode,
                 )
             )
             await self.audit.record_in(
@@ -356,14 +384,23 @@ class CrmService:
         return await self.get_appointment(tenant, aid)
 
     async def _claim_time(
-        self, conn: Any, tenant: str, professional_id: str, start: datetime, minutes: int
+        self,
+        conn: Any,
+        tenant: str,
+        professional_id: str,
+        start: datetime,
+        minutes: int,
+        *,
+        buffer_minutes: int = 0,
+        expected_version: int | None = None,
+        exclude_id: str | None = None,
     ) -> None:
         """Inside the booking transaction: lock the professional's row (two bookings for the
         same professional wait for each other, on any replica), then refuse an overlap."""
         from orchestrator.establishment import professionals  # avoids an import cycle
 
         owner = await conn.execute(
-            select(professionals.c.professional_id)
+            select(professionals.c.professional_id, professionals.c.schedule_version)
             .where(
                 and_(
                     professionals.c.tenant == tenant,
@@ -373,23 +410,29 @@ class CrmService:
             )
             .with_for_update()
         )
-        if owner.first() is None:
+        professional = owner.first()
+        if professional is None:
             raise CrmError(f"unknown or inactive professional {professional_id!r}")
-        end = start + timedelta(minutes=minutes)
-        nearby = await conn.execute(
-            select(appointments.c.starts_at, appointments.c.duration_min).where(
-                and_(
-                    appointments.c.tenant == tenant,
-                    appointments.c.professional_id == professional_id,
-                    appointments.c.status.in_(ACTIVE_STATUSES),
-                    appointments.c.starts_at < end,
-                    appointments.c.starts_at > start - timedelta(hours=12),
-                )
+        if expected_version is not None and professional.schedule_version != expected_version:
+            raise SlotTaken("the schedule changed; reload availability")
+        end = start + timedelta(minutes=minutes + buffer_minutes)
+        nearby_query = select(
+            appointments.c.starts_at, appointments.c.duration_min, appointments.c.buffer_minutes
+        ).where(
+            and_(
+                appointments.c.tenant == tenant,
+                appointments.c.professional_id == professional_id,
+                appointments.c.status.in_(ACTIVE_STATUSES),
+                appointments.c.starts_at < end,
+                appointments.c.starts_at > start - timedelta(hours=12),
             )
         )
-        for other_start, other_minutes in nearby:
+        if exclude_id:
+            nearby_query = nearby_query.where(appointments.c.id != exclude_id)
+        nearby = await conn.execute(nearby_query)
+        for other_start, other_minutes, other_buffer in nearby:
             other = _utc(other_start)
-            if other < end and other + timedelta(minutes=other_minutes) > start:
+            if other < end and other + timedelta(minutes=other_minutes + other_buffer) > start:
                 raise SlotTaken("the professional already has a visit at that time")
 
     async def get_appointment(self, tenant: str, appointment_id: str) -> dict[str, Any]:
@@ -450,6 +493,75 @@ class CrmService:
                 f"crm.appointment.{status}",
                 f"appointment/{appointment_id}",
                 subject_id=current["patient_id"],
+            )
+            if status == "completed" and self.after_completed is not None:
+                await self.after_completed(
+                    conn, tenant, appointment_id, current["patient_id"], utcnow()
+                )
+        return await self.get_appointment(tenant, appointment_id)
+
+    async def reschedule(
+        self,
+        tenant: str,
+        appointment_id: str,
+        starts_at: datetime,
+        slot: dict[str, Any],
+        actor: str,
+    ) -> dict[str, Any]:
+        """Move a future active visit explicitly; preserve identity, price and history."""
+        current = await self.get_appointment(tenant, appointment_id)
+        await self._require_active(tenant, current["patient_id"])
+        if (
+            current["status"] not in ACTIVE_STATUSES
+            or datetime.fromisoformat(current["starts_at"]) <= utcnow()
+        ):
+            raise CrmError("only future active appointments can be rescheduled")
+        if not current["professional_id"]:
+            raise CrmError("assign a professional before rescheduling")
+        async with self.db.engine.begin() as conn:
+            await self._claim_time(
+                conn,
+                tenant,
+                current["professional_id"],
+                _utc(starts_at),
+                slot["minutes"],
+                buffer_minutes=slot["buffer_minutes"],
+                expected_version=slot["schedule_version"],
+                exclude_id=appointment_id,
+            )
+            changed = await conn.execute(
+                update(appointments)
+                .where(
+                    and_(
+                        appointments.c.tenant == tenant,
+                        appointments.c.id == appointment_id,
+                        appointments.c.status == current["status"],
+                        appointments.c.starts_at == datetime.fromisoformat(current["starts_at"]),
+                        appointments.c.updated_at == datetime.fromisoformat(current["updated_at"]),
+                    )
+                )
+                .values(
+                    starts_at=_utc(starts_at),
+                    duration_min=slot["minutes"],
+                    buffer_minutes=slot["buffer_minutes"],
+                    service_id=slot["service_id"],
+                    consultation_mode=slot["mode"],
+                    updated_at=utcnow(),
+                )
+            )
+            if changed.rowcount != 1:
+                raise CrmError("the appointment changed meanwhile; reload it")
+            await self.audit.record_in(
+                conn,
+                tenant,
+                actor,
+                "crm.appointment.rescheduled",
+                f"appointment/{appointment_id}",
+                subject_id=current["patient_id"],
+                details={
+                    "previous_start": str(current["starts_at"]),
+                    "new_start": starts_at.isoformat(),
+                },
             )
         return await self.get_appointment(tenant, appointment_id)
 

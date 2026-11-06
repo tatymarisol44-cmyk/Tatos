@@ -7,6 +7,10 @@
 .ruff_cache
 .coverage
 .env
+**/.env*
+private-lab-*/
+.demo
+*.log
 tests
 docs
 deploy

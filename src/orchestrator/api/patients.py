@@ -4,6 +4,7 @@ internal routing, risk reasons, segments or anyone else's records."""
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -11,10 +12,11 @@ from fastapi import Path as FastAPIPath
 from pydantic import AwareDatetime, BaseModel, Field
 
 from orchestrator.agenda import AgendaError
+from orchestrator.api.agenda import RescheduleIn
 from orchestrator.api.schemas import PatientChatIn, PatientConsentIn
 from orchestrator.api.security import require_patient
 from orchestrator.auth import Principal
-from orchestrator.crm import CrmError
+from orchestrator.crm import CrmError, NotFoundError
 from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.instruments import InstrumentError
 from orchestrator.service import Orchestrator, PendingReviewError
@@ -128,6 +130,8 @@ async def my_thread(
 class BookIn(BaseModel):
     professional_id: str = Field(pattern=r"^[\w.@-]{1,64}$")
     starts_at: AwareDatetime
+    service_id: str | None = Field(default=None, pattern=r"^[\w-]{1,32}$")
+    schedule_version: int | None = Field(default=None, ge=1)
 
 
 class SignUpIn(BaseModel):
@@ -199,15 +203,40 @@ async def my_slots(
     p: Me,
     professional_id: Annotated[str, Query(pattern=r"^[\w.@-]{1,64}$")],
     days: Annotated[int, Query(ge=1, le=60)] = 14,
+    on_date: date | None = None,
+    service_id: Annotated[str | None, Query(pattern=r"^[\w-]{1,32}$")] = None,
 ) -> list[dict[str, Any]]:
     """Free times of a professional of the patient's practice, as far ahead as the
     patient's loyalty tier allows (RF-MKT-02)."""
     tier = await orch(request).loyalty.for_patient(p.tenant, _subject(p))
     days = min(days, tier["booking_days"])
     try:
-        return await orch(request).agenda.free_slots(p.tenant, professional_id, days=days)
+        today = datetime.now(orch(request).agenda.tz).date()
+        if on_date is not None:
+            remaining = tier["booking_days"] - (on_date - today).days
+            if remaining <= 0:
+                return []
+            days = min(days, remaining)
+        return await orch(request).agenda.free_slots(
+            p.tenant, professional_id, days=days, on_date=on_date, service_id=service_id
+        )
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc
+    except AgendaError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/services")
+async def my_services(
+    request: Request,
+    p: Me,
+    professional_id: Annotated[str, Query(pattern=r"^[\w.@-]{1,64}$")],
+) -> list[dict[str, Any]]:
+    try:
+        config = await orch(request).availability.get(p.tenant, professional_id)
+        return list(config["policy"]["services"])
+    except KeyError as exc:
+        raise HTTPException(404, "professional not found") from exc
 
 
 @router.post("/appointments", status_code=status.HTTP_201_CREATED)
@@ -215,22 +244,67 @@ async def book(body: BookIn, request: Request, p: Me) -> dict[str, Any]:
     """Book one of the free slots (only those: a patient cannot pick an arbitrary time)."""
     o = orch(request)
     try:
-        minutes = await o.agenda.is_free_slot(p.tenant, body.professional_id, body.starts_at)
+        tier = await o.loyalty.for_patient(p.tenant, _subject(p))
+        last_day = datetime.now(o.agenda.tz).date() + timedelta(days=tier["booking_days"])
+        if body.starts_at.astimezone(o.agenda.tz).date() >= last_day:
+            raise AgendaError("that date is outside the patient's booking window")
+        slot = await o.agenda.slot_details(
+            p.tenant, body.professional_id, body.starts_at, service_id=body.service_id
+        )
+        if body.schedule_version is not None and body.schedule_version != slot["schedule_version"]:
+            raise AgendaError("the schedule changed; reload availability")
         made = await o.crm.create_appointment(
             p.tenant,
             _subject(p),
             starts_at=body.starts_at,
-            duration_min=minutes,
+            duration_min=slot["minutes"],
             kind="sesion",
             price=0,
             actor=p.id,
             professional_id=body.professional_id,
+            buffer_minutes=slot["buffer_minutes"],
+            service_id=body.service_id,
+            consultation_mode=slot["mode"],
+            expected_schedule_version=slot["schedule_version"],
         )
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "professional not found") from exc
     except (AgendaError, CrmError) as exc:  # SlotTaken is a CrmError: taken meanwhile
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     return {k: made[k] for k in ("id", "starts_at", "duration_min", "status", "professional_id")}
+
+
+@router.post("/appointments/{appointment_id}/reschedule")
+async def reschedule_own(
+    appointment_id: Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")],
+    body: RescheduleIn,
+    request: Request,
+    p: Me,
+) -> dict[str, Any]:
+    o = orch(request)
+    try:
+        current = await o.crm.get_appointment(p.tenant, appointment_id)
+        if current["patient_id"] != _subject(p):
+            raise NotFoundError(appointment_id)
+        tier = await o.loyalty.for_patient(p.tenant, _subject(p))
+        last_day = datetime.now(o.agenda.tz).date() + timedelta(days=tier["booking_days"])
+        if body.starts_at.astimezone(o.agenda.tz).date() >= last_day:
+            raise AgendaError("that date is outside the patient's booking window")
+        slot = await o.agenda.slot_details(
+            p.tenant,
+            current["professional_id"],
+            body.starts_at,
+            service_id=body.service_id,
+            exclude_id=appointment_id,
+        )
+        if body.schedule_version is not None and body.schedule_version != slot["schedule_version"]:
+            raise AgendaError("the schedule changed; reload availability")
+        changed = await o.crm.reschedule(p.tenant, appointment_id, body.starts_at, slot, p.id)
+        return {k: changed[k] for k in ("id", "starts_at", "duration_min", "status")}
+    except (KeyError, NotFoundError) as exc:
+        raise HTTPException(404, "appointment not found") from exc
+    except (CrmError, AgendaError) as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/calendar-link")

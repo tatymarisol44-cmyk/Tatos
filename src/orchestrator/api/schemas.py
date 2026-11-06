@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
@@ -170,6 +170,10 @@ class CampaignIn(BaseModel):
         min_length=1,
         max_length=32,
         description="An insights segment (at_risk, dormant, ...), recall_due or pending_treatment.",
+    )
+    group_ids: list[Annotated[str, Field(pattern=r"^[\w-]{1,64}$")]] = Field(
+        default_factory=list,
+        max_length=100,
     )
     channel: Literal["telegram"] = "telegram"
     template: str | None = Field(

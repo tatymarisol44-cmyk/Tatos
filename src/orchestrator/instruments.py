@@ -23,9 +23,11 @@ rules ("item 9 >= 1: a person must look at this now"). Two public-domain templat
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from datetime import timedelta
+from itertools import pairwise
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -43,6 +45,7 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.exc import IntegrityError
 
 from orchestrator.auth import Principal, Role
 from orchestrator.crm import patients
@@ -58,17 +61,21 @@ class InstrumentError(ValueError):
     """An invalid definition, an incomplete or out-of-range answer, an unknown patient."""
 
 
+class InstrumentConflict(InstrumentError):
+    """Another definition was saved after the editor loaded its version."""
+
+
 # --- the definition ---------------------------------------------------------------------
 
 
 class Option(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     label: str = Field(min_length=1, max_length=200)
     value: float
 
 
 class Item(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     id: str = Field(pattern=ITEM_ID)
     text: str = Field(min_length=1, max_length=1000)
     type: Literal["choice", "number", "text"] = "choice"
@@ -103,7 +110,7 @@ class Item(BaseModel):
 
 
 class Band(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     min: float
     max: float
     label: str = Field(min_length=1, max_length=80)
@@ -111,7 +118,7 @@ class Band(BaseModel):
 
 
 class AlertRule(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     item: str = Field(pattern=ITEM_ID)
     op: Literal["gte", "lte", "eq"] = "gte"
     value: float
@@ -169,6 +176,9 @@ class InstrumentSpec(BaseModel):
         for band in self.scoring.bands:
             if band.min > band.max:
                 raise ValueError(f"band {band.label!r}: min is above max")
+        ordered_bands = sorted(self.scoring.bands, key=lambda band: band.min)
+        if any(left.max >= right.min for left, right in pairwise(ordered_bands)):
+            raise ValueError("scoring bands must not overlap")
         if self.scoring.method != "none" and not any(i.scored for i in self.items):
             raise ValueError("nothing to score: mark an item as scored or use method 'none'")
         return self
@@ -185,6 +195,8 @@ def _item_value(item: Item, raw: Any) -> float | str:
     if isinstance(raw, bool) or not isinstance(raw, int | float):
         raise InstrumentError(f"item {item.id}: expected a number")
     value = float(raw)
+    if not math.isfinite(value):
+        raise InstrumentError(f"item {item.id}: expected a finite number")
     if item.type == "choice":
         if value not in {o.value for o in item.options}:
             raise InstrumentError(f"item {item.id}: {raw} is not one of its options")
@@ -207,6 +219,8 @@ def _aggregate(method: str, values: list[float]) -> float | None:
     if method == "none" or not values:
         return None
     total = sum(values)
+    if not math.isfinite(total):
+        raise InstrumentError("score must be a finite number")
     return round(total / len(values), 4) if method == "mean" else round(total, 4)
 
 
@@ -421,20 +435,29 @@ class Instruments:
         return await self.get(principal, instrument_id)
 
     async def revise(
-        self, principal: Principal, instrument_id: str, spec: InstrumentSpec
+        self,
+        principal: Principal,
+        instrument_id: str,
+        spec: InstrumentSpec,
+        expected_version: int | None = None,
     ) -> dict[str, Any]:
         """A new version; results already recorded keep the version they were scored with."""
         current = await self.get(principal, instrument_id)
+        if expected_version is not None and current["version"] != expected_version:
+            raise InstrumentConflict("instrument changed meanwhile; reopen the editor")
         if current["author_id"] != principal.id and not principal.has(Role.ADMIN):
             raise PermissionError("only the author (or an admin) can revise an instrument")
-        await self._write(
-            principal,
-            instrument_id,
-            current["version"] + 1,
-            spec,
-            current["visibility"],
-            "instrument.revised",
-        )
+        try:
+            await self._write(
+                principal,
+                instrument_id,
+                current["version"] + 1,
+                spec,
+                current["visibility"],
+                "instrument.revised",
+            )
+        except IntegrityError as exc:
+            raise InstrumentConflict("instrument changed meanwhile; reopen the editor") from exc
         return await self.get(principal, instrument_id)
 
     async def _write(
@@ -449,27 +472,42 @@ class Instruments:
         if visibility not in ("private", "establishment"):
             raise InstrumentError("visibility is 'private' or 'establishment'")
         async with self.db.engine.begin() as conn:
-            await conn.execute(
-                insert(instruments).values(
-                    tenant=principal.tenant,
-                    instrument_id=instrument_id,
-                    version=version,
-                    name=spec.name,
-                    visibility=visibility,
-                    status="active",
-                    spec=spec.model_dump(mode="json"),
-                    author_id=principal.id,
-                    created_at=utcnow(),
-                )
+            await self.write_in(conn, principal, instrument_id, version, spec, visibility, action)
+
+    async def write_in(
+        self,
+        conn: Any,
+        principal: Principal,
+        instrument_id: str,
+        version: int,
+        spec: InstrumentSpec,
+        visibility: str,
+        action: str,
+    ) -> None:
+        """Reuse definition persistence inside a caller's atomic import transaction."""
+        if visibility not in ("private", "establishment"):
+            raise InstrumentError("visibility is 'private' or 'establishment'")
+        await conn.execute(
+            insert(instruments).values(
+                tenant=principal.tenant,
+                instrument_id=instrument_id,
+                version=version,
+                name=spec.name,
+                visibility=visibility,
+                status="active",
+                spec=spec.model_dump(mode="json"),
+                author_id=principal.id,
+                created_at=utcnow(),
             )
-            await self.audit.record_in(
-                conn,
-                principal.tenant,
-                principal.id,
-                action,
-                f"instrument/{instrument_id}",
-                details={"version": version, "items": len(spec.items)},
-            )
+        )
+        await self.audit.record_in(
+            conn,
+            principal.tenant,
+            principal.id,
+            action,
+            f"instrument/{instrument_id}",
+            details={"version": version, "items": len(spec.items)},
+        )
 
     async def available(self, principal: Principal) -> list[dict[str, Any]]:
         """The latest version of every active instrument this professional may use."""

@@ -24,6 +24,7 @@ from orchestrator.db import Database, metadata, utcnow
 from orchestrator.governance import AuditLog
 from orchestrator.inbox import inbox_conversations, inbox_messages
 from orchestrator.instruments import instrument_assignments
+from orchestrator.surveys import Surveys
 from orchestrator.workshops import workshop_registrations, workshops
 
 METRICS = {
@@ -103,10 +104,13 @@ def highlights(now: dict[str, Any], before: dict[str, Any]) -> list[str]:
 
 
 class MonthlyReport:
-    def __init__(self, db: Database, audit: AuditLog, tz: ZoneInfo) -> None:
+    def __init__(
+        self, db: Database, audit: AuditLog, tz: ZoneInfo, surveys: Surveys | None = None
+    ) -> None:
         self.db = db
         self.audit = audit
         self.tz = tz
+        self.surveys = surveys
 
     def this_month(self) -> str:
         now = utcnow().astimezone(self.tz)
@@ -231,6 +235,11 @@ class MonthlyReport:
                 goal["progress"] = min(100, round(100 * value / goal["target"]))
                 goal["met"] = value >= goal["target"]
         await self.audit.record(tenant, actor, "report.viewed", f"report/{month}")
+        quality = (
+            await self.surveys.report(tenant, *month_bounds(month, self.tz))
+            if self.surveys
+            else None
+        )
         return {
             "month": month,
             "previous": previous(month),
@@ -239,6 +248,9 @@ class MonthlyReport:
             "before": before,
             "highlights": highlights(now, before),
             "goals": goals,
+            "service_feedback": {"groups": quality["groups"], "meaning": quality["meaning"]}
+            if quality
+            else None,
         }
 
     async def goals(self, tenant: str, month: str) -> list[dict[str, Any]]:

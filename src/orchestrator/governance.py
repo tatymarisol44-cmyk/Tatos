@@ -62,6 +62,8 @@ class Purpose(StrEnum):
     MEMORY = "memory"  # long-term semantic memory of preferences
     PHOTOS = "photos"  # before/after images in marketing
     ANALYTICS = "analytics"  # profiling: segments, value ranking, campaign targeting
+    WHATSAPP_BILLING = "whatsapp_billing"  # separate permission for invoice reminders
+    SURVEYS = "surveys"  # voluntary service feedback; distinct from marketing and clinical tests
 
 
 audit_events = Table(
@@ -721,19 +723,36 @@ class ThreadLeases:
         assert owner is not None
         interval = max(0.01, self.ttl.total_seconds() / 3)
         lost = False
+        stopped = asyncio.Event()
 
         async def heartbeat() -> None:
             nonlocal lost
-            while True:
-                await asyncio.sleep(interval)
+            while not stopped.is_set():
                 try:
-                    async with asyncio.timeout(interval):
-                        renewed = await self.renew(tenant, thread_id, holder)
+                    await asyncio.wait_for(stopped.wait(), timeout=interval)
+                    return
+                except TimeoutError:
+                    pass
+                # Cancelling a DB call can invalidate its connection (and destroy an
+                # in-memory SQLite database). Fail the owner closed on a deadline,
+                # but let the pending transaction finish before releasing the lease.
+                pending = asyncio.create_task(self.renew(tenant, thread_id, holder))
+                finished, _ = await asyncio.wait({pending}, timeout=interval)
+                if not finished:
+                    if not stopped.is_set():
+                        lost = True
+                        owner.cancel()
+                    with suppress(Exception):
+                        await pending
+                    return
+                try:
+                    renewed = pending.result()
                 except Exception:
                     renewed = False
                 if not renewed:
-                    lost = True
-                    owner.cancel()
+                    if not stopped.is_set():
+                        lost = True
+                        owner.cancel()
                     return
 
         renewal = asyncio.create_task(heartbeat())
@@ -744,9 +763,8 @@ class ThreadLeases:
                 raise ThreadBusyError("conversation lease lost; retry the run") from exc
             raise
         finally:
-            renewal.cancel()
-            with suppress(asyncio.CancelledError):
-                await renewal
+            stopped.set()
+            await asyncio.shield(renewal)
 
     async def release(self, tenant: str, thread_id: str, holder: str) -> None:
         query = delete(thread_leases).where(

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from orchestrator.auth import PrincipalStore
+from orchestrator.billing_store import BillingStore
 from orchestrator.campaigns import CampaignService
 from orchestrator.clinical_files import ClinicalFiles
 from orchestrator.clinical_records import ClinicalRecords
@@ -18,6 +19,9 @@ from orchestrator.governance import AuditLog, ConsentRegistry, ReviewQueue, Subj
 from orchestrator.inbox import InboxService
 from orchestrator.instruments import Instruments
 from orchestrator.memory import SemanticMemory
+from orchestrator.surveys import Surveys
+from orchestrator.tax_trials import TaxTrials
+from orchestrator.test_images import TestImages
 from orchestrator.workshops import Workshops
 
 
@@ -43,11 +47,15 @@ class SubjectRights:
         clinical: ClinicalRecords,
         instruments: Instruments,
         files: ClinicalFiles,
+        test_images: TestImages,
         campaigns: CampaignService,
         inbox: InboxService,
         workshops: Workshops,
         reviews: ReviewQueue,
         audit: AuditLog,
+        billing: BillingStore,
+        surveys: Surveys,
+        tax_trials: TaxTrials,
     ) -> None:
         self.threads = threads
         self.subject_threads = subject_threads
@@ -58,11 +66,15 @@ class SubjectRights:
         self.clinical = clinical
         self.instruments = instruments
         self.files = files
+        self.test_images = test_images
         self.campaigns = campaigns
         self.inbox = inbox
         self.workshops = workshops
         self.reviews = reviews
         self.audit = audit
+        self.billing = billing
+        self.surveys = surveys
+        self.tax_trials = tax_trials
 
     async def _conversations(self, tenant: str, subject_id: str) -> list[dict[str, Any]]:
         out = []
@@ -92,8 +104,13 @@ class SubjectRights:
             "instrument_results": await self.instruments.export_subject(tenant, subject_id),
             "instrument_assignments": await self.instruments.export_assignments(tenant, subject_id),
             "clinical_files": await self.files.export_subject(tenant, subject_id),
+            "test_image_reports": await self.test_images.export_subject(tenant, subject_id),
             "campaign_messages": await self.campaigns.export_subject(tenant, subject_id),
+            "marketing_groups": await self.campaigns.groups.export_subject(tenant, subject_id),
             "inbox_conversations": await self.inbox.export_subject(tenant, subject_id),
+            "payments": await self.billing.export_subject(tenant, subject_id),
+            "service_surveys": await self.surveys.export_subject(tenant, subject_id),
+            "non_fiscal_trials": await self.tax_trials.export_subject(tenant, subject_id),
             "workshops": await self.workshops.history(tenant, subject_id),
             "conversations": await self._conversations(tenant, subject_id),
             "reviews": [r.to_dict() for r in await self.reviews.for_subject(tenant, subject_id)],
@@ -140,15 +157,21 @@ class SubjectRights:
             "memory_facts": await self.memory.erase(tenant, subject_id),
             "consents": await self.consents.erase(tenant, subject_id),
             "campaign_messages_anonymised": await self.campaigns.erase_subject(tenant, subject_id),
+            "marketing_group_memberships": await self.campaigns.groups.erase_subject(
+                tenant, subject_id
+            ),
             "inbox_conversations": await self.inbox.erase_subject(tenant, subject_id),
             "workshop_registrations": await self.workshops.erase_subject(tenant, subject_id),
             "crm": await self.crm.erase_subject(tenant, subject_id),
+            "service_surveys": await self.surveys.erase_subject(tenant, subject_id),
+            "non_fiscal_trials": await self.tax_trials.erase_subject(tenant, subject_id),
         }
         result["retained"] = [
             {
                 "store": "audit_trail",
-                "basis": "proof of processing and of this erasure (GDPR Art. 5(2), "
-                "HIPAA 164.316(b)(2): six years)",
+                "basis": "proof of processing and of this erasure; applicable retention "
+                "schedule requires jurisdiction-specific legal review (LOPDP/local law; "
+                "GDPR or HIPAA only where applicable)",
             },
         ]
         if result["crm"].get("clinical_record") == "retained" or archived:

@@ -45,6 +45,8 @@ from orchestrator.campaigns import CampaignError
 from orchestrator.crm import CrmError, NotFoundError
 from orchestrator.governance import Purpose, ThreadBusyError
 from orchestrator.insights import QuestionBlockedError
+from orchestrator.marketing_designer import DesignBrief, DesignError, DesignerUnavailable
+from orchestrator.marketing_groups import GroupConflict, GroupError
 from orchestrator.monthly_report import ReportError
 from orchestrator.service import Orchestrator, ReviewNotFoundError
 
@@ -490,6 +492,113 @@ async def insights_ask(body: InsightsQuestion, request: Request, p: Owner) -> di
 
 
 # --- campaigns -------------------------------------------------------------------
+class MarketingGroupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    member_ids: list[Annotated[str, Field(pattern=SUBJECT_ID)]] = Field(
+        default_factory=list,
+        max_length=5000,
+    )
+
+
+class MarketingGroupUpdate(MarketingGroupIn):
+    version: int = Field(ge=1)
+
+
+@router.get("/v1/marketing/designer", tags=["campaigns"])
+async def marketing_designer(request: Request, p: Marketing) -> dict[str, Any]:
+    return orch(request).marketing_designer.configuration()
+
+
+@router.post("/v1/marketing/design", tags=["campaigns"])
+async def design_marketing(body: DesignBrief, request: Request, p: Marketing) -> dict[str, Any]:
+    try:
+        return await orch(request).marketing_designer.design(p.tenant, p.id, body)
+    except DesignError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except DesignerUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+def _group_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, KeyError):
+        return _not_found("group")
+    return HTTPException(409 if isinstance(exc, GroupConflict) else 422, str(exc))
+
+
+@router.get("/v1/marketing/contacts", tags=["campaigns"])
+async def marketing_contacts(
+    request: Request,
+    p: Marketing,
+    search: str = Query(default="", max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> dict[str, Any]:
+    return await orch(request).marketing_groups.contacts(p.tenant, search, offset, limit)
+
+
+@router.get("/v1/marketing/groups", tags=["campaigns"])
+async def list_marketing_groups(request: Request, p: Marketing) -> list[dict[str, Any]]:
+    return await orch(request).marketing_groups.list_all(p.tenant)
+
+
+@router.post("/v1/marketing/groups", status_code=201, tags=["campaigns"])
+async def create_marketing_group(
+    body: MarketingGroupIn,
+    request: Request,
+    p: Marketing,
+) -> dict[str, Any]:
+    try:
+        return await orch(request).marketing_groups.save(p.tenant, body.name, body.member_ids, p.id)
+    except (GroupError, KeyError) as exc:
+        raise _group_error(exc) from exc
+
+
+@router.get("/v1/marketing/groups/{group_id}", tags=["campaigns"])
+async def get_marketing_group(
+    request: Request,
+    group_id: Annotated[str, record_path()],
+    p: Marketing,
+) -> dict[str, Any]:
+    try:
+        return await orch(request).marketing_groups.get(p.tenant, group_id)
+    except KeyError as exc:
+        raise _group_error(exc) from exc
+
+
+@router.put("/v1/marketing/groups/{group_id}", tags=["campaigns"])
+async def update_marketing_group(
+    body: MarketingGroupUpdate,
+    request: Request,
+    group_id: Annotated[str, record_path()],
+    p: Marketing,
+) -> dict[str, Any]:
+    try:
+        return await orch(request).marketing_groups.save(
+            p.tenant,
+            body.name,
+            body.member_ids,
+            p.id,
+            group_id=group_id,
+            version=body.version,
+        )
+    except (GroupError, KeyError) as exc:
+        raise _group_error(exc) from exc
+
+
+@router.delete("/v1/marketing/groups/{group_id}", tags=["campaigns"])
+async def delete_marketing_group(
+    request: Request,
+    group_id: Annotated[str, record_path()],
+    p: Marketing,
+    version: int = Query(ge=1),
+) -> dict[str, bool]:
+    try:
+        await orch(request).marketing_groups.remove(p.tenant, group_id, version, p.id)
+        return {"deleted": True}
+    except (GroupError, KeyError) as exc:
+        raise _group_error(exc) from exc
+
+
 def _campaign_error(exc: Exception) -> HTTPException:
     if isinstance(exc, KeyError):
         return _not_found(str(exc.args[0]) if exc.args else "campaign")
@@ -509,6 +618,7 @@ async def create_campaign(body: CampaignIn, request: Request, p: Marketing) -> d
             holdout_pct=body.holdout_pct,
             language=body.language,
             mode=body.mode,
+            group_ids=body.group_ids,
             actor=p.id,
         )
     except KeyError as exc:  # unknown segment

@@ -11,7 +11,8 @@ at rest (Cloud SQL) and point-in-time backups, no separate bucket to secure. Up 
 - **Access.** Clinicians only; `author_only` files (a psychotherapy-related document)
   are visible to their author alone. Every upload and every download is audited.
 - **Data class.** Like the clinical record (classification: PSYCHOTHERAPY at most): never
-  sent to retrieval, models, campaigns or analytics.
+  sent to retrieval, general chat models, campaigns or analytics. Explicit test-image
+  extraction has its own private, clinician-only path in test_images/test_vision.
 """
 
 from __future__ import annotations

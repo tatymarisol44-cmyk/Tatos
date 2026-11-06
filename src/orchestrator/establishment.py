@@ -11,7 +11,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Boolean, Column, DateTime, String, Table, and_, insert, select, update
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    String,
+    Table,
+    and_,
+    insert,
+    select,
+    update,
+)
 
 from orchestrator.auth import STAFF, principals
 from orchestrator.config import Settings
@@ -29,6 +40,7 @@ professionals = Table(
     # The staff key this professional signs in with, if any (principals.id).
     Column("staff_id", String(128), nullable=True),
     Column("active", Boolean, nullable=False),
+    Column("schedule_version", Integer, nullable=False, default=1, server_default="1"),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String(128), nullable=False),
 )

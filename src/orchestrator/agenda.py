@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import Column, Integer, String, Table, and_, delete, insert, select
 
+from orchestrator.availability import Availability, SchedulePolicy
 from orchestrator.config import Settings
 from orchestrator.crm import ACTIVE_STATUSES, appointments, patients
 from orchestrator.db import Database, aware, metadata
@@ -42,6 +43,7 @@ professional_hours = Table(
     Column("start_minute", Integer, primary_key=True),  # minutes after local midnight
     Column("end_minute", Integer, nullable=False),
     Column("slot_minutes", Integer, nullable=False),
+    Column("break_minutes", Integer, nullable=False, default=0, server_default="0"),
 )
 
 
@@ -57,9 +59,10 @@ class Block:
     start: time
     end: time
     slot_minutes: int
+    break_minutes: int = 0
 
     @staticmethod
-    def parse(day: str, span: str, slot_minutes: int) -> Block:
+    def parse(day: str, span: str, slot_minutes: int, break_minutes: int = 0) -> Block:
         if day not in DAYS:
             raise AgendaError(f"day must be one of {DAYS}")
         try:
@@ -70,7 +73,9 @@ class Block:
             raise AgendaError(f"hours {span!r}: the end must be after the start")
         if not 10 <= slot_minutes <= 240:
             raise AgendaError("a session lasts between 10 and 240 minutes")
-        return Block(DAYS.index(day), a, b, slot_minutes)
+        if not 0 <= break_minutes <= 120:
+            raise AgendaError("break must be between 0 and 120 minutes")
+        return Block(DAYS.index(day), a, b, slot_minutes, break_minutes)
 
 
 def _minutes(t: time) -> int:
@@ -117,6 +122,7 @@ class Agenda:
             professional_hours.c.professional_id == professional_id,
         )
         async with self.db.engine.begin() as conn:
+            await Availability.lock(conn, tenant, professional_id, None)
             await conn.execute(delete(professional_hours).where(key))
             for b in blocks:
                 await conn.execute(
@@ -127,8 +133,10 @@ class Agenda:
                         start_minute=_minutes(b.start),
                         end_minute=_minutes(b.end),
                         slot_minutes=b.slot_minutes,
+                        break_minutes=b.break_minutes,
                     )
                 )
+            await Availability.bump(conn, tenant, professional_id)
             await self.audit.record_in(
                 conn,
                 tenant,
@@ -159,6 +167,7 @@ class Agenda:
                 "hours": f"{r.start_minute // 60:02d}:{r.start_minute % 60:02d}-"
                 f"{r.end_minute // 60:02d}:{r.end_minute % 60:02d}",
                 "slot_minutes": r.slot_minutes,
+                "break_minutes": r.break_minutes,
             }
             for r in rows
         ]
@@ -166,9 +175,16 @@ class Agenda:
     # --- free slots -------------------------------------------------------------------
 
     async def _booked(
-        self, tenant: str, professional_id: str, start: datetime, end: datetime
+        self,
+        tenant: str,
+        professional_id: str,
+        start: datetime,
+        end: datetime,
+        exclude_id: str | None = None,
     ) -> list[tuple[datetime, datetime]]:
-        query = select(appointments.c.starts_at, appointments.c.duration_min).where(
+        query = select(
+            appointments.c.starts_at, appointments.c.duration_min, appointments.c.buffer_minutes
+        ).where(
             and_(
                 appointments.c.tenant == tenant,
                 appointments.c.professional_id == professional_id,
@@ -177,12 +193,14 @@ class Agenda:
                 appointments.c.starts_at > start - timedelta(hours=12),
             )
         )
+        if exclude_id:
+            query = query.where(appointments.c.id != exclude_id)
         async with self.db.engine.connect() as conn:
             out = []
-            for s, minutes in await conn.execute(query):
+            for s, minutes, buffer in await conn.execute(query):
                 begin = aware(s)
                 assert begin is not None
-                out.append((begin, begin + timedelta(minutes=minutes)))
+                out.append((begin, begin + timedelta(minutes=minutes + buffer)))
             return out
 
     async def free_slots(
@@ -193,50 +211,98 @@ class Agenda:
         days: int = 7,
         now: datetime | None = None,
         limit: int = 200,
+        on_date: date | None = None,
+        service_id: str | None = None,
+        exclude_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Free, future slots of the coming `days`, in order, as local and UTC times."""
         now = now or datetime.now(UTC)
+        availability = Availability(self.db, self.audit)
+        schedule = await availability.get(tenant, professional_id)
         blocks = await self.hours(tenant, professional_id)
-        if not blocks:
-            return []
+        policy = SchedulePolicy.model_validate(schedule["policy"])
+        service = next((s for s in policy.services if s.id == service_id), None)
+        if service_id and service is None:
+            raise AgendaError("unknown service for this professional")
+        exceptions = {e["day"]: e["blocks"] for e in schedule["exceptions"]}
         local_today = now.astimezone(self.tz).date()
+        first_day = on_date or local_today
+        if not local_today <= first_day <= local_today + timedelta(days=120):
+            raise AgendaError("choose a date within the next 120 days")
         horizon_end = datetime.combine(
-            local_today + timedelta(days=days), time(0), self.tz
+            first_day + timedelta(days=days), time(0), self.tz
         ).astimezone(UTC)
-        booked = await self._booked(tenant, professional_id, now, horizon_end)
+        booked = await self._booked(tenant, professional_id, now, horizon_end, exclude_id)
+        if (await availability.get(tenant, professional_id))["version"] != schedule["version"]:
+            raise AgendaError("the schedule changed; reload availability")
         slots: list[dict[str, Any]] = []
         for offset in range(days):
-            day: date = local_today + timedelta(days=offset)
-            for b in blocks:
-                if DAYS.index(b["day"]) != day.weekday():
-                    continue
+            day: date = first_day + timedelta(days=offset)
+            if service and day.weekday() not in service.weekdays:
+                continue
+            daily = exceptions.get(day.isoformat())
+            if daily is None:
+                daily = [b for b in blocks if DAYS.index(b["day"]) == day.weekday()]
+            for b in daily:
                 first, last = (time.fromisoformat(t) for t in b["hours"].split("-"))
                 cursor = datetime.combine(day, first, self.tz)
                 close = datetime.combine(day, last, self.tz)
-                step = timedelta(minutes=b["slot_minutes"])
+                minutes = service.minutes if service else b["slot_minutes"]
+                buffer = service.break_minutes if service else b.get("break_minutes", 0)
+                step = timedelta(minutes=minutes)
                 while cursor + step <= close:
                     begin, end = cursor.astimezone(UTC), (cursor + step).astimezone(UTC)
-                    if begin > now and not any(s < end and e > begin for s, e in booked):
+                    valid_local = begin.astimezone(self.tz).replace(tzinfo=None) == cursor.replace(
+                        tzinfo=None
+                    )
+                    valid_duration = end - begin == step
+                    blocked_end = end + timedelta(minutes=buffer)
+                    if (
+                        valid_local
+                        and valid_duration
+                        and begin > now
+                        and not any(s < blocked_end and e > begin for s, e in booked)
+                    ):
                         slots.append(
                             {
                                 "starts_at": begin.isoformat(),
                                 "local": cursor.strftime("%Y-%m-%d %H:%M"),
                                 "weekday": DAYS[cursor.weekday()],
-                                "minutes": b["slot_minutes"],
+                                "minutes": minutes,
+                                "buffer_minutes": buffer,
+                                "service_id": service_id,
+                                "mode": service.mode if service else "in_person",
+                                "schedule_version": schedule["version"],
                             }
                         )
                         if len(slots) >= limit:
                             return slots
-                    cursor += step
+                    cursor += step + timedelta(minutes=buffer)
         return slots
 
     async def is_free_slot(self, tenant: str, professional_id: str, starts_at: datetime) -> int:
         """The slot's length if `starts_at` is a free slot of the professional, else raise."""
+        return int((await self.slot_details(tenant, professional_id, starts_at))["minutes"])
+
+    async def slot_details(
+        self,
+        tenant: str,
+        professional_id: str,
+        starts_at: datetime,
+        service_id: str | None = None,
+        exclude_id: str | None = None,
+    ) -> dict[str, Any]:
         start = starts_at.astimezone(UTC)
-        days = max(1, (start.astimezone(self.tz).date() - datetime.now(self.tz).date()).days + 1)
-        for slot in await self.free_slots(tenant, professional_id, days=min(days, 120)):
+        for slot in await self.free_slots(
+            tenant,
+            professional_id,
+            days=1,
+            on_date=start.astimezone(self.tz).date(),
+            service_id=service_id,
+            exclude_id=exclude_id,
+        ):
             if datetime.fromisoformat(slot["starts_at"]) == start:
-                return int(slot["minutes"])
+                return slot
         raise AgendaError("that time is not a free slot of the professional")
 
     # --- the agenda itself --------------------------------------------------------------
@@ -288,6 +354,8 @@ class Agenda:
                     "duration_min": r.duration_min,
                     "kind": r.kind,
                     "status": r.status,
+                    "service_id": r.service_id,
+                    "consultation_mode": r.consultation_mode,
                 }
             )
         return out

@@ -299,6 +299,15 @@ td { padding: 12px 16px; border-bottom: 1px solid #EEF1F3; }
 .choice .answer { flex: 1; text-align: center; }
 
 /* --- hover (only where there is a pointer that hovers) ------------------------------------- */
+.test-image-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.test-image-preview[hidden] { display: none; }
+dialog:has(.test-image-preview) { width: 860px; }
+.test-parameter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 14px 0; }
+.test-parameter-grid fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.test-parameters summary { cursor: pointer; font-weight: 600; }
+.test-answer-crop { max-width: 100%; border: 1px solid var(--line); background: white; }
+@media (max-width: 640px) { .test-parameter-grid { grid-template-columns: 1fr; } }
+
 @media (hover: hover) {
   .btn:hover { background: var(--bg); }
   .btn.primary:hover { background: var(--accent-dark); }

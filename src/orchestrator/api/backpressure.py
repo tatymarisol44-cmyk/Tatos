@@ -21,6 +21,8 @@ MODEL_ROUTES = (
     "/v1/chat",  # also /v1/chat/stream
     "/v1/me/chat",
     "/v1/insights/ask",
+    "/v1/marketing/design",
+    "/v1/clinical/test-images",  # explicit private visual analysis
     "/v1/route",
     "/a2a",
 )

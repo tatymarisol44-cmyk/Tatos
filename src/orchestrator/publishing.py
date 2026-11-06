@@ -169,6 +169,8 @@ class PublicationService:
         brief: creatives.Brief,
         caption: str,
         fmt: creatives.Format | None = None,
+        logo: bytes | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         account = await self.social.get(tenant, account_id)  # KeyError: not this tenant's
         network = account["network"]
@@ -200,7 +202,35 @@ class PublicationService:
         if not expected.allowed:
             raise PublicationError("; ".join(expected.problems))
 
-        publication_id = uuid.uuid4().hex[:12]
+        publication_id = (
+            uuid.uuid5(uuid.NAMESPACE_URL, f"tatos:{tenant}:{request_id}").hex[:24]
+            if request_id
+            else uuid.uuid4().hex[:12]
+        )
+        if request_id:
+            try:
+                existing = await self.get(tenant, publication_id)
+            except KeyError:
+                pass
+            else:
+                if existing["account_id"] != account_id or existing["caption"] != caption:
+                    raise PublicationError("idempotency key conflicts with another publication")
+                async with self.db.engine.connect() as conn:
+                    saved = (
+                        await conn.execute(
+                            select(publications.c.brief).where(
+                                self._where(tenant, publication_id),
+                            )
+                        )
+                    ).scalar_one()
+                if saved != brief.model_dump():
+                    raise PublicationError("idempotency key conflicts with another creative")
+                source = await self.store.local_file(existing["object_name"])
+                if source is None:
+                    raise creatives.CreativeUnavailable(
+                        "stored creative is missing; restore it before retrying"
+                    )
+                return existing
         suffix = ".jpg" if kind == "infographic" else ".mp4"
         name = object_name(tenant, publication_id, suffix)
         with tempfile.TemporaryDirectory(prefix="publication-") as tmp:
@@ -210,9 +240,14 @@ class PublicationService:
             # the 0.1 CPU of a free instance).
             async with self._rendering:
                 if kind == "infographic":
-                    made = await asyncio.to_thread(
-                        creatives.render_infographic, brief, pack, out, fmt or "feed"
-                    )
+                    if logo:
+                        made = await asyncio.to_thread(
+                            creatives.render_infographic, brief, pack, out, fmt or "feed", logo
+                        )
+                    else:
+                        made = await asyncio.to_thread(
+                            creatives.render_infographic, brief, pack, out, fmt or "feed"
+                        )
                 else:
                     made = await asyncio.to_thread(
                         creatives.render_video, brief, pack, out, self.settings, fmt or "story"

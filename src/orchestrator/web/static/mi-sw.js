@@ -3,8 +3,8 @@
 // ever stored here: a patient's data stays on the server, not in the phone's cache.
 "use strict";
 
-const CACHE = "mi-v1";
-const SHELL = ["/mi/", "/static/ui.css", "/static/mi.js", "/static/icons/app-192.png", "/static/icons/app-512.png"];
+const CACHE = "mi-v2";
+const SHELL = ["/mi/", "/static/ui.css", "/static/mi.js", "/static/patient-surveys.js", "/static/icons/app-192.png", "/static/icons/app-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));

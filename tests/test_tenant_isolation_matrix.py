@@ -16,14 +16,17 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from pydantic import SecretStr
 from sqlalchemy import insert
 
@@ -31,9 +34,18 @@ from orchestrator.api.app import create_app
 from orchestrator.catalog import Catalog
 from orchestrator.config import Settings
 from orchestrator.db import utcnow
+from orchestrator.dlocal_go import DlocalGo
 from orchestrator.llm import FakeLLM
 from orchestrator.service import Orchestrator
 from orchestrator.social_login import digest, flows
+from tests.test_instrument_imports import MANIFEST as IMPORT_MANIFEST
+from tests.test_instruments import CUSTOM as IMPORT_SPEC
+from tests.test_marketing_workflow import real_specialists
+from tests.test_surveys import SPEC as SURVEY_SPEC
+from tests.test_surveys import complete as complete_survey_visit
+from tests.test_surveys import configure as configure_service_survey
+from tests.test_surveys import opt_in as opt_in_service_survey
+from tests.test_tax_trials import PROFILE as TAX_PROFILE
 
 ACME = {"X-API-Key": "test-key"}
 GLOBEX = {"X-API-Key": "other-key"}
@@ -60,6 +72,7 @@ UNSCOPED = {
     ("GET", "/v1/social/login/configuration"),
     ("POST", "/v1/route"),
     ("GET", "/v1/clinical/instrument-templates"),
+    ("GET", "/v1/clinical/test-image-configuration"),
     # Signing in names no practice; answers never say whether an e-mail exists (ADR 0024).
     ("POST", "/v1/auth/sign-in"),
     ("POST", "/v1/auth/code"),
@@ -136,7 +149,7 @@ def seed(c: TestClient) -> Acme:
     appt = _ok(
         c.post(
             "/v1/crm/appointments",
-            json={"patient_id": ids["patient"], "starts_at": past},
+            json={"patient_id": ids["patient"], "starts_at": past, "price": 49.99},
             headers=ACME,
         )
     )
@@ -170,6 +183,17 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["campaign"] = campaign["id"]
+    group = _ok(
+        c.post(
+            "/v1/marketing/groups",
+            headers=ACME,
+            json={
+                "name": f"Grupo {MARKER}",
+                "member_ids": [ids["patient"]],
+            },
+        )
+    )
+    ids["marketing_group"] = group["id"]
     doc = _ok(
         c.post(
             "/v1/knowledge/documents",
@@ -251,6 +275,17 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["instrument_result"] = result["result_id"]
+    image = io.BytesIO()
+    Image.new("RGB", (20, 20), "white").save(image, format="PNG")
+    report = _ok(
+        c.post(
+            f"/v1/clinical/patients/{ids['patient']}/test-images",
+            files={"file": ("test.png", image.getvalue(), "image/png")},
+            data={"title": NOTE_MARKER, "kind": "drawing"},
+            headers=clinician,
+        )
+    )
+    ids["test_image"] = report["report_id"]
     diary = _ok(
         c.post(
             "/v1/clinical/instruments",
@@ -373,6 +408,21 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["publication"] = pub["publication_id"]
+    workflow = _ok(
+        c.post(
+            "/v1/marketing/workflows",
+            headers=ACME,
+            json={
+                "brief": {
+                    "objective": "Presentar servicios públicos",
+                    "audience": "Público general",
+                    "network": "instagram",
+                },
+                "first": utcnow().date().isoformat(),
+            },
+        )
+    )
+    ids["marketing_workflow"] = workflow["id"]
     contact = _ok(
         c.post(
             "/v1/admin/on-call",
@@ -402,6 +452,54 @@ def seed(c: TestClient) -> Acme:
     ids["conversation"] = everyday["conversation_id"]
     draft = _ok(c.post(f"/v1/inbox/{ids['conversation']}/draft", headers=clinician))
     ids["draft"] = draft["message_id"]
+    _ok(
+        c.put("/v1/billing/bank", json={"instructions": MARKER + " bank destination"}, headers=ACME)
+    )
+    invoice = _ok(c.post(f"/v1/billing/appointments/{ids['appointment']}", headers=ACME))
+    ids["billing_invoice"] = invoice["invoice_id"]
+    source = _ok(
+        c.post(
+            "/v1/clinical/instrument-imports",
+            headers=clinician,
+            files={
+                "file": ("synthetic.json", json.dumps(IMPORT_SPEC).encode(), "application/json")
+            },
+            data={"manifest": json.dumps({**IMPORT_MANIFEST, "name": MARKER + " source"})},
+        )
+    )
+    ids["instrument_import"] = source["id"]
+    issuer = _ok(
+        c.put(
+            "/v1/tax-trials/issuers",
+            headers=ACME,
+            json={"version": 0, "profile": {**TAX_PROFILE, "legal_name": MARKER}},
+        )
+    )
+    ids["tax_issuer"] = issuer["id"]
+    trial = _ok(
+        c.post(
+            "/v1/tax-trials/documents",
+            headers=ACME,
+            json={
+                "issuer_id": issuer["id"],
+                "request_id": "acme-trial",
+                "order_id": invoice["invoice_id"],
+                "net_cents": invoice["amount_cents"],
+                "tax_cents": 0,
+                "tax_basis_reference": "synthetic trial only",
+            },
+        )
+    )
+    ids["tax_document"] = trial["id"]
+    definition = configure_service_survey(c)
+    ids["survey_definition"] = definition["id"]
+    own = opt_in_service_survey(c, ids["patient"])
+    complete_survey_visit(c, ids["patient"])
+    invitation = _ok(c.get("/v1/me/surveys", headers=own))["invitations"][0]
+    ids["survey_invitation"] = invitation["id"]
+    _ok(
+        c.post("/v1/me/surveys/" + invitation["id"], headers=own, json={"answers": {"servicio": 1}})
+    )
     return acme
 
 
@@ -419,15 +517,28 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "appointments": get("/v1/crm/appointments"),
         "treatments": get("/v1/crm/treatments"),
         "campaign": get(f"/v1/campaigns/{ids['campaign']}"),
+        "marketing_group": get(f"/v1/marketing/groups/{ids['marketing_group']}"),
+        "marketing_brand": get("/v1/marketing/brand"),
+        "marketing_workflow": get(f"/v1/marketing/workflows/{ids['marketing_workflow']}"),
         "docs": get("/v1/knowledge/documents"),
         "principals": get("/v1/admin/principals"),
         "team": get("/v1/admin/team"),
+        "billing_config": get("/v1/billing/configuration"),
+        "billing_orders": get("/v1/billing/orders"),
+        "service_surveys": get("/v1/surveys/report"),
+        "service_survey_settings": get("/v1/surveys/configuration"),
+        "service_survey_events": get("/v1/surveys/events"),
+        "instrument_import": get(f"/v1/clinical/instrument-imports/{ids['instrument_import']}"),
+        "tax_issuers": get("/v1/tax-trials/issuers"),
+        "tax_document": get(f"/v1/tax-trials/documents/{ids['tax_document']}"),
+        "billing_notice_trials": get(f"/v1/billing/orders/{ids['billing_invoice']}/notice-trials"),
         "professionals": get("/v1/admin/professionals"),
         "clinical": get(f"/v1/clinical/patients/{ids['patient']}/documents"),
         "instruments": get("/v1/clinical/instruments"),
         "instrument_results": get(f"/v1/clinical/patients/{ids['patient']}/instrument-results"),
         "assignments": get(f"/v1/clinical/patients/{ids['patient']}/assignments"),
         "files": get(f"/v1/clinical/patients/{ids['patient']}/files"),
+        "test_image": get(f"/v1/clinical/test-images/{ids['test_image']}"),
         "agenda": get("/v1/agenda?days=14"),
         "hours": get(f"/v1/agenda/professionals/{ids['professional']}/hours"),
         "reviews": get("/v1/reviews"),
@@ -451,6 +562,342 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
     i = acme.ids
     p, t = i["patient"], i["thread"]
     return {
+        ("GET", "/v1/marketing/brand"): ("/v1/marketing/brand", None),
+        ("PUT", "/v1/marketing/brand"): (
+            "/v1/marketing/brand",
+            {
+                "version": 0,
+                "brand": {"name": "Marca Globex", "services": []},
+            },
+        ),
+        ("GET", "/v1/marketing/brand/logo"): ("/v1/marketing/brand/logo", None),
+        ("PUT", "/v1/marketing/brand/logo"): (
+            "/v1/marketing/brand/logo?version=1",
+            {"__multipart__": True},
+        ),
+        ("GET", "/v1/marketing/workflows"): ("/v1/marketing/workflows", None),
+        ("POST", "/v1/marketing/workflows"): (
+            "/v1/marketing/workflows",
+            {
+                "brief": {
+                    "objective": "Servicios públicos",
+                    "audience": "Público general",
+                    "network": "instagram",
+                },
+                "first": utcnow().date().isoformat(),
+            },
+        ),
+        ("GET", "/v1/marketing/workflows/{flow_id}"): (
+            f"/v1/marketing/workflows/{i['marketing_workflow']}",
+            None,
+        ),
+        ("PUT", "/v1/marketing/workflows/{flow_id}"): (
+            f"/v1/marketing/workflows/{i['marketing_workflow']}",
+            {
+                "revision": 1,
+                "draft": {
+                    "campaign_name": "Campaña Globex",
+                    "campaign_message": "Hola {first_name}. Responde STOP para salir.",
+                    "title": "Servicios",
+                    "points": ["Información pública"],
+                    "cta": "Consultar",
+                    "caption": "Servicios del consultorio.",
+                    "visual_direction": "Fondo claro",
+                },
+                "plan": {
+                    "strategy": "Presentación",
+                    "audience": "General",
+                    "calendar": [
+                        {
+                            "day": utcnow().date().isoformat(),
+                            "network": "instagram",
+                            "goal": "Presentar",
+                        }
+                    ],
+                },
+            },
+        ),
+        ("POST", "/v1/marketing/workflows/{flow_id}/render"): (
+            f"/v1/marketing/workflows/{i['marketing_workflow']}/render",
+            {"revision": 2, "account_id": i["ig_account"], "formats": ["feed"]},
+        ),
+        ("GET", "/v1/marketing/workflows/{flow_id}/analysis"): (
+            f"/v1/marketing/workflows/{i['marketing_workflow']}/analysis",
+            None,
+        ),
+        ("POST", "/v1/marketing/workflows/{flow_id}/optimize"): (
+            f"/v1/marketing/workflows/{i['marketing_workflow']}/optimize",
+            {"revision": 2},
+        ),
+        ("GET", "/v1/marketing/creative/{publication_id}"): (
+            f"/v1/marketing/creative/{i['publication']}",
+            None,
+        ),
+        ("GET", "/v1/billing/configuration"): ("/v1/billing/configuration", None),
+        ("GET", "/v1/clinical/instrument-imports"): ("/v1/clinical/instrument-imports", None),
+        ("POST", "/v1/clinical/instrument-imports"): (
+            "/v1/clinical/instrument-imports",
+            {"__multipart__": True, "manifest": json.dumps(IMPORT_MANIFEST)},
+        ),
+        ("GET", "/v1/clinical/instrument-imports/{draft_id}"): (
+            f"/v1/clinical/instrument-imports/{i['instrument_import']}",
+            None,
+        ),
+        ("POST", "/v1/clinical/instrument-imports/{draft_id}/incorporate"): (
+            f"/v1/clinical/instrument-imports/{i['instrument_import']}/incorporate",
+            {
+                "revision": 1,
+                "spec": IMPORT_SPEC,
+                "licensed": True,
+                "reviewed": True,
+                "no_patient_data": True,
+                "calculation_reference": "synthetic",
+                "validation_reference": "synthetic, not clinical",
+            },
+        ),
+        ("POST", "/v1/clinical/instrument-imports/{draft_id}/purge"): (
+            f"/v1/clinical/instrument-imports/{i['instrument_import']}/purge",
+            {"revision": 1},
+        ),
+        ("GET", "/v1/tax-trials/issuers"): ("/v1/tax-trials/issuers", None),
+        ("PUT", "/v1/tax-trials/issuers"): (
+            "/v1/tax-trials/issuers",
+            {"id": i["tax_issuer"], "version": 1, "profile": TAX_PROFILE},
+        ),
+        ("GET", "/v1/tax-trials/documents"): ("/v1/tax-trials/documents", None),
+        ("POST", "/v1/tax-trials/documents"): (
+            "/v1/tax-trials/documents",
+            {
+                "issuer_id": i["tax_issuer"],
+                "request_id": "intruso",
+                "order_id": i["billing_invoice"],
+                "net_cents": 100,
+                "tax_cents": 0,
+                "tax_basis_reference": "synthetic",
+            },
+        ),
+        ("GET", "/v1/tax-trials/documents/{document_id}"): (
+            f"/v1/tax-trials/documents/{i['tax_document']}",
+            None,
+        ),
+        ("POST", "/v1/tax-trials/documents/{document_id}/retry"): (
+            f"/v1/tax-trials/documents/{i['tax_document']}/retry",
+            {"revision": 1},
+        ),
+        ("GET", "/v1/surveys/definitions"): ("/v1/surveys/definitions", None),
+        ("POST", "/v1/surveys/definitions"): (
+            "/v1/surveys/definitions",
+            {
+                "id": i["survey_definition"],
+                "version": 1,
+                "spec": SURVEY_SPEC,
+            },
+        ),
+        ("GET", "/v1/surveys/configuration"): ("/v1/surveys/configuration", None),
+        ("PUT", "/v1/surveys/configuration"): (
+            "/v1/surveys/configuration",
+            {
+                "revision": 0,
+                "settings": {"enabled": True, "survey_id": i["survey_definition"], "version": 1},
+            },
+        ),
+        ("GET", "/v1/surveys/report"): ("/v1/surveys/report", None),
+        ("GET", "/v1/surveys/events"): ("/v1/surveys/events", None),
+        ("POST", "/v1/surveys/run"): ("/v1/surveys/run", None),
+        ("POST", "/v1/surveys/responses/{invitation_id}/acknowledge"): (
+            f"/v1/surveys/responses/{i['survey_invitation']}/acknowledge",
+            None,
+        ),
+        ("GET", "/v1/billing/notice-trials/configuration"): (
+            "/v1/billing/notice-trials/configuration",
+            None,
+        ),
+        ("PUT", "/v1/billing/notice-trials/configuration"): (
+            "/v1/billing/notice-trials/configuration",
+            {"revision": 0, "policy": {}},
+        ),
+        ("GET", "/v1/billing/orders/{invoice_id}/notice-trials"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/notice-trials",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/notice-trials"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/notice-trials",
+            {"at": "2026-11-10T10:00:00-05:00"},
+        ),
+        ("GET", "/v1/billing/platform/notice-trials/configuration"): (
+            "/v1/billing/platform/notice-trials/configuration",
+            None,
+        ),
+        ("PUT", "/v1/billing/platform/notice-trials/configuration"): (
+            "/v1/billing/platform/notice-trials/configuration",
+            {"revision": 0, "policy": {}},
+        ),
+        ("GET", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/notice-trials"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/notice-trials",
+            None,
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/notice-trials"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/notice-trials",
+            {"at": "2026-11-10T10:00:00-05:00"},
+        ),
+        ("GET", "/v1/billing/orders/{invoice_id}/statement"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/statement",
+            None,
+        ),
+        ("PUT", "/v1/billing/orders/{invoice_id}/deadline"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/deadline",
+            {"revision": 1, "due_at": "2026-11-10T09:00:00-05:00"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/credits"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/credits",
+            {
+                "amount_cents": 1,
+                "bank_transaction_id": "bank-globex",
+                "request_id": "credit-globex",
+                "note": "Globex verified in bank",
+                "confirmed": True,
+            },
+        ),
+        ("GET", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/statement"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/statement",
+            None,
+        ),
+        ("PUT", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/deadline"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/deadline",
+            {"revision": 1, "due_at": "2026-11-10T09:00:00-05:00"},
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/credits"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/credits",
+            {
+                "amount_cents": 1,
+                "bank_transaction_id": "bank-globex",
+                "request_id": "credit-globex",
+                "note": "Globex verified in bank",
+                "confirmed": True,
+            },
+        ),
+        ("GET", "/v1/billing/contact"): ("/v1/billing/contact", None),
+        ("PUT", "/v1/billing/contact"): (
+            "/v1/billing/contact",
+            {
+                "phone": "+12025550123",
+                "whatsapp_allowed": True,
+                "source": "Fictional opt-in",
+            },
+        ),
+        ("GET", "/v1/billing/followups"): ("/v1/billing/followups", None),
+        ("GET", "/v1/billing/automation"): ("/v1/billing/automation", None),
+        ("PUT", "/v1/billing/automation"): ("/v1/billing/automation", {"enabled": False}),
+        ("GET", "/v1/billing/platform/automation"): ("/v1/billing/platform/automation", None),
+        ("PUT", "/v1/billing/platform/automation"): (
+            "/v1/billing/platform/automation",
+            {"enabled": False},
+        ),
+        ("PUT", "/v1/billing/orders/{invoice_id}/automation"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/automation",
+            {"enabled": True},
+        ),
+        ("PUT", "/v1/billing/platform/{payer_tenant}/automation/{execution_id}"): (
+            "/v1/billing/platform/acme/automation/17",
+            {"enabled": False},
+        ),
+        ("GET", "/v1/billing/orders/{invoice_id}/followup"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/followup",
+            None,
+        ),
+        ("GET", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/followup"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/followup",
+            None,
+        ),
+        ("PUT", "/v1/billing/orders/{invoice_id}/followup"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/followup",
+            {"paused": True},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/whatsapp",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp/{event_id}"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/whatsapp/" + "0" * 32,
+            {"sent": True},
+        ),
+        ("GET", "/v1/billing/platform/followups"): ("/v1/billing/platform/followups", None),
+        ("PUT", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/followup"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/followup",
+            {"paused": True},
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/whatsapp"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/whatsapp",
+            None,
+        ),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/whatsapp/{event_id}"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/whatsapp/" + "0" * 32,
+            {"sent": True},
+        ),
+        ("PUT", "/v1/billing/dlocal/account"): (
+            "/v1/billing/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("PUT", "/v1/billing/platform/dlocal/account"): (
+            "/v1/billing/platform/dlocal/account",
+            {"api_key": "synthetic-api-key", "secret_key": "synthetic-secret-key"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/reconcile",
+            None,
+        ),
+        ("GET", "/v1/billing/dlocal/subscription"): ("/v1/billing/dlocal/subscription", None),
+        ("POST", "/v1/billing/dlocal/subscription"): (
+            "/v1/billing/dlocal/subscription",
+            {"consent": True},
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/reconcile"): (
+            "/v1/billing/dlocal/subscription/reconcile",
+            None,
+        ),
+        ("POST", "/v1/billing/dlocal/subscription/cancel"): (
+            "/v1/billing/dlocal/subscription/cancel",
+            {"consent": True},
+        ),
+        ("PUT", "/v1/billing/bank"): (
+            "/v1/billing/bank",
+            {"instructions": "Globex bank destination"},
+        ),
+        ("GET", "/v1/billing/orders"): ("/v1/billing/orders", None),
+        ("POST", "/v1/billing/subscription"): ("/v1/billing/subscription", None),
+        ("POST", "/v1/billing/appointments/{appointment_id}"): (
+            f"/v1/billing/appointments/{i['appointment']}",
+            None,
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/transfer"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/transfer",
+            {"reference": "intruder-reference"},
+        ),
+        ("POST", "/v1/billing/orders/{invoice_id}/review"): (
+            f"/v1/billing/orders/{i['billing_invoice']}/review",
+            {
+                "approved": True,
+                "note": "Intruder verification",
+                "bank_transaction_id": "intruder-bank-id",
+            },
+        ),
+        ("PUT", "/v1/billing/platform/bank"): (
+            "/v1/billing/platform/bank",
+            {"instructions": "Intruder platform bank"},
+        ),
+        ("GET", "/v1/billing/platform/subscriptions"): ("/v1/billing/platform/subscriptions", None),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/review"): (
+            f"/v1/billing/platform/acme/orders/{i['billing_invoice']}/review",
+            {
+                "approved": True,
+                "note": "Intruder verification",
+                "bank_transaction_id": "intruder-bank-id",
+            },
+        ),
         ("GET", "/healthz"): ("/healthz", None),
         ("GET", "/readyz"): ("/readyz", None),
         ("GET", "/.well-known/agent-card.json"): ("/.well-known/agent-card.json", None),
@@ -578,6 +1025,29 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             {"name": "g", "kind": "education", "segment": "dormant", "template": GOOD},
         ),
         ("GET", "/v1/campaigns"): ("/v1/campaigns", None),
+        ("GET", "/v1/marketing/contacts"): ("/v1/marketing/contacts", None),
+        ("GET", "/v1/marketing/designer"): ("/v1/marketing/designer", None),
+        ("POST", "/v1/marketing/design"): (
+            "/v1/marketing/design",
+            {"objective": "Dar a conocer el consultorio"},
+        ),
+        ("GET", "/v1/marketing/groups"): ("/v1/marketing/groups", None),
+        ("POST", "/v1/marketing/groups"): (
+            "/v1/marketing/groups",
+            {"name": "Grupo globex", "member_ids": []},
+        ),
+        ("GET", "/v1/marketing/groups/{group_id}"): (
+            f"/v1/marketing/groups/{i['marketing_group']}",
+            None,
+        ),
+        ("PUT", "/v1/marketing/groups/{group_id}"): (
+            f"/v1/marketing/groups/{i['marketing_group']}",
+            {"name": "Cambio globex", "member_ids": [], "version": 1},
+        ),
+        ("DELETE", "/v1/marketing/groups/{group_id}"): (
+            f"/v1/marketing/groups/{i['marketing_group']}?version=1",
+            None,
+        ),
         ("GET", "/v1/campaigns/{campaign_id}"): (f"/v1/campaigns/{i['campaign']}", None),
         ("PUT", "/v1/campaigns/{campaign_id}/template"): (
             f"/v1/campaigns/{i['campaign']}/template",
@@ -772,6 +1242,38 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/clinical/files/{file_id}"): (f"/v1/clinical/files/{i['file']}", None),
+        ("GET", "/v1/clinical/test-image-configuration"): (
+            "/v1/clinical/test-image-configuration",
+            None,
+        ),
+        ("GET", "/v1/clinical/patients/{patient_id}/test-images"): (
+            f"/v1/clinical/patients/{p}/test-images",
+            None,
+        ),
+        ("POST", "/v1/clinical/patients/{patient_id}/test-images"): (
+            f"/v1/clinical/patients/{p}/test-images",
+            {"__multipart__": True, "title": "intruso", "kind": "drawing"},
+        ),
+        ("GET", "/v1/clinical/test-images/{report_id}"): (
+            f"/v1/clinical/test-images/{i['test_image']}",
+            None,
+        ),
+        ("POST", "/v1/clinical/test-images/{report_id}/analyze"): (
+            f"/v1/clinical/test-images/{i['test_image']}/analyze",
+            {"revision": 1, "confirmed": True},
+        ),
+        ("POST", "/v1/clinical/test-images/{report_id}/score"): (
+            f"/v1/clinical/test-images/{i['test_image']}/score",
+            {"revision": 1, "answers": {}, "confirmed": True},
+        ),
+        ("PATCH", "/v1/clinical/test-images/{report_id}"): (
+            f"/v1/clinical/test-images/{i['test_image']}",
+            {"revision": 1, "body": "intruso"},
+        ),
+        ("DELETE", "/v1/clinical/test-images/{report_id}"): (
+            f"/v1/clinical/test-images/{i['test_image']}",
+            None,
+        ),
         ("GET", "/v1/usage"): ("/v1/usage", None),
         ("GET", "/v1/clinical/follow-up"): ("/v1/clinical/follow-up", None),
         ("GET", "/v1/clinical/patients/{patient_id}/follow-up"): (
@@ -858,6 +1360,30 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/agenda"): ("/v1/agenda?days=14", None),
+        ("GET", "/v1/agenda/professionals/{professional_id}/availability"): (
+            f"/v1/agenda/professionals/{i['professional']}/availability",
+            None,
+        ),
+        ("PUT", "/v1/agenda/professionals/{professional_id}/availability"): (
+            f"/v1/agenda/professionals/{i['professional']}/availability",
+            {"version": 1, "policy": {"services": []}},
+        ),
+        ("PUT", "/v1/agenda/professionals/{professional_id}/exceptions"): (
+            f"/v1/agenda/professionals/{i['professional']}/exceptions",
+            {"version": 1, "first": "2026-11-05", "last": "2026-11-05", "blocks": []},
+        ),
+        ("POST", "/v1/agenda/appointments/{appointment_id}/reschedule"): (
+            f"/v1/agenda/appointments/{i['appointment']}/reschedule",
+            {"starts_at": "2027-01-01T10:00:00-05:00"},
+        ),
+        ("POST", "/v1/me/appointments/{appointment_id}/reschedule"): (
+            f"/v1/me/appointments/{i['appointment']}/reschedule",
+            {"starts_at": "2027-01-01T10:00:00-05:00"},
+        ),
+        ("GET", "/v1/me/services"): (
+            f"/v1/me/services?professional_id={i['professional']}",
+            None,
+        ),
         ("GET", "/v1/agenda/professionals/{professional_id}/hours"): (
             f"/v1/agenda/professionals/{i['professional']}/hours",
             None,
@@ -904,6 +1430,23 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
     """The `/v1/me` routes, called with a globex PATIENT key."""
     t = acme.ids["thread"]
     return {
+        ("GET", "/v1/me/payments"): ("/v1/me/payments", None),
+        ("POST", "/v1/me/appointments/{appointment_id}/payment"): (
+            f"/v1/me/appointments/{acme.ids['appointment']}/payment",
+            None,
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/transfer"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/transfer",
+            {"reference": "intruder-reference"},
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/checkout"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/checkout",
+            None,
+        ),
+        ("POST", "/v1/me/payments/{invoice_id}/reconcile"): (
+            f"/v1/me/payments/{acme.ids['billing_invoice']}/reconcile",
+            None,
+        ),
         ("GET", "/v1/me"): ("/v1/me", None),
         ("GET", "/v1/me/appointments"): ("/v1/me/appointments", None),
         ("GET", "/v1/me/treatments"): ("/v1/me/treatments", None),
@@ -920,6 +1463,11 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
         ),
         ("GET", "/v1/me/calendar-link"): ("/v1/me/calendar-link", None),
         ("GET", "/v1/me/tests"): ("/v1/me/tests", None),
+        ("GET", "/v1/me/surveys"): ("/v1/me/surveys", None),
+        ("POST", "/v1/me/surveys/{invitation_id}"): (
+            f"/v1/me/surveys/{acme.ids['survey_invitation']}",
+            {"answers": {"servicio": 1}},
+        ),
         ("GET", "/v1/me/practice"): ("/v1/me/practice", None),
         ("GET", "/v1/me/workshops"): ("/v1/me/workshops", None),
         ("POST", "/v1/me/workshops/{workshop_id}"): (
@@ -942,6 +1490,28 @@ def patient_attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, An
 ADDRESSED = {
     key
     for key in (
+        ("POST", "/v1/surveys/responses/{invitation_id}/acknowledge"),
+        ("POST", "/v1/me/surveys/{invitation_id}"),
+        ("GET", "/v1/clinical/instrument-imports/{draft_id}"),
+        ("POST", "/v1/clinical/instrument-imports/{draft_id}/incorporate"),
+        ("POST", "/v1/clinical/instrument-imports/{draft_id}/purge"),
+        ("PUT", "/v1/tax-trials/issuers"),
+        ("POST", "/v1/tax-trials/documents"),
+        ("GET", "/v1/tax-trials/documents/{document_id}"),
+        ("POST", "/v1/tax-trials/documents/{document_id}/retry"),
+        ("GET", "/v1/billing/orders/{invoice_id}/followup"),
+        ("PUT", "/v1/billing/orders/{invoice_id}/automation"),
+        ("PUT", "/v1/billing/orders/{invoice_id}/followup"),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp"),
+        ("POST", "/v1/billing/orders/{invoice_id}/whatsapp/{event_id}"),
+        ("POST", "/v1/billing/orders/{invoice_id}/checkout"),
+        ("POST", "/v1/billing/orders/{invoice_id}/reconcile"),
+        ("POST", "/v1/billing/appointments/{appointment_id}"),
+        ("POST", "/v1/billing/orders/{invoice_id}/transfer"),
+        ("POST", "/v1/billing/orders/{invoice_id}/review"),
+        ("POST", "/v1/billing/platform/{payer_tenant}/orders/{invoice_id}/review"),
+        ("POST", "/v1/me/appointments/{appointment_id}/payment"),
+        ("POST", "/v1/me/payments/{invoice_id}/transfer"),
         ("DELETE", "/v1/knowledge/documents/{doc_id}"),
         ("GET", "/v1/reviews/{thread_id}"),
         ("POST", "/v1/reviews/{thread_id}"),
@@ -957,6 +1527,9 @@ ADDRESSED = {
         ("POST", "/v1/crm/treatments"),
         ("POST", "/v1/crm/treatments/{treatment_id}/stage"),
         ("GET", "/v1/campaigns/{campaign_id}"),
+        ("GET", "/v1/marketing/groups/{group_id}"),
+        ("PUT", "/v1/marketing/groups/{group_id}"),
+        ("DELETE", "/v1/marketing/groups/{group_id}"),
         ("PUT", "/v1/campaigns/{campaign_id}/template"),
         ("POST", "/v1/campaigns/{campaign_id}/approve"),
         ("POST", "/v1/campaigns/{campaign_id}/send"),
@@ -1018,6 +1591,13 @@ ADDRESSED = {
         ("POST", "/v1/me/appointments"),
         ("GET", "/v1/clinical/patients/{patient_id}/files"),
         ("GET", "/v1/clinical/files/{file_id}"),
+        ("GET", "/v1/clinical/patients/{patient_id}/test-images"),
+        ("POST", "/v1/clinical/patients/{patient_id}/test-images"),
+        ("GET", "/v1/clinical/test-images/{report_id}"),
+        ("POST", "/v1/clinical/test-images/{report_id}/analyze"),
+        ("POST", "/v1/clinical/test-images/{report_id}/score"),
+        ("PATCH", "/v1/clinical/test-images/{report_id}"),
+        ("DELETE", "/v1/clinical/test-images/{report_id}"),
         ("GET", "/v1/privacy/cases/{case_id}"),
         ("POST", "/v1/privacy/cases/{case_id}/steps/{step}"),
         ("POST", "/v1/privacy/cases/{case_id}/close"),
@@ -1041,12 +1621,16 @@ def world(
     settings: Settings, catalog: Catalog, tmp_path: Any
 ) -> Iterator[tuple[TestClient, Acme, tuple[dict[str, str], dict[str, str]]]]:
     settings.tenant_packs = {"acme": "dental", "globex": "dental"}
+    settings.billing_enabled = True
     settings.campaign_default_holdout_pct = 0
     settings.media_dir = tmp_path / "media"
     settings.meta_app_secret = SecretStr(APP_SECRET)
     settings.whatsapp_verify_token = SecretStr("verify-synthetic")
-    orch = Orchestrator(settings, catalog=catalog, llm=FakeLLM())
+    orch = Orchestrator(settings, catalog=real_specialists(catalog), llm=FakeLLM())
     with TestClient(create_app(settings, orch)) as c:
+        orch.dlocal_billing.gateway = DlocalGo(
+            httpx.MockTransport(lambda request: httpx.Response(401))
+        )
         acme = seed(c)
         settings.social_login_enabled = True
         settings.social_login_origin = "https://example.test"
@@ -1095,6 +1679,13 @@ def world(
             )
         )
         access = _ok(c.post("/v1/crm/patients/p-globex-0/access", headers=GLOBEX))
+        _ok(
+            c.put(
+                "/v1/me/consents/surveys",
+                headers={"X-API-Key": access["key"]},
+                json={"granted": True},
+            )
+        )
         doctor = _ok(
             c.post(
                 "/v1/admin/staff",
@@ -1129,7 +1720,7 @@ def _call(client: TestClient, method: str, path: str, body: Any, headers: dict[s
     if isinstance(body, dict) and body.get("__multipart__"):
         form = {k: v for k, v in body.items() if k != "__multipart__"}
         upload = {"file": ("x.pdf", b"%PDF-1.7 intruso", "application/pdf")}
-        return client.post(path, files=upload, data=form, headers=headers)
+        return client.request(method, path, files=upload, data=form, headers=headers)
     return client.request(method, path, json=body, headers=headers)
 
 

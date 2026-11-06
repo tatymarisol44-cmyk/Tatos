@@ -99,7 +99,20 @@ class PatientPortal:
                 "telegram_linked": bool(patient["telegram_chat_id"]),
             },
             "upcoming_appointments": [
-                {k: a[k] for k in ("id", "starts_at", "duration_min", "kind", "status", "price")}
+                {
+                    k: a[k]
+                    for k in (
+                        "id",
+                        "starts_at",
+                        "duration_min",
+                        "kind",
+                        "status",
+                        "price",
+                        "professional_id",
+                        "service_id",
+                        "consultation_mode",
+                    )
+                }
                 for a in appointments
                 if a["status"] in ("scheduled", "confirmed")
                 and datetime.fromisoformat(a["starts_at"]) >= now

@@ -154,6 +154,75 @@ class FakeLLM:
         self.calls.append(messages)
         system = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
         question = messages[-1]["content"]
+        if "MARKETING WORKFLOW OPTIMIZE" in system:
+            return LLMResult(
+                json.dumps(
+                    {
+                        "recommendations": [
+                            "Ejemplo simulado: revisar pendientes y solicitar métricas oficiales "
+                            "antes de modificar la campaña."
+                        ]
+                    }
+                ),
+                model,
+                30,
+                30,
+            )
+        if "MARKETING WORKFLOW PLAN" in system:
+            public = json.loads(question)
+            return LLMResult(
+                json.dumps(
+                    {
+                        "strategy": "Ejemplo simulado: presentar servicios y disponibilidad "
+                        "sin prometer resultados.",
+                        "audience": public["brief"]["audience"],
+                        "calendar": [
+                            {
+                                "day": public["start_date"],
+                                "network": public["brief"]["network"],
+                                "format": "feed",
+                                "goal": "Presentar servicios públicos",
+                            }
+                        ],
+                    }
+                ),
+                model,
+                40,
+                50,
+            )
+        if "MARKETING VISUAL DIRECTION" in system:
+            return LLMResult(
+                json.dumps(
+                    {
+                        "direction": "Ejemplo simulado: identidad del consultorio, logotipo "
+                        "y tipografía legible.",
+                        "emphasis": "light",
+                    }
+                ),
+                model,
+                30,
+                40,
+            )
+        if "MARKETING DESIGNER" in system:
+            return LLMResult(
+                json.dumps(
+                    {
+                        "campaign_name": "Novedades del consultorio (ejemplo)",
+                        "campaign_message": (
+                            "Hola {first_name}, conoce nuestras novedades en la app. "
+                            "Responde STOP para no recibir más mensajes."
+                        ),
+                        "title": "Un espacio para ti",
+                        "points": ["Conoce el consultorio", "Consulta la disponibilidad en la app"],
+                        "cta": "Conoce más en la app",
+                        "caption": "Conoce las novedades y disponibilidad en la app.",
+                        "visual_direction": "Fondo claro, colores del consultorio y texto legible.",
+                    }
+                ),
+                model,
+                80,
+                100,
+            )
         if "ROUTER" in system:
             if self.router_reply is not None:
                 return LLMResult(self.router_reply, model)

@@ -16,6 +16,7 @@ from orchestrator.api.security import require_clinician, requires
 from orchestrator.auth import Principal, Role
 from orchestrator.instruments import (
     TEMPLATES,
+    InstrumentConflict,
     InstrumentError,
     Instruments,
     InstrumentSpec,
@@ -32,6 +33,7 @@ ResultId = Annotated[str, FastAPIPath(pattern=r"^[0-9a-f]{1,32}$")]
 
 class InstrumentIn(BaseModel):
     spec: InstrumentSpec
+    expected_version: int | None = Field(default=None, ge=1)
     visibility: Literal["private", "establishment"] = Field(
         default="establishment", description="private: only its author can see and use it"
     )
@@ -95,7 +97,9 @@ async def revise_instrument(
 ) -> dict[str, Any]:
     """Save a new version. Results already recorded keep the version they were scored with."""
     try:
-        return await service(request).revise(p, instrument_id, body.spec)
+        return await service(request).revise(p, instrument_id, body.spec, body.expected_version)
+    except InstrumentConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "instrument not found") from exc
     except PermissionError as exc:

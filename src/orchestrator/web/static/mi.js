@@ -193,10 +193,12 @@ function route() {
 
 // --- INICIO ------------------------------------------------------------------------------------------
 VIEWS.inicio = async (main) => {
-  const [me, tests, talks] = await Promise.all([api("/v1/me"), api("/v1/me/tests"), api("/v1/me/workshops")]);
+  const [me, tests, talks, surveys] = await Promise.all([api("/v1/me"), api("/v1/me/tests"), api("/v1/me/workshops"), api("/v1/me/surveys").catch((err) => { if (err instanceof ApiError && [401, 403].includes(err.status)) throw err; return { invitations: [], unavailable: true }; })]);
   state.me = me;
   const next = me.upcoming_appointments.sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0];
   main.append(el("h1", { class: "title", text: `Hola, ${firstName(me.profile.display_name)}` }));
+  if (surveys.invitations.length) main.append(el("section", { class: "card" }, el("h2", { text: "Tu opinión sobre el servicio" }), el("p", { text: "Tienes una encuesta voluntaria pendiente." }), el("a", { class: "btn", href: "#encuestas", text: "Responder encuesta del servicio" })));
+  if (surveys.unavailable) main.append(el("p", { class: "muted", role: "status", text: "No podemos cargar tus encuestas por ahora." }));
   main.append(next
     ? el("section", { class: "next-appt", "aria-label": "Tu próxima cita" },
       el("span", { text: "Tu próxima cita" }), el("span", { class: "big", text: when(next.starts_at) }),
@@ -221,21 +223,82 @@ VIEWS.inicio = async (main) => {
 };
 
 // --- CITAS -------------------------------------------------------------------------------------------
-VIEWS.citas = async (main) => {
+VIEWS.citas = async (main, id) => {
   const me = await api("/v1/me");
   const upcoming = me.upcoming_appointments.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   main.append(el("h1", { class: "title", text: "Tus citas" }));
   main.append(el("section", { class: "card" }, el("h2", { text: "Próximas" }),
     ...(upcoming.length
-      ? upcoming.map((a) => el("div", { class: "doc" }, el("span", { class: "what" }, el("strong", { text: when(a.starts_at) }), el("br"), el("span", { class: "muted", text: a.kind }))))
+      ? upcoming.map((a) => el("div", { class: "doc" }, el("span", { class: "what" }, el("strong", { text: when(a.starts_at) }), el("br"), el("span", { class: "muted", text: a.kind })), a.professional_id ? el("a", { class: "btn", href: `#citas/${encodeURIComponent(a.id)}`, text: "Reprogramar" }) : null))
       : [el("p", { class: "empty", text: "No tienes citas próximas." })]),
     el("p", { class: "muted", text: "Para cambiar o cancelar una cita, escribe al consultorio." })));
-  main.append(await bookingCard());
+  main.append(await bookingCard(upcoming.find((a) => a.id === id) || null));
+  main.append(el("a", { class: "btn", href: "#pagos", text: "Pagos de mis citas" }));
 };
 
-async function bookingCard() {
+// Transfers are reported by the patient and verified by the clinic that receives them.
+VIEWS.pagos = async (main) => {
+  const [me, invoices] = await Promise.all([api("/v1/me"), api("/v1/me/payments")]);
+  const money = (cents) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(cents / 100);
+  const states = { pending: "Pendiente", transfer_review: "Transferencia por verificar", paid: "Pagado", rejected: "Rechazado", cancelled: "Cancelado" };
+  main.append(el("h1", { class: "title", text: "Pagos de mis citas" }),
+    el("a", { class: "btn", href: "#citas", text: "Volver a mis citas" }));
+  for (const invoice of invoices) {
+    const status = el("p", { class: "status", role: "status" });
+    const card = el("section", { class: "card" }, el("h2", { text: `${money(invoice.balance_cents ?? invoice.amount_cents)} · ${states[invoice.state] || "En comprobación"}` }),
+      el("p", { text: `Total: ${money(invoice.amount_cents)} · Confirmado: ${money(invoice.paid_cents || 0)} · Saldo: ${money(invoice.balance_cents ?? invoice.amount_cents)}` }),
+      el("p", { text: invoice.bank_instructions }), el("p", { class: "muted", text: `Orden: ${invoice.invoice_id}` }));
+      if (!invoice.paid_cents && ["pending", "processing", "uncertain"].includes(invoice.state)) {
+        const pay = button(invoice.state === "pending" ? "Pagar con tarjeta" : "Comprobar pago", async () => {
+          pay.disabled = true;
+          try {
+            const action = invoice.state === "pending" ? "checkout" : "reconcile";
+            const data = await api(`/v1/me/payments/${encodeURIComponent(invoice.invoice_id)}/${action}`, { method: "POST" });
+            if (data.checkout_url) {
+              card.append(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir pago seguro en dLocal Go" }));
+              invoice.state = "processing"; pay.textContent = "Comprobar pago";
+              say(status, data.environment === "sandbox" ? "Pago de prueba sin dinero real. Después vuelve para comprobar el pago." : "Después de pagar, vuelve y pulsa Comprobar pago.");
+            } else { route(); }
+          } catch (err) { say(status, "No se pudo comprobar o preparar el pago. Consulta con el consultorio antes de repetirlo.", "error"); }
+          finally { pay.disabled = false; }
+        });
+        card.append(pay);
+      }
+      if (invoice.state === "pending" && invoice.method === "transfer" && invoice.bank_instructions) {
+      const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+      const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
+      const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
+        el("p", { class: "muted", text: "El consultorio verificará que el ingreso llegó a su cuenta antes de marcarlo como pagado." }), send);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault(); send.disabled = true;
+        try {
+          await api(`/v1/me/payments/${encodeURIComponent(invoice.invoice_id)}/transfer`, { method: "POST", body: { reference: reference.value.trim() } });
+          route();
+        } catch (err) { say(status, "No se pudo informar la transferencia. Revisa el estado del pago e inténtalo de nuevo.", "error"); send.disabled = false; }
+      });
+      card.append(form);
+    }
+    card.append(status);
+    main.append(card);
+  }
+  for (const visit of [...me.upcoming_appointments, ...me.past_appointments]) {
+    if (["cancelled", "no_show"].includes(visit.status) || invoices.some((x) => x.resource_id === visit.id)) continue;
+    const status = el("p", { class: "status", role: "status" });
+    const pay = button("Preparar pago", async () => {
+      pay.disabled = true;
+      try { await api(`/v1/me/appointments/${encodeURIComponent(visit.id)}/payment`, { method: "POST" }); route(); }
+      catch (err) {
+        say(status, err instanceof ApiError && err.status === 409 ? "El consultorio debe activar los cobros y confirmar el valor y la cuenta receptora de esta cita." : humanError(err), "error");
+        pay.disabled = false;
+      }
+    });
+    main.append(el("section", { class: "card" }, el("h2", { text: when(visit.starts_at) }), pay, status));
+  }
+};
+
+async function bookingCard(visit = null) {
   const team = state.practice.professionals;
-  const box = el("section", { class: "card" }, el("h2", { text: "Reservar una cita" }));
+  const box = el("section", { class: "card" }, el("h2", { text: visit ? "Reprogramar tu cita" : "Reservar una cita" }));
   if (!team.length) {
     box.append(el("p", { class: "empty", text: "Por ahora las citas se agendan escribiendo al consultorio." }));
     return box;
@@ -243,9 +306,12 @@ async function bookingCard() {
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const area = el("div", { class: "stack" });
   const pick = el("select", { "aria-label": "Profesional" }, ...team.map((t) => el("option", { value: t.professional_id, text: t.display_name })));
+  if (visit) { pick.value = visit.professional_id; pick.disabled = true; }
+  const services = el("select", { "aria-label": "Servicio de reserva" });
   const load = async () => {
     area.replaceChildren(el("p", { class: "muted", text: "Buscando horarios libres…" }));
-    const slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(pick.value)}&days=60`);
+    const service = services.value ? `&service_id=${encodeURIComponent(services.value)}` : "";
+    const slots = await api(`/v1/me/slots?professional_id=${encodeURIComponent(pick.value)}&days=60${service}`);
     const days = [...new Set(slots.map((s) => s.local.slice(0, 10)))];
     if (!days.length) { area.replaceChildren(el("p", { class: "empty", text: "No hay horarios libres en los próximos días. Escribe al consultorio." })); return; }
     let chosenDay = days[0];
@@ -279,7 +345,8 @@ async function bookingCard() {
       confirm.disabled = true;
       say(status, "Reservando…");
       try {
-        await api("/v1/me/appointments", { method: "POST", body: { professional_id: pick.value, starts_at: chosen.starts_at } });
+        const path = visit ? `/v1/me/appointments/${encodeURIComponent(visit.id)}/reschedule` : "/v1/me/appointments";
+        await api(path, { method: "POST", body: { professional_id: pick.value, starts_at: chosen.starts_at, service_id: services.value || null, schedule_version: chosen.schedule_version } });
         say(status, "¡Listo! Tu cita quedó reservada. Te recordaremos el día anterior.", "done");
         setTimeout(route, 1500);
       } catch (err) { say(status, humanError(err), "error"); load(); }
@@ -288,10 +355,17 @@ async function bookingCard() {
     drawTimes();
     area.replaceChildren(pills, times, confirm);
   };
-  pick.addEventListener("change", () => load().catch((err) => say(status, humanError(err), "error")));
+  const loadServices = async () => {
+    const items = await api(`/v1/me/services?professional_id=${encodeURIComponent(pick.value)}`);
+    services.replaceChildren(el("option", { value: "", text: "Sesión habitual" }), ...items.map((s) => el("option", { value: s.id, text: `${s.name} · ${s.minutes} min · ${s.mode === "virtual" ? "Virtual" : "Presencial"}` })));
+    if (visit?.service_id && items.some((s) => s.id === visit.service_id)) services.value = visit.service_id;
+    await load();
+  };
+  pick.addEventListener("change", () => loadServices().catch((err) => say(status, humanError(err), "error")));
+  services.addEventListener("change", () => load().catch((err) => say(status, humanError(err), "error")));
   if (team.length > 1) box.append(el("label", { class: "field" }, "Con quién", pick));
-  box.append(area, status);
-  await load();
+  box.append(el("label", { class: "field" }, "Servicio", services), area, status);
+  await loadServices();
   return box;
 }
 
@@ -421,8 +495,9 @@ VIEWS.perfil = async (main) => {
       el("ul", {}, ...tier.benefits.map((b) => el("li", { text: b }))),
       tier.next ? el("p", { class: "muted", text: `Siguiente nivel: ${tier.next.name}. ${tier.next.how}` }) : null,
       el("p", { class: "muted", text: "Los niveles dependen del tiempo que llevas con nosotros y de los talleres a los que asistes, nunca de cuántas sesiones tomas. No son descuentos." })));
-  const labels = { marketing: "Novedades del consultorio", analytics: "Ayudarnos a mejorar lo que publicamos", memory: "Recordar tus preferencias" };
+  const labels = { marketing: "Novedades del consultorio", analytics: "Ayudarnos a mejorar lo que publicamos", memory: "Recordar tus preferencias", whatsapp_billing: "Recordatorios de pagos de este consultorio por WhatsApp", surveys: "Encuestas voluntarias sobre el servicio" };
   const current = prompt.consents || {};
+  main.append(el("a", { class: "btn", href: "#encuestas", text: "Encuestas del servicio" }));
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const rows = Object.keys(labels).map((purpose) => {
     const value = current[purpose];

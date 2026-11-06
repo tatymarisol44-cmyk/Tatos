@@ -85,6 +85,7 @@ from orchestrator.db import Database, aware, metadata, utcnow
 from orchestrator.governance import AuditLog, ConsentRegistry, Purpose
 from orchestrator.insights import InsightsService
 from orchestrator.llm import LLMClient
+from orchestrator.marketing_groups import GroupError, MarketingGroups
 from orchestrator.packs import pack_for
 from orchestrator.risk import CopyCheck, check_copy, fold
 from orchestrator.stats import diff_interval, fisher_exact_p, wilson_interval
@@ -142,6 +143,7 @@ campaigns = Table(
     Column("mode", String(16), nullable=False, default=LIVE),  # live | simulation
     # Who the segment had and who was eligible (assigned to an arm), with the reasons.
     Column("population", JSON, nullable=True),
+    Column("audience_groups", JSON, nullable=True),
     Column("compliance", JSON, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String(128), nullable=False),
@@ -282,6 +284,7 @@ class CampaignService:
         insights: InsightsService,
         llm: LLMClient,
         settings: Settings,
+        groups: MarketingGroups,
     ) -> None:
         self.db = db
         self.audit = audit
@@ -290,6 +293,7 @@ class CampaignService:
         self.insights = insights
         self.llm = llm
         self.settings = settings
+        self.groups = groups
         self.telegram = TelegramChannel(settings)
 
     async def close(self) -> None:
@@ -338,6 +342,7 @@ class CampaignService:
         holdout_pct: int | None = None,
         language: str = "es",
         mode: str = LIVE,
+        group_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         if kind not in KINDS:
             raise CampaignError(f"unknown kind {kind!r}; one of {KINDS}")
@@ -345,7 +350,16 @@ class CampaignService:
             raise CampaignError(f"unsupported channel {channel!r}; one of {CHANNELS}")
         if mode not in MODES:
             raise CampaignError(f"unknown mode {mode!r}; one of {MODES}")
-        segment_ids = await self.insights.segment_members(tenant, segment)
+        selected_groups = None
+        if segment == "manual_groups":
+            try:
+                segment_ids, selected_groups = await self.groups.audience(tenant, group_ids or [])
+            except GroupError as exc:
+                raise CampaignError(str(exc)) from exc
+        else:
+            if group_ids:
+                raise CampaignError("Elige grupos manuales o un segmento, no ambos.")
+            segment_ids = await self.insights.segment_members(tenant, segment)
         members, excluded = await self._eligible(tenant, segment_ids, mode)
         population = {"segment": len(segment_ids), "eligible": len(members), "excluded": excluded}
         text = template or await self.draft_copy(kind, segment, language)
@@ -367,6 +381,7 @@ class CampaignService:
                     holdout_pct=holdout,
                     mode=mode,
                     population=population,
+                    audience_groups=selected_groups,
                     compliance=check.to_dict(),
                     created_at=utcnow(),
                     created_by=actor,
@@ -407,7 +422,8 @@ class CampaignService:
     ) -> tuple[list[str], dict[str, int]]:
         """Who can be assigned to an arm, decided once and for both arms (A16): marketing
         consent and a channel that works (the app, or Telegram when it is configured or
-        only simulated). Profiling consent and restriction were applied by the segment."""
+        only simulated). Inferred segments enforce profiling consent. Manual groups do
+        not infer a profile; both audience sources exclude restricted contacts."""
         if not segment_ids:
             return [], {}
         marketing = await self.consents.granted_subjects(tenant, Purpose.MARKETING)

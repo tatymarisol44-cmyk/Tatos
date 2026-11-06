@@ -43,6 +43,10 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // --- the API -----------------------------------------------------------------------------
+function action(text, run) {
+  return el("button", { type: "button", class: "btn", text, onclick: run });
+}
+
 class ApiError extends Error {
   constructor(status, detail) { super(detail || String(status)); this.status = status; this.detail = detail; }
 }
@@ -411,6 +415,7 @@ function takeLinkToken() {
   here = "";
   keyStore.clear();
   state.session = null;
+  state.marketingDraft = null;
   state.patients = null;
   state.weekStart = null;
   patientNames = {};
@@ -474,6 +479,7 @@ function signOut(message = "") {
   }
   keyStore.clear();
   state.session = null;
+  state.marketingDraft = null;
   state.patients = null;
   state.weekStart = null;
   patientNames = {};
@@ -527,7 +533,8 @@ function setBadge(sel, n, label) {
 // --- routing ---------------------------------------------------------------------------------
 const VIEWS = {};
 // Text typed into a note or a reply and not saved yet (a successful save clears the mark).
-const unsavedText = () => [...document.querySelectorAll("textarea[data-dirty]")].some((t) => t.value.trim());
+const unsavedText = () => [...document.querySelectorAll("textarea[data-dirty]")]
+  .some((t) => t.getClientRects().length > 0 && t.value.trim());
 let here = location.hash;
 let turn = 0; // the latest screen asked for: a slower, older one never paints over it
 
@@ -815,6 +822,25 @@ function openVisitActions(visit) {
     scheduled: [["confirmed", "Confirmar"], ["completed", "Atendida"], ["no_show", "No asistió"], ["cancelled", "Cancelar cita"]],
     confirmed: [["completed", "Atendida"], ["no_show", "No asistió"], ["cancelled", "Cancelar cita"]],
   }[visit.status] || [];
+  if (visit.professional_id && ["scheduled", "confirmed"].includes(visit.status)) {
+    actions.push(action("Reprogramar cita", async () => {
+      try {
+        const suffix = visit.service_id ? `&service_id=${encodeURIComponent(visit.service_id)}` : "";
+        const free = await api(`/v1/agenda/slots?professional_id=${encodeURIComponent(visit.professional_id)}&days=30${suffix}`);
+        const select = el("select", { "aria-label": "Nuevo horario" }, ...free.map((s) => el("option", { value: s.starts_at, text: `${s.local} · ${s.minutes} min` })));
+        const result = el("p", { class: "status", role: "status" });
+        const save = action("Confirmar reprogramación", async () => {
+          save.disabled = true;
+          try {
+            await api(`/v1/agenda/appointments/${encodeURIComponent(visit.id)}/reschedule`, { method: "POST", body: { starts_at: select.value, service_id: visit.service_id || null, schedule_version: free.find((s) => s.starts_at === select.value)?.schedule_version } });
+            $("#dialog").close(); route();
+          } catch (err) { say(result, humanError(err), "error"); save.disabled = false; }
+        });
+        save.disabled = !free.length;
+        dialog("Reprogramar cita", el("p", { text: "La cita conserva su identidad, valor e historial. Solo se cambia al horario libre que confirmes." }), select, save, result);
+      } catch (err) { say(status, humanError(err), "error"); }
+    }));
+  }
   for (const [value, label] of next) {
     const b = el("button", { class: `btn${value === "cancelled" ? "" : " primary"}`, type: "button", text: label });
     b.addEventListener("click", async () => {
@@ -827,6 +853,20 @@ function openVisitActions(visit) {
       } catch (err) { say(status, humanError(err), "error"); for (const x of actions) x.disabled = false; }
     });
     actions.push(b);
+  }
+  if (state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) && !["cancelled", "no_show"].includes(visit.status)) {
+    const collect = el("button", { class: "btn", type: "button", text: "Preparar pago" });
+    collect.addEventListener("click", async () => {
+      collect.disabled = true;
+      const screen = turn;
+      try {
+        const invoice = await api(`/v1/billing/appointments/${encodeURIComponent(visit.id)}`, { method: "POST" });
+        if (screen !== turn) return;
+        $("#dialog").close();
+        billingInvoiceDialog(invoice);
+      } catch (err) { say(status, billingError(err), "error"); collect.disabled = false; }
+    });
+    actions.push(collect);
   }
   dialog(visit.patient_name,
     el("p", { text: `${longDate(visit.local.slice(0, 10))} · ${visit.local.slice(11)} · ${visit.duration_min} min` }),
@@ -842,11 +882,16 @@ function openVisitActions(visit) {
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
   if (section === "redes") return socialAccountsView(main);
+  if (section === "pagos") return billingView(main);
   if (section === "redes-manual") return manualSocialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
-  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton())];
+  if (section === "importaciones") return instrumentImportsView(main, which);
+  if (section === "fiscal-ensayo") return taxTrialsView(main, which);
+  const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton(),
+    state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) ? link("#ajustes/pagos", "Cobros y suscripción") : null)];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
   if (s.clinician) parts.push(await testsCard());
+  if (s.roles.some((role) => ["admin", "owner"].includes(role))) parts.push(card("Prototipo fiscal privado", "", link("#ajustes/fiscal-ensayo", "Abrir ensayos sin validez tributaria", "btn")));
   if (canReadCare()) parts.push(await onCallCard());
   if (isAdmin()) parts.push(await teamCard());
   parts.push(accountCard());
@@ -1290,13 +1335,53 @@ async function testsCard() {
   return card("Tus tests", "",
     ...(rows.length ? rows : [empty("Aún no tienes tests. Empieza con una plantilla de dominio público.")]),
     el("div", { class: "row tight" }, add("phq9", "Agregar PHQ-9 (depresión)"), add("gad7", "Agregar GAD-7 (ansiedad)")),
-    status,
+    status, link("#ajustes/importaciones", "Cargar test desde Word, Excel, JSON u otra fuente", "btn"), importTestConfiguration(),
     el("p", { class: "muted", text: "Por derechos de autor, las plantillas no traen el texto de las preguntas: cópialo del formulario oficial publicado. Hasta entonces el test no se puede enviar a las pacientes." }));
+}
+
+function importTestConfiguration() {
+  const file = el("input", { type: "file", accept: ".json,application/json", required: true });
+  const rights = el("input", { type: "checkbox", required: true });
+  const save = el("button", { class: "btn", type: "submit", text: "Importar otro test configurado" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" },
+    el("p", { class: "muted", text: "Puedes reutilizar una configuración descargada del editor, con preguntas, opciones, puntuaciones y rangos. El test importado queda privado de su autora." }),
+    el("label", { class: "field" }, "Archivo de configuración del test (.json, hasta 120 KB)", file),
+    el("label", { class: "check" }, rights, "Tengo derecho a utilizar este test y comprobé la fuente de sus parámetros."), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); if (save.disabled || !form.reportValidity()) return;
+    if (file.files[0].size > 120 * 1024) return say(status, "El archivo supera los 120 KB.", "error");
+    save.disabled = true;
+    try {
+      const spec = JSON.parse(await file.files[0].text());
+      if (!spec || typeof spec !== "object" || !spec.licence?.source || !Array.isArray(spec.items)) throw new Error();
+      const made = await api("/v1/clinical/instruments", { method: "POST", body: {
+        spec: { ...spec, licence: { ...spec.licence, attestation: true } }, visibility: "private",
+      } });
+      location.hash = `#ajustes/test/${encodeURIComponent(made.instrument_id)}`;
+    } catch (err) { say(status, err.status === 422 || !(err instanceof ApiError) ? "No se aceptó la configuración. Comprueba preguntas, opciones, bandas y fuente del test." : humanError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  return el("details", {}, el("summary", { text: "Agregar otro test desde una configuración" }), form);
 }
 
 async function testEditor(main, id) {
   const test = await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`);
   const spec = test.spec;
+  let savedSpec = spec;
+  let savedVersion = test.version;
+  let definitionBusy = false;
+  const saveDefinition = async (change) => {
+    if (definitionBusy) throw new ApiError(409, "changed meanwhile");
+    definitionBusy = true;
+    try {
+      const made = await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, {
+        method: "PUT", body: { spec: change(savedSpec), expected_version: savedVersion },
+      });
+      savedSpec = made.spec; savedVersion = made.version;
+      return made;
+    } finally { definitionBusy = false; }
+  };
   const instructions = el("textarea", { rows: "3" });
   instructions.value = spec.instructions || "";
   const fields = spec.items.map((item, i) => {
@@ -1316,17 +1401,90 @@ async function testEditor(main, id) {
     const empties = fields.filter((f) => !f.area.value.trim()).length;
     if (empties) return say(status, `Faltan ${empties} preguntas por completar.`, "error");
     save.disabled = true;
-    const revised = { ...spec, instructions: instructions.value.trim(),
-      items: fields.map((f) => ({ ...f.item, text: f.area.value.trim() })) };
     try {
-      await api(`/v1/clinical/instruments/${encodeURIComponent(id)}`, { method: "PUT", body: { spec: revised } });
+      await saveDefinition((current) => ({ ...current, instructions: instructions.value.trim(),
+        items: current.items.map((item) => ({ ...item, text: fields.find((field) => field.item.id === item.id).area.value.trim() })) }));
       for (const area of form.querySelectorAll("textarea[data-dirty]")) delete area.dataset.dirty;
       say(status, "Textos guardados. Ya puedes enviar este test a tus pacientes.", "done");
     } catch (err) { say(status, humanError(err), "error"); }
     save.disabled = false;
   });
   main.replaceChildren(page(test.name, "Pega el texto oficial de cada pregunta", link("#ajustes", "Volver a Ajustes")),
-    card("Textos del test", "", form));
+    card("Textos del test", "", form), testBandEditor(test, saveDefinition));
+}
+
+function testBandEditor(test, saveDefinition) {
+  const spec = test.spec;
+  const method = el("select", {}, ...[["sum", "Sumar puntuaciones"], ["mean", "Calcular promedio"], ["none", "Sin puntuación"]].map(([value, text]) => el("option", { value, text })));
+  method.value = spec.scoring.method;
+  const number = (value) => el("input", { type: "number", step: "any", value: value ?? "", required: true });
+  const itemFields = spec.items.filter((item) => item.type !== "text").map((item) => {
+    const reverse = el("input", { type: "checkbox", checked: item.reverse });
+    const options = (item.options || []).map((option) => ({ original: option, value: number(option.value) }));
+    const min = number(item.min); const max = number(item.max); min.required = max.required = false;
+    return { item, reverse, options, min, max, node: el("details", {},
+      el("summary", { text: `${item.id}: ${item.text}` }),
+      ...options.map((option) => el("label", { class: "field" }, `Valor de «${option.original.label}»`, option.value)),
+      item.type === "number" ? el("div", { class: "fields" }, el("label", { class: "field" }, "Valor mínimo", min), el("label", { class: "field" }, "Valor máximo", max)) : null,
+      item.type === "choice" ? el("label", { class: "check" }, reverse, "Puntuación inversa en este ítem") : null) };
+  });
+  let bands = [];
+  const bandList = el("div", { class: "stack" });
+  const addBand = (band = {}) => {
+    const low = number(band.min); const high = number(band.max);
+    const name = el("input", { type: "text", maxlength: "80", required: true, value: band.label || "" });
+    const severity = el("select", {}, ...[["none", "Sin alerta"], ["low", "Baja"], ["moderate", "Moderada"], ["high", "Alta"]].map(([value, text]) => el("option", { value, text })));
+    severity.value = band.severity || "none";
+    const remove = el("button", { type: "button", class: "btn small", text: "Quitar rango" });
+    const row = { low, high, name, severity };
+    row.node = el("fieldset", { class: "stack" }, el("legend", { text: "Rango de banda (límites incluidos)" }),
+      el("div", { class: "fields" }, el("label", { class: "field" }, "Desde", low), el("label", { class: "field" }, "Hasta", high)),
+      el("label", { class: "field" }, "Nombre de la banda", name), el("label", { class: "field" }, "Nivel de alerta del baremo", severity), remove);
+    remove.addEventListener("click", () => { bands = bands.filter((entry) => entry !== row); row.node.remove(); });
+    bands.push(row); bandList.append(row.node);
+  };
+  for (const band of spec.scoring.bands || []) addBand(band);
+  const add = el("button", { type: "button", class: "btn", text: "Agregar rango de banda" });
+  add.addEventListener("click", () => { if (bands.length < 20) addBand(); });
+  const confirmed = el("input", { type: "checkbox", required: true });
+  const save = el("button", { type: "submit", class: "btn primary", text: "Guardar puntuación y bandas" });
+  const status = el("p", { role: "status", class: "status" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: "Carga los valores y rangos del manual y la población que utilizarás. Cada guardado crea una versión; los informes ya asociados conservan la anterior." }),
+    el("label", { class: "field" }, "Método de puntuación", method),
+    ...itemFields.map((field) => field.node), bandList, add,
+    el("p", { class: "muted", text: "Los rangos no pueden solaparse. Si un valor cae fuera de todos, se mostrará sin banda. Las reglas de alerta y subescalas existentes se conservan; revísalas en la configuración exportada si cambias los valores de respuesta." }),
+    el("label", { class: "check" }, confirmed, "He comprobado valores, rangos y correspondencia con el baremo del test."), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); if (save.disabled || !form.reportValidity()) return;
+    const definitions = bands.map((row) => ({ min: Number(row.low.value), max: Number(row.high.value), label: row.name.value.trim(), severity: row.severity.value }));
+    const sorted = [...definitions].sort((a, b) => a.min - b.min);
+    if (sorted.some((row, index) => row.min > row.max || (index && sorted[index - 1].max >= row.min))) return say(status, "Revisa los rangos: no pueden estar invertidos ni solaparse.", "error");
+    save.disabled = true;
+    try {
+      const made = await saveDefinition((current) => ({ ...current,
+        items: current.items.map((item) => {
+          const field = itemFields.find((entry) => entry.item.id === item.id);
+          if (!field) return item;
+          return { ...item, reverse: field.reverse.checked,
+            options: field.options.map((option) => ({ ...option.original, value: Number(option.value.value) })),
+            min: field.min.value === "" ? null : Number(field.min.value), max: field.max.value === "" ? null : Number(field.max.value) };
+        }), scoring: { ...current.scoring, method: method.value, bands: definitions },
+      }));
+      confirmed.checked = false;
+      say(status, `Puntuación y bandas guardadas · versión ${made.version}.`, "done");
+    } catch (err) { say(status, err.status === 422 ? "No se aceptó la configuración. Comprueba las opciones, los rangos y las reglas." : humanError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  const exportConfig = el("button", { type: "button", class: "btn", text: "Descargar configuración del test" });
+  exportConfig.addEventListener("click", async () => {
+    try {
+      const current = await api(`/v1/clinical/instruments/${encodeURIComponent(test.instrument_id)}`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(current.spec, null, 2)], { type: "application/json" }));
+      el("a", { href: url, download: "configuracion-test.json" }).click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) { say(status, humanError(err), "error"); }
+  });
+  return card("Puntuación y bandas", "", form, exportConfig);
 }
 
 // On call: who is told at once about a crisis, by WhatsApp, Telegram or e-mail (ADR 0017).
@@ -1414,23 +1572,27 @@ async function hoursCard(prof) {
     const [s2, e2] = (second?.hours || "15:00-18:00").split("-");
     const on = el("input", { type: "checkbox", checked: Boolean(first) });
     const split = el("input", { type: "checkbox", checked: Boolean(second) });
+    const duration = el("input", { type: "number", min: "10", max: "240", value: String(first?.slot_minutes || 50), "aria-label": `${DAY_NAMES[i]}: duración` });
+    const pause = el("input", { type: "number", min: "0", max: "120", value: String(first?.break_minutes || 0), "aria-label": `${DAY_NAMES[i]}: intervalo` });
     const inputs = [s1, e1, s2, e2].map((v) => el("input", { type: "time", value: v, step: "300" }));
     for (const [n, input] of inputs.entries()) {
       input.setAttribute("aria-label", `${DAY_NAMES[i]}: ${["desde", "hasta", "segundo horario desde", "segundo horario hasta"][n]}`);
     }
     on.setAttribute("aria-label", `Atiendo el ${DAY_NAMES[i].toLowerCase()}`);
     split.setAttribute("aria-label", `Segundo horario el ${DAY_NAMES[i].toLowerCase()}`);
-    return { day, on, split, inputs, node: el("div", { class: "hours-row" },
+    return { day, on, split, inputs, duration, pause, node: el("div", { class: "hours-row" },
       el("label", { class: "check" }, on, el("strong", { text: DAY_NAMES[i] })),
       el("span", { class: "hours-span" }, inputs[0], "a", inputs[1]),
       el("label", { class: "check" }, split, "y"),
-      el("span", { class: "hours-span" }, inputs[2], "a", inputs[3])) };
+      el("span", { class: "hours-span" }, inputs[2], "a", inputs[3]),
+      el("label", { class: "field" }, "Duración", duration), el("label", { class: "field" }, "Intervalo", pause)) };
   });
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const save = el("button", { class: "btn primary", type: "submit", text: "Guardar horario" });
   const form = el("form", { class: "stack", novalidate: true },
     el("p", { class: "muted", text: `${prof.display_name}. Las pacientes solo pueden reservar dentro de este horario.` }),
-    el("label", { class: "field" }, "Duración de cada sesión (minutos)", minutes),
+    el("label", { class: "field" }, "Duración para copiar a todos los días (minutos)", minutes),
+    action("Copiar duración a todos los días", () => rows.forEach((r) => { r.duration.value = minutes.value; })),
     el("div", { class: "hours" }, ...rows.map((r) => r.node)),
     el("p", { class: "muted", text: "Marca los días que atiendes. Si tienes un segundo horario (por ejemplo, después del almuerzo), marca «y» y escríbelo." }),
     save, status);
@@ -1439,8 +1601,8 @@ async function hoursCard(prof) {
     const hours = [];
     for (const r of rows) {
       if (!r.on.checked) continue;
-      hours.push({ day: r.day, hours: `${r.inputs[0].value}-${r.inputs[1].value}`, slot_minutes: Number(minutes.value) || 50 });
-      if (r.split.checked) hours.push({ day: r.day, hours: `${r.inputs[2].value}-${r.inputs[3].value}`, slot_minutes: Number(minutes.value) || 50 });
+      hours.push({ day: r.day, hours: `${r.inputs[0].value}-${r.inputs[1].value}`, slot_minutes: Number(r.duration.value), break_minutes: Number(r.pause.value) });
+      if (r.split.checked) hours.push({ day: r.day, hours: `${r.inputs[2].value}-${r.inputs[3].value}`, slot_minutes: Number(r.duration.value), break_minutes: Number(r.pause.value) });
     }
     save.disabled = true;
     say(status, "Guardando…");
@@ -1450,7 +1612,64 @@ async function hoursCard(prof) {
     } catch (err) { say(status, humanError(err), "error"); }
     save.disabled = false;
   });
-  return card("Tu horario de atención", "", form);
+  return el("div", { class: "stack" }, card("Tu horario de atención", "", form), await scheduleOptions(prof));
+}
+
+async function scheduleOptions(prof) {
+  const base = `/v1/agenda/professionals/${encodeURIComponent(prof.professional_id)}`;
+  let config = await api(`${base}/availability`);
+  const notice = el("p", { role: "status", class: "status" });
+  const from = el("input", { type: "date", required: true });
+  const to = el("input", { type: "date", required: true });
+  const mode = el("select", {}, el("option", { value: "closed", text: "Cerrar: vacaciones o ausencia" }), el("option", { value: "replace", text: "Horario especial para estas fechas" }), el("option", { value: "weekly", text: "Volver al horario semanal" }));
+  const start = el("input", { type: "time", value: "09:00" });
+  const end = el("input", { type: "time", value: "13:00" });
+  const length = el("input", { type: "number", min: "10", max: "240", value: "50" });
+  const gap = el("input", { type: "number", min: "0", max: "120", value: "10" });
+  const exceptions = el("div", { class: "stack" });
+  const redraw = () => exceptions.replaceChildren(...config.exceptions.map((e) => el("p", { class: "muted", text: `${e.day}: ${e.blocks.length ? e.blocks.map((b) => b.hours).join(", ") : "cerrado"}` })));
+  const save = el("button", { type: "submit", class: "btn primary", text: "Guardar excepción" });
+  const special = el("div", { class: "fields", hidden: true }, el("label", { class: "field" }, "Desde", start), el("label", { class: "field" }, "Hasta", end), el("label", { class: "field" }, "Duración", length), el("label", { class: "field" }, "Intervalo", gap));
+  mode.addEventListener("change", () => { special.hidden = mode.value !== "replace"; });
+  const form = el("form", { class: "stack" }, el("div", { class: "fields" }, el("label", { class: "field" }, "Primera fecha", from), el("label", { class: "field" }, "Última fecha", to)), el("label", { class: "field" }, "Qué cambia", mode), special, save, notice, exceptions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      const blocks = mode.value === "weekly" ? null : mode.value === "closed" ? [] : [{ hours: `${start.value}-${end.value}`, slot_minutes: Number(length.value), break_minutes: Number(gap.value) }];
+      config = await api(`${base}/exceptions`, { method: "PUT", body: { first: from.value, last: to.value, blocks, version: config.version } });
+      redraw(); say(notice, "Guardado. Las citas existentes se conservan; los nuevos horarios ya los ven las pacientes.", "done");
+    } catch (err) { say(notice, humanError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  redraw();
+  const serviceRows = [];
+  const list = el("div", { class: "stack" });
+  const add = (service = {}) => {
+    const id = service.id || `servicio-${Date.now().toString(36)}-${serviceRows.length}`;
+    const name = el("input", { value: service.name || "", required: true, maxlength: "100", "aria-label": "Nombre del servicio" });
+    const minutes = el("input", { type: "number", min: "10", max: "240", value: String(service.minutes || 50), "aria-label": "Minutos del servicio" });
+    const pause = el("input", { type: "number", min: "0", max: "120", value: String(service.break_minutes || 0), "aria-label": "Intervalo del servicio" });
+    const kind = el("select", { "aria-label": "Modalidad del servicio" }, el("option", { value: "in_person", text: "Presencial" }), el("option", { value: "virtual", text: "Virtual" }));
+    kind.value = service.mode || "in_person";
+    const days = DAYS.map((_, i) => el("input", { type: "checkbox", checked: (service.weekdays || [0, 1, 2, 3, 4, 5, 6]).includes(i) }));
+    const row = { id, name, minutes, pause, kind, days };
+    const node = el("div", { class: "card stack" }, el("label", { class: "field" }, "Servicio", name), el("div", { class: "fields" }, el("label", { class: "field" }, "Duración", minutes), el("label", { class: "field" }, "Intervalo", pause), kind), el("div", { class: "row" }, ...days.map((d, i) => el("label", { class: "check" }, d, DAY_NAMES[i]))), action("Quitar servicio", () => { serviceRows.splice(serviceRows.indexOf(row), 1); node.remove(); }));
+    serviceRows.push(row); list.append(node);
+  };
+  config.policy.services.forEach(add);
+  const servicesStatus = el("p", { role: "status", class: "status" });
+  const servicesSave = el("button", { class: "btn primary", type: "submit", text: "Guardar servicios de reserva" });
+  const services = el("form", { class: "stack" }, list, action("Agregar servicio de reserva", () => add()), servicesSave, servicesStatus);
+  services.addEventListener("submit", async (event) => {
+    event.preventDefault(); servicesSave.disabled = true;
+    try {
+      const values = serviceRows.map((r) => ({ id: r.id, name: r.name.value, minutes: Number(r.minutes.value), break_minutes: Number(r.pause.value), mode: r.kind.value, weekdays: r.days.flatMap((d, i) => d.checked ? [i] : []) }));
+      config = await api(`${base}/availability`, { method: "PUT", body: { version: config.version, policy: { services: values } } });
+      say(servicesStatus, "Servicios guardados. La paciente puede elegirlos al reservar.", "done");
+    } catch (err) { say(servicesStatus, humanError(err), "error"); }
+    finally { servicesSave.disabled = false; }
+  });
+  return el("div", { class: "stack" }, card("Fechas especiales y vacaciones", "", form), card("Servicios y modalidad de reserva", "", services));
 }
 
 // --- PACIENTES: the list and a new patient ----------------------------------------------------
@@ -1838,11 +2057,386 @@ async function tabTests(patient) {
       el("span", { class: `chip ${r.severity === "high" ? "bad" : r.severity === "moderate" ? "wait" : "ok"}`, text: r.band ? `${r.total} · ${bandName(r.band)}` : String(r.total ?? "—") })),
     ...r.alerts.map((a) => el("p", { class: "status error", text: `⚠ ${a.message}` }))));
   return [
+    await testImagesCard(patient, available),
     card("Enviar un test a su app", "", form),
     card("Esperando respuesta", "", ...(pending.length ? pending : [empty("No hay tests pendientes.")])),
     card("Resultados", "", ...(done.length ? done : [empty("Aún no hay resultados.")]),
       el("p", { class: "muted", text: "La banda es una ayuda para interpretar, no un diagnóstico." })),
   ];
+}
+
+// Test images: author-only source, a descriptive draft, and explicit professional review.
+async function testImagesCard(patient, available) {
+  const [reports, config] = await Promise.all([
+    api(`/v1/clinical/patients/${encodeURIComponent(patient.id)}/test-images`),
+    api("/v1/clinical/test-image-configuration"),
+  ]);
+  config.instruments = available;
+  const add = el("button", { type: "button", class: "btn primary", text: "Cargar test en imagen" });
+  add.addEventListener("click", () => testImageDialog(patient, config));
+  const list = reports.map((report) => {
+    const open = el("button", { type: "button", class: "btn small", text: "Abrir informe" });
+    const status = el("p", { class: "status", role: "status" });
+    open.addEventListener("click", async () => {
+      open.disabled = true;
+      try {
+        const item = await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}`);
+        testImageDialog(patient, config, item);
+      } catch (err) { say(status, humanError(err), "error"); }
+      finally { open.disabled = false; }
+    });
+    return el("div", { class: "doc" },
+      el("span", { class: "what" }, el("strong", { text: report.title }), el("br"),
+        el("span", { class: "muted", text: `${report.kind === "drawing" ? "Dibujo" : "Cuestionario"} · ${longDate(report.created_at.slice(0, 10))}` })),
+      chip(report.status === "reviewed" ? "Revisado" : report.status === "draft" ? "Borrador" : "Imagen guardada"), open, status);
+  });
+  return card("Tests en imagen", "", el("p", { text: "Carga un cuestionario, una hoja de resultados o un dibujo. Revisa la lectura de la imagen y completa tu informe." }),
+    add, ...list, list.length ? null : empty("Todavía no has cargado tests en imagen."),
+    el("p", { class: "muted", text: "La imagen y el informe son privados de la profesional que los carga." }));
+}
+
+function testParameterFields() {
+  const version = el("input", { type: "text", maxlength: "120", placeholder: "Ej.: edición 2026" });
+  const criteria = el("textarea", { rows: "3", maxlength: "4000", placeholder: "Indicadores y aspectos que vas a evaluar" });
+  const scoring = el("textarea", { rows: "3", maxlength: "4000", placeholder: "Rangos, baremos o reglas; indica si no aplica" });
+  const source = el("input", { type: "text", maxlength: "500", placeholder: "Manual, autor o criterios propios" });
+  const population = el("input", { type: "text", maxlength: "500", placeholder: "Grupo al que corresponde el baremo, si aplica" });
+  const applied = el("input", { type: "date" });
+  const years = el("input", { type: "number", min: "0", max: "120", step: "1" });
+  const months = el("input", { type: "number", min: "0", max: "11", step: "1" });
+  const context = el("textarea", { rows: "3", maxlength: "2000", placeholder: "Condiciones de aplicación y observaciones relevantes" });
+  const fields = { version, criteria, source, reference_population: population, scoring_rules: scoring };
+  const importFile = el("input", { type: "file", accept: ".json,application/json" });
+  const exportParameters = el("button", { type: "button", class: "btn small", text: "Descargar parámetros para reutilizar" });
+  const feedback = el("p", { class: "status", role: "status" });
+  const parameters = () => Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value.trim()]));
+  const application = () => ({ applied_on: applied.value || null,
+    age_years: years.value === "" ? null : Number(years.value),
+    age_months: months.value === "" ? null : Number(months.value), context: context.value.trim() });
+  const node = el("details", { open: true, class: "test-parameters" },
+    el("summary", { text: "Parámetros del test y datos de aplicación" }),
+    el("div", { class: "test-parameter-grid" },
+      el("fieldset", { class: "stack" }, el("legend", { text: "Parámetros del test" }),
+        el("label", { class: "field" }, "Versión o edición", version),
+        el("label", { class: "field" }, "Criterios e indicadores", criteria),
+        el("label", { class: "field" }, "Baremos o reglas de corrección", scoring),
+        el("label", { class: "field" }, "Fuente o manual", source),
+        el("label", { class: "field" }, "Población de referencia", population)),
+      el("fieldset", { class: "stack" }, el("legend", { text: "Datos de aplicación" }),
+        el("label", { class: "field" }, "Fecha de aplicación", applied),
+        el("label", { class: "field" }, "Edad al aplicar (años)", years),
+        el("label", { class: "field" }, "Meses adicionales (0 a 11)", months),
+        el("label", { class: "field" }, "Contexto y observaciones", context),
+        el("p", { class: "muted", text: "Registra la edad que tenía al aplicar el test. Si no la conoces, déjala sin completar." }))),
+    el("p", { class: "muted", text: "Completa versión, criterios, fuente y fecha antes de generar o revisar. Los baremos son referencias aportadas por ti; la lectura visual no calcula puntuaciones." }),
+    el("label", { class: "field" }, "Importar parámetros desde un archivo JSON (opcional)", importFile), exportParameters, feedback);
+  const fill = (params = {}, data = {}) => {
+    for (const [name, field] of Object.entries(fields)) { field.value = params?.[name] || ""; delete field.dataset.dirty; }
+    applied.value = data?.applied_on || ""; years.value = data?.age_years ?? "";
+    months.value = data?.age_months ?? ""; context.value = data?.context || ""; delete context.dataset.dirty;
+  };
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files[0];
+    if (!file) return;
+    try {
+      if (file.size > 32768) throw new Error();
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object" ||
+          Object.keys(parsed).some((key) => !Object.hasOwn(fields, key)) ||
+          Object.entries(parsed).some(([key, value]) => typeof value !== "string" || value.length > fields[key].maxLength)) throw new Error();
+      for (const [name, field] of Object.entries(fields)) field.value = parsed[name] || "";
+      say(feedback, "Parámetros importados. Revisa su fuente y contenido antes de guardarlos.");
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch { say(feedback, "No se pudo importar. Usa un archivo de parámetros descargado desde esta ventana, de hasta 32 KB.", "error"); }
+    importFile.value = "";
+  });
+  exportParameters.addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(parameters(), null, 2)], { type: "application/json" }));
+    const a = el("a", { href: url, download: "parametros-test.json" }); a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  return { node, parameters, application, fill,
+    serialized: () => JSON.stringify([parameters(), application()]),
+    ready: () => Boolean(version.value.trim() && criteria.value.trim() && source.value.trim() && applied.value),
+    valid: () => [...node.querySelectorAll("input,textarea")].every((field) => field.reportValidity()) && (months.value === "" || years.value !== ""),
+    disable: (value) => { for (const field of node.querySelectorAll("input,textarea")) field.disabled = value; },
+  };
+}
+
+function imageScoringFields(definitions, initial, onChange) {
+  const all = [...definitions];
+  const choice = el("select", { "aria-label": "Test y versión para calcular bandas" }, el("option", { value: "", text: "Solo resumen descriptivo" }));
+  const keyOf = (data) => data ? `${data.instrument_id}@${data.version}` : "";
+  const addChoice = (data) => {
+    if (!all.some((item) => keyOf(item) === keyOf(data))) all.push(data);
+    if (![...choice.options].some((option) => option.value === keyOf(data))) choice.append(el("option", { value: keyOf(data), text: `${data.name} · versión ${data.version}` }));
+  };
+  for (const data of definitions.filter((item) => item.spec.scoring.method !== "none" && item.spec.scoring.bands.length)) addChoice(data);
+  const list = el("div", { class: "stack" });
+  const result = el("p", { class: "status", role: "status" });
+  const confirmed = el("input", { type: "checkbox" });
+  const calculate = el("button", { class: "btn", type: "button", text: "Calcular puntuación y banda" });
+  const node = el("section", { class: "stack test-image-scoring" },
+    el("label", { class: "field" }, "Test y versión para calcular bandas", choice),
+    el("p", { class: "muted", text: "Se conserva la versión seleccionada. Verifica que corresponde al manual y la población registrados. Configura puntuaciones y rangos desde Ajustes → Tus tests → Editar textos." }),
+    list, el("label", { class: "check" }, confirmed, "Comparé todas las respuestas con la imagen y comprobé el baremo seleccionado."), calculate, result);
+  let data = null;
+  let fields = [];
+  let locked = false;
+  let sourceKind = "questionnaire";
+  const answers = () => Object.fromEntries(fields.filter((field) => field.control.value !== "").map((field) => [field.item.id, field.item.type === "text" ? field.control.value : Number(field.control.value)]));
+  const sourceChanged = () => choice.value !== keyOf(data);
+  const verified = () => Boolean(data?.verified && !sourceChanged() && JSON.stringify(answers()) === JSON.stringify(data.answers));
+  const refresh = () => {
+    choice.disabled = locked || sourceKind === "drawing";
+    confirmed.disabled = locked || !data || sourceChanged();
+    calculate.hidden = !data || locked;
+    calculate.disabled = !confirmed.checked || sourceChanged();
+    for (const field of fields) field.control.disabled = locked || sourceChanged();
+    if (!data) { list.hidden = true; confirmed.parentElement.hidden = true; result.textContent = sourceKind === "drawing" ? "Dibujo: lectura descriptiva y valoración profesional." : "Asocia un test para obtener su tabla de respuestas y bandas."; }
+    else {
+      list.hidden = false; confirmed.parentElement.hidden = false;
+      result.textContent = verified() ? `Puntuación: ${data.result.total} · Banda: ${data.result.band ? bandName(data.result.band) : "Sin banda para este valor"}` : "Respuestas pendientes de comprobar y calcular.";
+    }
+  };
+  const fill = (current) => {
+    data = current; fields = []; list.replaceChildren();
+    if (data) {
+      addChoice(data); choice.value = keyOf(data);
+      const rows = data.spec.items.map((item) => {
+        const proposal = (data.proposals || []).find((entry) => entry.item_id === item.id);
+        let control;
+        if (item.type === "choice") control = el("select", {}, el("option", { value: "", text: "Sin respuesta comprobada" }), ...item.options.map((option) => el("option", { value: String(option.value), text: `${option.label} (${option.value})` })));
+        else control = el("input", { type: item.type === "text" ? "text" : "number", step: "any", min: item.min, max: item.max });
+        control.required = item.required;
+        control.value = (data.verified ? data.answers[item.id] : proposal?.value) ?? "";
+        const crop = proposal?.region ? el("canvas", { width: "160", height: "90", class: "test-answer-crop", "aria-label": `Zona sugerida para ${item.id}` }) : null;
+        const field = { item, control, crop, region: proposal?.region }; fields.push(field);
+        control.addEventListener("input", () => { confirmed.checked = false; refresh(); onChange(); });
+        return el("div", { class: "question" }, el("label", { class: "field" }, `${item.id}: ${item.text}`, control),
+          proposal ? el("p", { class: "muted", text: `${proposal.quality === "proposal" ? "Lectura propuesta, comprobar" : "Lectura dudosa o ausente"}: ${proposal.evidence}` }) : null,
+          crop ? el("div", {}, crop, el("p", { class: "muted", text: "Zona sugerida por el motor; comprueba también la imagen completa." })) : null);
+      });
+      list.append(...rows);
+    } else choice.value = "";
+    confirmed.checked = Boolean(data?.verified); refresh();
+  };
+  choice.addEventListener("change", () => { confirmed.checked = false; refresh(); onChange(); });
+  confirmed.addEventListener("change", refresh);
+  fill(initial);
+  return { node, calculate, confirmed, answers, fill, verified, sourceChanged,
+    binding: () => {
+      const selected = all.find((item) => keyOf(item) === choice.value);
+      return selected ? { instrument_id: selected.instrument_id, instrument_version: selected.version } : { clear_scoring: true };
+    },
+    setKind: (kind) => { sourceKind = kind; if (kind === "drawing") choice.value = ""; refresh(); },
+    disable: (value) => { locked = value; refresh(); },
+    valid: () => fields.every((field) => field.control.reportValidity()),
+    paint: (image) => {
+      if (!image.complete || !image.naturalWidth) return;
+      for (const field of fields.filter((entry) => entry.crop && entry.region)) {
+        const [left, top, right, bottom] = field.region;
+        field.crop.getContext("2d").drawImage(image, left * image.naturalWidth, top * image.naturalHeight,
+          (right - left) * image.naturalWidth, (bottom - top) * image.naturalHeight, 0, 0, 160, 90);
+      }
+    },
+    hasData: () => Boolean(data),
+    dirty: () => Boolean(data && !sourceChanged() && data.verified && !verified()),
+  };
+}
+
+function testImageDialog(patient, config, initial = null) {
+  let report = initial;
+  let busy = false;
+  const title = el("input", { type: "text", required: true, maxlength: "120", placeholder: "Nombre del test", value: report?.title || "" });
+  const kind = el("select", {}, el("option", { value: "questionnaire", text: "Cuestionario o resultados" }),
+    el("option", { value: "drawing", text: "Dibujo" }));
+  kind.value = report?.kind || "questionnaire";
+  const file = el("input", { type: "file", accept: "image/png,image/jpeg", required: true });
+  const preview = el("img", { class: "test-image-preview", alt: "Vista previa del test cargado", hidden: true });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const stateLabel = el("p", { class: "chip wait", text: "Sin cargar" });
+  const text = el("textarea", { rows: "16", maxlength: "20000", "aria-label": "Borrador del informe", placeholder: "Aquí aparecerá el resumen visual. Puedes escribir o corregir el informe." });
+  const checked = el("input", { type: "checkbox" });
+  const upload = el("button", { class: "btn primary", type: "submit", text: config.enabled ? "Cargar y generar borrador" : "Cargar imagen" });
+  const generate = el("button", { class: "btn", type: "button", text: "Generar resumen visual" });
+  const save = el("button", { class: "btn", type: "button", text: "Guardar borrador" });
+  const review = el("button", { class: "btn primary", type: "button", text: "Guardar informe revisado" });
+  const exportText = el("button", { class: "btn", type: "button", text: "Descargar informe (.txt)" });
+  const remove = el("button", { class: "btn danger", type: "button", text: "Eliminar borrador e imagen" });
+  const source = el("button", { class: "btn", type: "button", text: "Descargar imagen original" });
+  const params = testParameterFields();
+  const scoring = imageScoringFields(config.instruments || [], report?.score_data, () => { checked.checked = false; refresh(); });
+  const currentContext = () => JSON.stringify([params.serialized(), scoring.binding()]);
+  let savedContext = currentContext();
+  const saveParameters = el("button", { class: "btn", type: "button", text: "Guardar parámetros" });
+  const uploadForm = el("form", { class: "stack" },
+    el("label", { class: "field" }, "Nombre del test", title),
+    el("label", { class: "field" }, "Tipo de imagen", kind),
+    el("label", { class: "field" }, `Imagen PNG o JPEG (hasta ${Math.round(config.max_bytes / 1048576)} MB)`, file), upload);
+  const workspace = el("div", { class: "stack" }, params.node, saveParameters, uploadForm, preview, stateLabel, scoring.node,
+    config.enabled ? el("p", { class: "muted", text: "Al generar, esta imagen se analiza en el motor privado del consultorio." })
+      : el("p", { class: "status", text: "El motor de visión privado aún no está configurado. Puedes guardar la imagen y redactar el informe manualmente." }),
+    generate, el("label", { class: "field" }, "Resumen e informe editable", text),
+    el("p", { class: "muted", text: "Comprueba texto y marcas con la imagen. En dibujos, el resumen describe elementos visibles; la valoración clínica la escribes tú. No calcula puntuaciones automáticamente." }),
+    el("label", { class: "check" }, checked, "He comparado el informe con el original y revisado su contenido."),
+    el("div", { class: "row tight" }, save, review, exportText, source, remove), status);
+  const d = dialog("Test en imagen e informe", workspace);
+  const active = () => d.open && workspace.isConnected;
+  const refresh = () => {
+    const final = report?.status === "reviewed";
+    stateLabel.textContent = final ? "Informe revisado" : report?.status === "draft" ? "Borrador pendiente de revisión" : report ? "Imagen guardada" : "Sin cargar";
+    uploadForm.hidden = Boolean(report);
+    generate.hidden = !report || final;
+    generate.disabled = busy || !config.enabled || !params.ready();
+    text.disabled = !report || final || busy;
+    checked.disabled = !report || final || busy;
+    save.hidden = review.hidden = remove.hidden = !report || final;
+    save.disabled = remove.disabled = busy;
+    review.disabled = busy || !checked.checked || !params.ready() || (scoring.hasData() && (!scoring.verified() || currentContext() !== savedContext));
+    params.disable(busy || final);
+    scoring.disable(busy || final);
+    saveParameters.hidden = !report || final;
+    saveParameters.disabled = busy;
+    exportText.hidden = !report?.body;
+    source.hidden = !report;
+    upload.disabled = busy;
+    upload.textContent = config.enabled && params.ready() ? "Cargar y generar borrador" : "Cargar imagen";
+  };
+  const fill = (item) => {
+    report = item; text.value = item.body || ""; delete text.dataset.dirty;
+    params.fill(item.parameters, item.application); scoring.fill(item.score_data); scoring.setKind(item.kind); scoring.paint(preview); savedContext = currentContext();
+    params.node.open = !item.parameters_ready;
+    checked.checked = item.status === "reviewed"; refresh();
+  };
+  const failure = (err) => say(status, err.detail && [403, 409, 422, 503].includes(err.status) ? err.detail : humanError(err), "error");
+  const showPreview = (blob) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (active()) { preview.src = reader.result; preview.hidden = false; }
+    });
+    reader.readAsDataURL(blob);
+  };
+  file.addEventListener("change", () => {
+    preview.hidden = true; preview.removeAttribute("src");
+    const image = file.files[0];
+    if (!image) return;
+    if (!["image/png", "image/jpeg"].includes(image.type) || image.size > config.max_bytes) {
+      file.value = "";
+      return say(status, "Elige una imagen PNG o JPEG dentro del tamaño permitido.", "error");
+    }
+    say(status, ""); showPreview(image);
+  });
+  checked.addEventListener("change", refresh);
+  kind.addEventListener("change", () => { scoring.setKind(kind.value); refresh(); });
+  preview.addEventListener("load", () => scoring.paint(preview));
+  params.node.addEventListener("input", () => { checked.checked = false; refresh(); });
+  const saveContext = async () => {
+    const item = await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}`, {
+      method: "PATCH", body: { revision: report.revision, body: text.value,
+        parameters: params.parameters(), application: params.application(), ...scoring.binding() },
+    });
+    if (active()) fill(item);
+  };
+  text.addEventListener("input", () => { checked.checked = false; refresh(); });
+  const analyze = async () => {
+    if (currentContext() !== savedContext) await saveContext();
+    if (!active()) return;
+    const item = await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}/analyze`, {
+      method: "POST", body: { revision: report.revision, confirmed: true },
+    });
+    if (active()) { fill(item); say(status, "Borrador generado. Compara la lectura con la imagen y corrige lo necesario."); }
+  };
+  uploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (busy || !uploadForm.reportValidity()) return;
+    if (!params.valid()) return say(status, "Revisa la edad y los datos de aplicación.", "error");
+    const data = new FormData();
+    data.append("file", file.files[0]); data.append("title", title.value.trim()); data.append("kind", kind.value);
+    data.append("parameters", JSON.stringify(params.parameters())); data.append("application", JSON.stringify(params.application()));
+    const binding = scoring.binding();
+    if (binding.instrument_id) { data.append("instrument_id", binding.instrument_id); data.append("instrument_version", String(binding.instrument_version)); }
+    busy = true; refresh(); say(status, "Guardando imagen…");
+    try {
+      const item = await api(`/v1/clinical/patients/${encodeURIComponent(patient.id)}/test-images`, { method: "POST", body: data });
+      if (!active()) return;
+      fill(item); say(status, "Imagen guardada.");
+      if (config.enabled && item.parameters_ready) { say(status, "Analizando imagen… Puede tardar unos minutos."); await analyze(); }
+    } catch (err) { if (active()) failure(err); }
+    finally { busy = false; if (active()) refresh(); }
+  });
+  generate.addEventListener("click", async () => {
+    if (busy) return;
+    if (!params.valid()) return say(status, "Revisa la edad y los datos de aplicación.", "error");
+    if (text.value.trim() && !sure(generate, "Sí, reemplazar el borrador por una nueva lectura")) return;
+    busy = true; refresh(); say(status, "Analizando imagen… Puede tardar unos minutos.");
+    try { await analyze(); } catch (err) { if (active()) failure(err); }
+    finally { busy = false; if (active()) refresh(); }
+  });
+  const persist = async (reviewed) => {
+    if (busy || (reviewed && !checked.checked)) return;
+    if (!params.valid()) return say(status, "Revisa la edad y los datos de aplicación.", "error");
+    if (reviewed && !text.value.trim()) return say(status, "Escribe o genera el informe antes de revisarlo.", "error");
+    busy = true; refresh();
+    try {
+      const item = await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}`, {
+        method: "PATCH", body: { revision: report.revision, body: text.value, reviewed,
+          parameters: params.parameters(), application: params.application(), ...scoring.binding() },
+      });
+      if (active()) { fill(item); say(status, reviewed ? "Informe revisado y guardado." : "Borrador guardado."); }
+    } catch (err) { if (active()) failure(err); }
+    finally { busy = false; if (active()) refresh(); }
+  };
+  save.addEventListener("click", () => persist(false));
+  saveParameters.addEventListener("click", () => persist(false));
+  review.addEventListener("click", () => persist(true));
+  scoring.calculate.addEventListener("click", async () => {
+    if (busy || !report || !scoring.confirmed.checked || !scoring.valid() || scoring.sourceChanged()) return;
+    if (!params.valid()) return say(status, "Revisa los datos de aplicación.", "error");
+    const answers = scoring.answers(); busy = true; refresh();
+    try {
+      if (currentContext() !== savedContext) await saveContext();
+      const item = await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}/score`, {
+        method: "POST", body: { revision: report.revision, answers, confirmed: true },
+      });
+      if (active()) { fill(item); say(status, "Respuestas comprobadas: puntuación y banda calculadas."); }
+    } catch (err) { if (active()) failure(err); }
+    finally { busy = false; if (active()) refresh(); }
+  });
+  exportText.addEventListener("click", () => {
+    const label = report.status === "reviewed" ? "INFORME REVISADO" : "BORRADOR SIN REVISAR";
+    const blob = new Blob([`${label}\n${report.title}\nFuente SHA-256: ${report.source_sha256}\n\n${report.parameter_summary}\n\n${report.scoring_summary || ""}\n\n${report.body}`], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: `informe-test-${report.report_id}.txt` }); a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  source.addEventListener("click", () => download(`/v1/clinical/files/${encodeURIComponent(report.file_id)}`, report.filename).catch(failure));
+  remove.addEventListener("click", async () => {
+    if (busy || !sure(remove, "Sí, eliminar este borrador y su imagen")) return;
+    busy = true; refresh();
+    try {
+      await api(`/v1/clinical/test-images/${encodeURIComponent(report.report_id)}?revision=${report.revision}`, { method: "DELETE" });
+      if (active()) { d.close(); route(); }
+    } catch (err) { if (active()) failure(err); }
+    finally { busy = false; if (active()) refresh(); }
+  });
+  const guardClose = (event) => {
+    if (busy || ((text.value !== (report?.body || "") || currentContext() !== savedContext || scoring.dirty()) && !confirm("Hay cambios sin guardar en el informe o sus parámetros. ¿Cerrar y descartarlos?"))) {
+      event.preventDefault(); event.stopImmediatePropagation();
+    }
+  };
+  const closeButton = d.querySelector(".head button");
+  closeButton.addEventListener("click", guardClose, { capture: true });
+  d.addEventListener("cancel", guardClose);
+  d.addEventListener("close", () => {
+    d.removeEventListener("cancel", guardClose);
+    if (workspace.isConnected) { workspace.remove(); route(); }
+  }, { once: true });
+  if (report) {
+    fill(report);
+    request(`/v1/clinical/files/${encodeURIComponent(report.file_id)}`).then((response) => response.blob()).then(showPreview).catch(failure);
+  }
+  refresh();
 }
 
 async function tabDocumentos(patient) {
@@ -1915,13 +2509,15 @@ const ROLE_NOTES = {
   clinical: "Esta parte de la ficha es solo para el rol de psicóloga: por ley, ni la administración del consultorio la ve.",
   informe: "El informe del mes es para la dueña del consultorio. Pide a la administración el rol «dueña» si lo necesitas.",
   campanas: "Las campañas son para el rol de marketing o la dueña del consultorio.",
+  grupos: "Los grupos de publicidad son para el rol de marketing o la dueña del consultorio.",
   publicaciones: "Las publicaciones son para el rol de marketing o la dueña del consultorio.",
   talleres: "Los talleres son para la dueña y para quien atiende pacientes: la lista de inscritos dice quién es paciente del consultorio.",
   marketing: "Esta sección es para el rol de marketing o la dueña del consultorio.",
+  encuestas: "Las encuestas del servicio y sus alertas son para la dueña o la administración del consultorio.",
 };
 
 // --- MARKETING: workshops first (RF-MKT-05); campaigns, calendar and report follow -----------
-const MKT_TABS = [["informe", "Informe del mes"], ["talleres", "Talleres"], ["campanas", "Campañas"], ["publicaciones", "Publicaciones"]];
+const MKT_TABS = [["informe", "Informe del mes"], ["talleres", "Talleres"], ["grupos", "Grupos"], ["campanas", "Campañas"], ["publicaciones", "Publicaciones"], ["planes", "Planes y diseños"], ["identidad", "Identidad visual"], ["encuestas", "Encuestas del servicio"]];
 
 VIEWS.marketing = async (main, tab, arg = "") => {
   tab = tab || (state.session.roles.some((role) => ["admin", "owner"].includes(role))
@@ -1934,15 +2530,203 @@ VIEWS.marketing = async (main, tab, arg = "") => {
     }));
   let body;
   try {
-    body = await ({ talleres: workshopsTab, informe: reportTab, campanas: campaignsTab, publicaciones: publicationsTab }[tab] || reportTab)(arg);
+    body = await ({ talleres: workshopsTab, informe: reportTab, grupos: marketingGroupsTab, campanas: campaignsTab, publicaciones: publicationsTab, planes: marketingPlansTab, identidad: brandingTab, encuestas: serviceSurveysTab }[tab] || reportTab)(arg);
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 403) throw err;
     body = [empty(ROLE_NOTES[tab] || ROLE_NOTES.marketing)];
   }
   main.replaceChildren(
-    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú.", connectSocialButton()),
+    page("Marketing", "Nunca se usan datos clínicos para publicidad. Cada envío lo apruebas tú.", marketingDesignerButton(), connectSocialButton()),
     tabs, ...body);
 };
+
+function currentMarketingDraft() {
+  const saved = state.marketingDraft;
+  return saved && saved.session === state.session ? saved.design : null;
+}
+
+async function brandingTab() {
+  let data = await api("/v1/marketing/brand");
+  const name = el("input", { required: true, maxlength: "80", value: data.brand.name });
+  const services = el("textarea", { rows: "4", text: data.brand.services.join("\n") });
+  const colors = ["background", "accent", "text"].map((k) => el("input", { type: "color", value: data.brand[k] }));
+  const logo = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp" });
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { type: "submit", class: "btn primary", text: "Guardar identidad" });
+  const form = el("form", { class: "stack" },
+    el("label", { class: "field" }, "Nombre del consultorio para publicidad", name),
+    el("label", { class: "field" }, "Servicios públicos (uno por línea)", services),
+    el("div", { class: "fields" }, ...colors.map((c, i) => el("label", { class: "field" }, ["Fondo", "Color principal", "Texto"][i], c))),
+    el("label", { class: "field" }, "Logotipo PNG, JPEG o WebP (máximo 2 MB)", logo),
+    el("p", { class: "muted", text: data.logo_sha256 ? "Ya hay un logotipo guardado. Solo selecciona un archivo para reemplazarlo." : "Todavía no hay logotipo." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      data = await api("/v1/marketing/brand", { method: "PUT", body: { version: data.version, brand: { name: name.value.trim(), services: services.value.split("\n").map((s) => s.trim()).filter(Boolean), background: colors[0].value, accent: colors[1].value, text: colors[2].value } } });
+      if (logo.files[0]) {
+        const file = new FormData(); file.append("file", logo.files[0]);
+        data = await api(`/v1/marketing/brand/logo?version=${data.version}`, { method: "PUT", body: file });
+        logo.value = "";
+      }
+      for (const field of form.querySelectorAll("textarea")) delete field.dataset.dirty;
+      say(status, "Identidad guardada. Los nuevos planes usarán estos servicios, colores y logotipo.", "done");
+    } catch (err) { say(status, humanError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  return [card("Identidad visual del consultorio", "", el("p", { class: "muted", text: "Solo información pública; no escribas datos de pacientes." }), form), link("#marketing/planes", "Preparar un plan con esta identidad", "btn")];
+}
+
+async function marketingPlansTab() {
+  const [flows, accounts] = await Promise.all([api("/v1/marketing/workflows"), api("/v1/social/accounts")]);
+  const objective = el("textarea", { rows: "3", required: true, maxlength: "1000" });
+  const audience = el("input", { value: "Público general", required: true, maxlength: "160" });
+  const first = el("input", { type: "date", required: true, value: new Date().toISOString().slice(0, 10) });
+  const network = el("select", {}, ...["instagram", "facebook", "whatsapp", "app"].map((n) => el("option", { value: n, text: NETWORKS[n]?.[0] || n })));
+  const status = el("p", { class: "status", role: "status" });
+  const generate = el("button", { type: "submit", class: "btn primary", text: "Preparar plan y contenido" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Objetivo público de la campaña", objective), el("label", { class: "field" }, "Público al que te diriges", audience), el("div", { class: "fields" }, el("label", { class: "field" }, "Inicio del calendario", first), el("label", { class: "field" }, "Canal del plan", network)), generate, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); generate.disabled = true; say(status, "Preparando el plan con los agentes del catálogo…");
+    try {
+      await api("/v1/marketing/workflows", { method: "POST", body: { first: first.value, brief: { objective: objective.value, audience: audience.value, network: network.value, tone: "cercano" } } });
+      route();
+    } catch (err) { say(status, humanError(err), "error"); generate.disabled = false; }
+  });
+  const rows = flows.map((flow) => {
+    const payload = flow.payload;
+    const result = el("p", { class: "status", role: "status" });
+    const files = flow.resources.map((r) => el("div", { class: "list-item" }, el("span", { text: `${r.format} · ${r.publication.status === "pending_approval" ? "Pendiente de aprobación" : r.publication.status}` }), action("Ver diseño", async () => {
+      try {
+        const blob = await (await request(`/v1/marketing/creative/${r.publication_id}`)).blob();
+        const url = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+        const image = el("img", { src: url, alt: "Diseño generado con la identidad del consultorio", class: "test-image-preview" });
+        dialog("Revisar diseño", image, action("Descargar imagen", () => download(`/v1/marketing/creative/${r.publication_id}`, `publicidad-${r.format}.jpg`)));
+      } catch (err) { say(result, humanError(err), "error"); }
+    })));
+    const analysis = action("Ver seguimiento del plan", async () => {
+      try {
+        const a = await api(`/v1/marketing/workflows/${flow.id}/analysis`);
+        dialog("Seguimiento verificable", el("p", { text: `Diseños guardados: ${a.generated}. Pendientes: ${a.pending_approval}. Publicaciones registradas: ${a.published}.` }), el("p", { text: `Métricas de las redes pendientes: ${a.external_metrics.reason}` }), ...a.recommendations.map((r) => el("p", { text: r })));
+      } catch (err) { say(result, humanError(err), "error"); }
+    });
+    const improve = action("Pedir propuesta de mejora", async () => {
+      improve.disabled = true;
+      try {
+        const improved = await api(`/v1/marketing/workflows/${flow.id}/optimize`, { method: "POST", body: { revision: flow.revision } });
+        dialog("Propuesta de mejora para revisar", ...improved.payload.optimization.proposal.recommendations.map((r) => el("p", { text: r })), el("p", { class: "muted", text: "Se basa en el estado registrado de las publicaciones. No hay cifras verificadas de alcance o interacción de las redes." }));
+      } catch (err) { say(result, humanError(err), "error"); }
+      finally { improve.disabled = false; }
+    });
+    return card(payload.draft?.campaign_name || "Plan sin completar", "",
+      el("p", { class: payload.simulation ? "notice" : "muted", text: payload.simulation ? "Contenido de ejemplo simulado; los archivos generados sí se guardan." : "Propuesta del agente pendiente de revisión humana." }),
+      payload.plan ? el("p", { text: payload.plan.strategy }) : null,
+      payload.plan ? el("ul", {}, ...payload.plan.calendar.map((c) => el("li", { text: `${c.day} · ${c.network} · ${c.goal}` }))) : null,
+      el("p", { class: "muted", text: `Estado: ${flow.status}. Referencia del plan: ${flow.id}.` }),
+      ["awaiting_review", "render_failed", "rendering"].includes(flow.status) ? action("Revisar plan y diseños", () => marketingReviewDialog(flow, accounts)) : null,
+      payload.draft ? action("Usar mensaje en campaña", () => { state.marketingDraft = { session: state.session, design: { draft: payload.draft } }; location.hash = "#marketing/campanas"; }) : null,
+      ...files, flow.resources.length ? link("#marketing/publicaciones", "Aprobar o programar publicaciones", "btn") : null, analysis, flow.status === "ready" ? improve : null, result);
+  });
+  return [card("Nuevo plan del agente de marketing", "", el("p", { class: "muted", text: "Reutiliza los especialistas de contenido y diseño del catálogo. Revisa siempre sus propuestas." }), form), ...rows];
+}
+
+function marketingReviewDialog(flow, accounts) {
+  const draft = flow.payload.draft;
+  const title = el("input", { value: draft.title, required: true, maxlength: "80" });
+  const points = el("textarea", { rows: "3", text: draft.points.join("\n") });
+  const caption = el("textarea", { rows: "4", text: draft.caption });
+  const cta = el("input", { value: draft.cta, maxlength: "60", required: true });
+  const message = el("textarea", { rows: "3", text: draft.campaign_message });
+  const strategy = el("textarea", { rows: "3", text: flow.payload.plan.strategy });
+  const dates = flow.payload.plan.calendar.map((item) => ({ item, input: el("input", { type: "date", value: item.day }) }));
+  const account = el("select", { "aria-label": "Cuenta para los diseños" }, ...accounts.filter((a) => a.active && ["instagram", "facebook"].includes(a.network)).map((a) => el("option", { value: a.account_id, text: `${a.network} · ${a.handle}` })));
+  const formats = ["feed", "story", "square"].map((format) => ({ format, input: el("input", { type: "checkbox", checked: true }) }));
+  const status = el("p", { class: "status", role: "status" });
+  const persist = async () => {
+    flow = await api(`/v1/marketing/workflows/${flow.id}`, { method: "PUT", body: { revision: flow.revision, draft: { ...draft, title: title.value, points: points.value.split("\n").map((p) => p.trim()).filter(Boolean), caption: caption.value, cta: cta.value, campaign_message: message.value }, plan: { ...flow.payload.plan, strategy: strategy.value, calendar: dates.map(({ item, input }) => ({ ...item, day: input.value })) } } });
+  };
+  const save = action("Guardar revisión", async () => {
+    save.disabled = true;
+    try { await persist(); say(status, "Revisión guardada. Todavía no se publicó nada.", "done"); }
+    catch (err) { say(status, humanError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  const render = action("Guardar y generar diseños", async () => {
+    render.disabled = true;
+    try {
+      if (flow.status === "awaiting_review") await persist();
+      await api(`/v1/marketing/workflows/${flow.id}/render`, { method: "POST", body: { revision: flow.revision, account_id: account.value, formats: formats.filter((f) => f.input.checked).map((f) => f.format) } });
+      $("#dialog").close(); route();
+    } catch (err) { say(status, humanError(err), "error"); render.disabled = false; }
+  });
+  save.disabled = flow.status !== "awaiting_review";
+  render.disabled = !account.options.length;
+  dialog("Revisar plan y preparar publicidad", el("div", { class: "stack" },
+    el("label", { class: "field" }, "Estrategia", strategy), el("label", { class: "field" }, "Título de la publicidad", title),
+    el("label", { class: "field" }, "Ideas de la imagen (una por línea)", points), el("label", { class: "field" }, "Llamada a la acción", cta), el("label", { class: "field" }, "Texto de publicación", caption), el("label", { class: "field" }, "Mensaje para campaña", message),
+    ...dates.map(({ input }, i) => el("label", { class: "field" }, `Fecha editorial ${i + 1}`, input)),
+    el("p", { class: "muted", text: flow.payload.visual.direction }), save,
+    el("label", { class: "field" }, "Cuenta para los diseños", account), el("div", { class: "row" }, ...formats.map((f) => el("label", { class: "check" }, f.input, f.format))), render,
+    el("p", { class: "muted", text: "Generar guarda imágenes pendientes de aprobación. Para enviarlas, después se necesita aprobarlas en Publicaciones." }), status));
+}
+
+function marketingDesignerButton() {
+  const button = el("button", { type: "button", class: "btn", text: "Agente de marketing" });
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try { await openMarketingDesigner(); }
+    catch (err) { dialog("Agente de marketing", empty(groupError(err))); }
+    finally { button.disabled = false; }
+  });
+  return button;
+}
+
+async function openMarketingDesigner() {
+  const config = await api("/v1/marketing/designer");
+  if (!config.available) return dialog("Agente de marketing", empty("No hay un agente de marketing cargado. La administración debe revisar el catálogo de agentes."));
+  const objective = el("textarea", { rows: "3", maxlength: "1000", required: true, placeholder: "Ej.: Dar a conocer el consultorio e invitar a conocer la app" });
+  const audience = el("input", { type: "text", maxlength: "160", value: "Personas interesadas en las novedades del consultorio" });
+  const network = el("select", { "aria-label": "Canal del borrador" }, ...["instagram", "facebook", "whatsapp", "app"].map((key) => el("option", { value: key, text: NETWORKS[key][0] })));
+  const tone = el("select", { "aria-label": "Tono" }, ...["cercano", "informativo", "formal"].map((key) => el("option", { value: key, text: key })));
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const output = el("div", { class: "stack", "aria-live": "polite" });
+  const generate = el("button", { type: "submit", class: "btn primary", text: "Diseñar campaña y publicidad" });
+  const form = el("form", { class: "stack" },
+    el("p", { class: "muted", text: `Agente: ${config.agent_name}${config.simulation ? " · Demostración con respuesta simulada" : ""}` }),
+    el("label", { class: "field" }, "Qué quieres promocionar", objective),
+    el("label", { class: "field" }, "Público general al que te diriges", audience),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Canal del borrador", network), el("label", { class: "field" }, "Tono", tone)),
+    el("p", { class: "muted", text: "Escribe información pública. No incluyas nombres de pacientes ni datos de sus fichas o tests. El agente recibe este encargo y las reglas de publicidad del consultorio." }),
+    generate, status, output);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); generate.disabled = true;
+    say(status, "El agente está preparando el borrador…"); output.replaceChildren();
+    try {
+      const design = await api("/v1/marketing/design", { method: "POST", body: {
+        objective: objective.value.trim(), audience: audience.value.trim(), network: network.value, tone: tone.value,
+      } });
+      const draft = design.draft;
+      const use = (text, tab) => {
+        const button = el("button", { type: "button", class: "btn", text });
+        button.addEventListener("click", () => {
+          state.marketingDraft = { session: state.session, design };
+          $("#dialog").close();
+          if (location.hash === `#marketing/${tab}`) route(); else location.hash = `#marketing/${tab}`;
+        });
+        return button;
+      };
+      output.replaceChildren(
+        el("h3", { text: draft.campaign_name }),
+        el("p", { text: "Mensaje para la campaña" }), el("p", { class: "pre", text: draft.campaign_message }),
+        el("h3", { text: draft.title }), el("ul", {}, ...draft.points.map((point) => el("li", { text: point }))),
+        el("p", { class: "pre", text: draft.caption }), el("p", { text: draft.cta }),
+        el("p", { class: "muted", text: `Propuesta visual: ${draft.visual_direction}` }),
+        el("div", { class: "row" }, use("Usar en campaña", "campanas"), use("Usar en publicación", "publicaciones")));
+      say(status, design.simulation ? "Ejemplo simulado: revisa y edita antes de usar." : "Borrador preparado. Revisa el contenido antes de usarlo.", "done");
+    } catch (err) { say(status, groupError(err), "error"); }
+    finally { generate.disabled = false; }
+  });
+  dialog("Diseñar con el agente de marketing", form);
+}
 
 // The monthly report (RF-MKT-06): evaluate, analyse, set SMART goals, monitor, report.
 async function reportTab(month) {
@@ -2052,7 +2836,7 @@ const CAMPAIGN_STATES = {
 };
 
 async function campaignsTab() {
-  const list = await api("/v1/campaigns");
+  const [list, groups] = await Promise.all([api("/v1/campaigns"), api("/v1/marketing/groups")]);
   const rows = [...list].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map((c) => {
     const [label, cls] = CAMPAIGN_STATES[c.status] || [c.status, "neutral"];
     const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
@@ -2077,30 +2861,46 @@ async function campaignsTab() {
     return el("article", { class: "card" },
       el("div", { class: "head" },
         el("div", {}, el("strong", { text: c.name }),
-          el("p", { class: "muted", text: `${KIND_NAMES[c.kind] || c.kind} · ${SEGMENT_NAMES[c.segment] || c.segment} · grupo de control ${c.holdout_pct}\u00a0%${c.mode === "simulation" ? " · PRUEBA (no envía nada)" : ""}` })),
+          el("p", { class: "muted", text: `${KIND_NAMES[c.kind] || c.kind} · ${c.segment === "manual_groups" ? (c.audience_groups || []).map((g) => g.name).join(", ") : SEGMENT_NAMES[c.segment] || c.segment} · grupo de control ${c.holdout_pct}\u00a0%${c.mode === "simulation" ? " · PRUEBA (no envía nada)" : ""}` })),
         el("span", { class: `chip ${cls}`, text: label })),
       el("p", { class: "pre muted", text: c.template }),
+      c.segment === "manual_groups" ? el("p", { class: "muted", text: `Personas seleccionadas al crearla: ${c.population?.segment ?? 0}. Con consentimiento y canal disponible: ${c.population?.eligible ?? 0}.` }) : null,
       actions.length ? el("div", { class: "row tight" }, ...actions) : null, status);
   });
   return [
-    card("Nueva campaña", "", campaignForm()),
+    card("Nueva campaña", "", campaignForm(groups)),
     ...(rows.length ? rows : [empty("Aún no hay campañas.")]),
   ];
 }
 
-function campaignForm() {
+function campaignForm(groups = []) {
+  const design = currentMarketingDraft();
   const name = el("input", { type: "text", maxlength: "200", required: true, placeholder: "Ej.: Invitación al taller de sueño" });
   const kind = el("select", {}, ...Object.entries(KIND_NAMES).map(([k, v]) => el("option", { value: k, text: v })));
-  const segment = el("select", {}, ...Object.entries(SEGMENT_NAMES).map(([k, v]) => el("option", { value: k, text: v })));
+  const segment = el("select", { "aria-label": "A quiénes" }, el("option", { value: "manual_groups", text: "Mis grupos de publicidad" }),
+    ...Object.entries(SEGMENT_NAMES).map(([k, v]) => el("option", { value: k, text: v })));
+  const groupBoxes = groups.map((g) => {
+    const box = el("input", { type: "checkbox", value: g.id });
+    return { box, label: el("label", { class: "check" }, box, `${g.name} (${g.member_count})`) };
+  });
+  const selectedGroups = el("fieldset", { class: "stack" }, el("legend", { text: "Grupos destinatarios" }),
+    ...(groupBoxes.length ? groupBoxes.map((g) => g.label) : [el("p", {}, "Aún no has creado grupos. ", el("a", { href: "#marketing/grupos", text: "Crear un grupo" }))]),
+    el("p", { class: "muted", text: "Este mensaje es para los grupos marcados. Cada persona pertenece a un solo grupo. Para otro mensaje, crea otra campaña." }));
+  if (!groups.length) segment.value = Object.keys(SEGMENT_NAMES)[0];
+  selectedGroups.hidden = segment.value !== "manual_groups";
+  segment.addEventListener("change", () => { selectedGroups.hidden = segment.value !== "manual_groups"; });
   const text = el("textarea", { rows: "4", maxlength: "1000", required: true });
   text.value = "Hola {first_name}, en el consultorio preparamos un taller para dormir mejor. Si te interesa, inscríbete desde la app. Responde STOP para no recibir más mensajes.";
+  if (design) { name.value = design.draft.campaign_name; text.value = design.draft.campaign_message; }
   const holdout = el("input", { type: "number", min: "0", max: "50", value: "20" });
   const mode = el("select", {}, el("option", { value: "simulation", text: "Prueba: revisa todo pero no envía nada" }), el("option", { value: "live", text: "Real: se envía al aprobarla y enviarla" }));
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const save = el("button", { class: "btn primary", type: "submit", text: "Crear campaña" });
   const form = el("form", { class: "stack", novalidate: true },
+    design ? el("p", { class: "notice", text: `Borrador de ${design.agent_name}${design.simulation ? " (simulado)" : ""}. Puedes editarlo y elegir sus grupos; todavía no se ha creado ni enviado la campaña.` }) : null,
     el("label", { class: "field" }, "Nombre", name),
     el("div", { class: "fields" }, el("label", { class: "field" }, "Objetivo", kind), el("label", { class: "field" }, "A quiénes", segment)),
+    selectedGroups,
     el("label", { class: "field" }, "Mensaje ({first_name} se reemplaza por el nombre)", text),
     el("div", { class: "fields" }, el("label", { class: "field" }, "Grupo de control (%)", holdout), el("label", { class: "field" }, "Modo", mode)),
     save, status,
@@ -2108,10 +2908,12 @@ function campaignForm() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!name.value.trim() || !text.value.trim()) return say(status, "Escribe el nombre y el mensaje.", "error");
+    const groupIds = segment.value === "manual_groups" ? groupBoxes.filter((g) => g.box.checked).map((g) => g.box.value) : [];
+    if (segment.value === "manual_groups" && !groupIds.length) return say(status, "Marca al menos un grupo destinatario.", "error");
     save.disabled = true;
     try {
       await api("/v1/campaigns", { method: "POST", body: { name: name.value.trim(), kind: kind.value, segment: segment.value,
-        template: text.value.trim(), holdout_pct: Number(holdout.value) || 0, mode: mode.value } });
+        template: text.value.trim(), holdout_pct: Number(holdout.value) || 0, mode: mode.value, group_ids: groupIds } });
       route();
     } catch (err) {
       say(status, /STOP|BAJA|opt.?out/i.test(err.detail || "") ? "El mensaje debe decir cómo dejar de recibirlos (por ejemplo: «Responde STOP para no recibir más mensajes»)."
@@ -2120,6 +2922,104 @@ function campaignForm() {
     }
   });
   return form;
+}
+
+function groupError(err) {
+  return [409, 422].includes(err.status) && typeof err.detail === "string" ? err.detail : humanError(err);
+}
+
+async function marketingGroupsTab() {
+  const groups = await api("/v1/marketing/groups");
+  const name = el("input", { type: "text", maxlength: "100", required: true, placeholder: "Ej.: Taller de noviembre" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const create = el("button", { type: "submit", class: "btn primary", text: "Crear grupo" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Nombre del grupo", name), create, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!name.value.trim()) return say(status, "Escribe el nombre del grupo.", "error");
+    create.disabled = true;
+    try {
+      const group = await api("/v1/marketing/groups", { method: "POST", body: { name: name.value.trim(), member_ids: [] } });
+      await route();
+      await openMarketingGroup(group.id);
+    } catch (err) { say(status, groupError(err), "error"); create.disabled = false; }
+  });
+  const rows = groups.map((g) => {
+    const manage = el("button", { type: "button", class: "btn small", text: "Elegir personas" });
+    manage.addEventListener("click", () => openMarketingGroup(g.id).catch((err) => say(status, groupError(err), "error")));
+    const remove = el("button", { type: "button", class: "btn small danger", text: "Eliminar grupo" });
+    remove.addEventListener("click", async () => {
+      if (!sure(remove, "Sí, eliminar grupo")) return;
+      remove.disabled = true;
+      try { await api(`/v1/marketing/groups/${encodeURIComponent(g.id)}?version=${g.version}`, { method: "DELETE" }); route(); }
+      catch (err) { say(status, groupError(err), "error"); remove.disabled = false; }
+    });
+    return card(g.name, "", el("p", { class: "muted", text: `${g.member_count} personas` }), el("div", { class: "row tight" }, manage, remove));
+  });
+  return [
+    card("Grupos de publicidad", "", el("p", { text: "Marca las personas que pertenecen a cada grupo. Cada persona puede estar en un solo grupo. Usa intereses o preferencias, sin datos clínicos." }),
+      el("p", { class: "muted", text: "Agregar a un grupo no otorga consentimiento ni envía publicidad. Las campañas conservan su lista al crearlas; para cambiarla, cancela la campaña y crea otra. Eliminar un grupo no elimina personas." })),
+    card("Nuevo grupo", "", form),
+    ...rows, ...(rows.length ? [] : [empty("Aún no hay grupos de publicidad.")]),
+    el("a", { class: "btn", href: "#marketing/campanas", text: "Preparar publicidad para un grupo" }),
+  ];
+}
+
+async function openMarketingGroup(groupId) {
+  const [group, allGroups] = await Promise.all([
+    api(`/v1/marketing/groups/${encodeURIComponent(groupId)}`), api("/v1/marketing/groups"),
+  ]);
+  const selected = new Set(group.member_ids);
+  const name = el("input", { type: "text", maxlength: "100", required: true, value: group.name });
+  const search = el("input", { type: "search", placeholder: "Buscar por nombre" });
+  const find = el("button", { type: "submit", class: "btn small", text: "Buscar personas" });
+  const searchForm = el("form", { class: "row" }, el("label", { class: "field" }, "Buscar personas por nombre", search), find);
+  const list = el("div", { class: "stack" });
+  const count = el("p", { role: "status", "aria-live": "polite" });
+  const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
+  const more = el("button", { type: "button", class: "btn small", text: "Ver más personas", hidden: true });
+  const save = el("button", { type: "button", class: "btn primary", text: "Guardar grupo y personas" });
+  const refreshCount = () => { count.textContent = `${selected.size} personas marcadas en este grupo.`; };
+  let offset = 0, generation = 0, query = "";
+  const load = async (reset = false) => {
+    const requestId = ++generation;
+    if (reset) { offset = 0; query = search.value.trim(); }
+    more.disabled = true; find.disabled = true;
+    try {
+      const result = await api(`/v1/marketing/contacts?search=${encodeURIComponent(query)}&offset=${offset}&limit=100`);
+      if (requestId !== generation) return;
+      if (reset) list.replaceChildren();
+      for (const person of result.contacts) {
+        const otherNames = allGroups.filter((g) => g.id !== groupId && person.group_ids.includes(g.id)).map((g) => g.name);
+        const box = el("input", { type: "checkbox", checked: selected.has(person.id), disabled: otherNames.length > 0, "aria-label": person.display_name });
+        box.addEventListener("change", () => { if (box.checked) selected.add(person.id); else selected.delete(person.id); refreshCount(); });
+        list.append(el("label", { class: "check" }, box, el("span", {}, person.display_name,
+          el("small", { class: "muted", text: `${otherNames.length ? ` · En ${otherNames.join(", ")}; quítala de ese grupo antes de moverla.` : ""}${person.marketing_consent ? " · Aceptó novedades." : " · Sin consentimiento: no recibirá publicidad."}` }))));
+      }
+      offset += result.contacts.length;
+      more.hidden = offset >= result.total;
+      if (!result.total) list.append(empty("No hay personas que coincidan."));
+      say(status, `${offset} de ${result.total} personas mostradas.`);
+    } catch (err) { say(status, groupError(err), "error"); }
+    finally { if (requestId === generation) { more.disabled = false; find.disabled = false; } }
+  };
+  searchForm.addEventListener("submit", (event) => { event.preventDefault(); load(true); });
+  more.addEventListener("click", () => load());
+  save.addEventListener("click", async () => {
+    if (!name.value.trim()) return say(status, "Escribe el nombre del grupo.", "error");
+    save.disabled = true;
+    try {
+      await api(`/v1/marketing/groups/${encodeURIComponent(groupId)}`, { method: "PUT", body: {
+        name: name.value.trim(), member_ids: [...selected], version: group.version,
+      } });
+      $("#dialog").close(); route();
+    } catch (err) { say(status, groupError(err), "error"); save.disabled = false; }
+  });
+  dialog("Elegir personas del grupo", el("label", { class: "field" }, "Nombre del grupo", name),
+    el("p", { class: "muted", text: "Marca para agregar y desmarca para quitar. Esto no envía mensajes ni cambia el consentimiento." }),
+    searchForm, count, list, more, save, status);
+  refreshCount();
+  await load(true);
 }
 
 async function openResults(c) {
@@ -2203,14 +3103,22 @@ async function publicationsTab() {
 }
 
 function publicationForm(accounts) {
+  const design = currentMarketingDraft();
   const account = el("select", { "aria-label": "Cuenta" }, ...accounts.map((a) => el("option", { value: a.account_id, text: `${(NETWORKS[a.network] || [a.network])[0]} · ${a.handle}` })));
   const title = el("input", { type: "text", maxlength: "80", required: true, placeholder: "Ej.: Dormir bien también es salud mental" });
   const points = el("textarea", { rows: "3", required: true, placeholder: "Una idea por línea (2 o 3)" });
   const cta = el("input", { type: "text", maxlength: "60", value: "Agenda tu cita en la app" });
   const caption = el("textarea", { rows: "3", maxlength: "2200", required: true });
+  if (design) {
+    title.value = design.draft.title; points.value = design.draft.points.join("\n");
+    cta.value = design.draft.cta; caption.value = design.draft.caption;
+    const match = accounts.find((a) => a.network === design.network);
+    if (match) account.value = match.account_id;
+  }
   const status = el("p", { class: "status", role: "status", "aria-live": "polite" });
   const save = el("button", { class: "btn primary", type: "submit", text: "Crear la imagen" });
   const form = el("form", { class: "stack", novalidate: true },
+    design ? el("p", { class: "notice", text: `Borrador de ${design.agent_name}${design.simulation ? " (simulado)" : ""}. Revisa los textos antes de crear la imagen.` }) : null,
     el("label", { class: "field" }, "Cuenta", account),
     el("label", { class: "field" }, "Título de la imagen", title),
     el("label", { class: "field" }, "Ideas", points),
@@ -2553,3 +3461,519 @@ document.addEventListener("DOMContentLoaded", () => {
     signOut();
   }
 });
+
+// Billing: the clinic receives appointments; the platform receives subscriptions.
+const BILLING_STATES = { pending: "Pendiente", transfer_review: "Transferencia por verificar", paid: "Pagado", rejected: "Rechazado", processing: "Procesando", uncertain: "En comprobación", cancelled: "Cancelado" };
+const billingMoney = (cents) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(cents / 100);
+function billingError(err) {
+  if (err instanceof ApiError && err.status === 409) {
+    if (/not enabled/.test(err.detail)) return "Los cobros todavía no están activados. Revisa Cobros y suscripción en Ajustes.";
+    if (/not configured/.test(err.detail)) return "Falta configurar la cuenta receptora o el precio. Revisa Cobros y suscripción en Ajustes.";
+    if (/already used|conflicted/.test(err.detail)) return "Ese movimiento puede estar aplicado a otro pago. Comprueba el registro del banco antes de continuar.";
+    if (/reviewer|operator/.test(err.detail)) return "Este pago debe verificarlo quien recibe el dinero.";
+    if (/being reviewed/.test(err.detail)) return "Esta transferencia ya está pendiente de revisión.";
+    const followup = /WhatsApp follow-up blocked: ([a-z_]+)/.exec(err.detail);
+    if (followup) return BILLING_FOLLOWUP_REASONS[followup[1]] || "Comprueba el seguimiento antes de contactar.";
+    if (/contact changed/.test(err.detail)) return "Cambió el contacto. Descarta el borrador anterior desde Gestionar seguimiento.";
+    if (/automatic verification requires/.test(err.detail)) return "Primero prepara el pago con la pasarela. La transferencia directa al banco se verifica manualmente.";
+    if (/manual draft/.test(err.detail)) return "Descarta el borrador manual antes de activar los recordatorios automáticos.";
+    if (/due date/.test(err.detail)) return "Indica el vencimiento del pago para programar el primer recordatorio.";
+    if (/automatic reminders|delivery reconciliation/.test(err.detail)) return "El seguimiento automático está activo o tiene un envío por conciliar. Revisa su estado antes de volver a enviar.";
+    if (/WhatsApp|utility template/.test(err.detail)) return "Conecta la cuenta de WhatsApp del remitente y configura su plantilla de utilidad aprobada.";
+    return "No se pudo cambiar el pago. Revisa su estado y vuelve a cargar.";
+  }
+  return humanError(err);
+}
+
+function billingInvoiceDialog(invoice, { review = false, platform = false } = {}) {
+  const status = el("p", { class: "status", role: "status" });
+  const parts = [el("p", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+    el("p", { text: invoice.kind === "subscription" ? "Este pago corresponde al uso de Tatos por todo el consultorio." : "Este pago corresponde a una cita del consultorio." }),
+    el("p", { text: invoice.bank_instructions }),
+    el("p", { class: "muted", text: `Referencia de la orden: ${invoice.invoice_id}` })];
+  if (invoice.transfer_reference) parts.push(el("p", { text: `Referencia informada: ${invoice.transfer_reference}` }));
+  if (invoice.review_note) parts.push(el("p", { text: `Resultado de la revisión: ${invoice.review_note}` }));
+  parts.push(el("p", { text: `Confirmado: ${billingMoney(invoice.paid_cents || 0)} · Saldo: ${billingMoney(invoice.balance_cents ?? invoice.amount_cents)}` }));
+  if (invoice.kind === "appointment" || platform) parts.push(action("Saldo, vencimiento y abonos", async () => {
+    try { await billingLedgerDialog(invoice, platform); }
+    catch (err) { say(status, billingError(err), "error"); }
+  }));
+  if (invoice.kind === "appointment" || platform) {
+    const history = el("button", { type: "button", class: "btn", text: "Ver seguimiento del pago" });
+    history.addEventListener("click", async () => {
+      history.disabled = true;
+      try { const row = await api(billingFollowupPath(invoice, platform) + "/followup"); billingFollowupDialog(row, platform, row.can_record_permission); }
+      catch (err) { say(status, billingError(err), "error"); history.disabled = false; }
+    });
+    parts.push(history);
+  }
+  if (invoice.kind === "appointment" && !invoice.paid_cents && ["pending", "processing", "uncertain"].includes(invoice.state)) {
+    const pay = el("button", { class: "btn", type: "button", text: invoice.state === "pending" ? "Pagar con tarjeta" : "Comprobar pago" });
+    pay.addEventListener("click", async () => {
+      pay.disabled = true;
+      try {
+        const suffix = invoice.state === "pending" ? "checkout" : "reconcile";
+        const data = await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/${suffix}`, { method: "POST" });
+        if (data.checkout_url) {
+          pay.after(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir pago seguro en dLocal Go" }));
+          say(status, data.environment === "sandbox" ? "Pago de prueba: no se mueve dinero. Después vuelve a Tatos y comprueba el pago." : "Completa el pago y vuelve a Tatos para comprobarlo.");
+          invoice.state = "processing"; pay.textContent = "Comprobar pago";
+        } else { $("#dialog").close(); route(); }
+      } catch (err) { say(status, billingError(err), "error"); }
+      finally { pay.disabled = false; }
+    });
+    parts.push(pay);
+  }
+  if (invoice.state === "pending" && invoice.method === "transfer" && invoice.bank_instructions && isAdmin()) {
+    const reference = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+    const send = el("button", { class: "btn primary", type: "submit", text: "Informar transferencia" });
+    const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Referencia del movimiento bancario", reference),
+      el("p", { class: "muted", text: "Informar la transferencia deja el pago pendiente. La persona que recibe el dinero debe verificar el ingreso." }), send);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); send.disabled = true;
+      try {
+        await api(`/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/transfer`, { method: "POST", body: { reference: reference.value.trim() } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); send.disabled = false; }
+    });
+    parts.push(form);
+  }
+  if (review && invoice.state === "transfer_review" && isAdmin()) {
+    const bankId = el("input", { type: "text", minlength: "3", maxlength: "120", autocomplete: "off" });
+    const note = el("textarea", { required: true, minlength: "5", maxlength: "200" });
+    const checked = el("input", { type: "checkbox" });
+    const approve = el("button", { class: "btn primary", type: "button", text: "Confirmar ingreso" });
+    const reject = el("button", { class: "btn", type: "button", text: "Solicitar corrección" });
+    const form = el("div", { class: "stack" }, el("label", { class: "field" }, "Identificador del ingreso verificado en el banco", bankId),
+      el("label", { class: "field" }, "Nota de verificación o motivo de corrección", note),
+      el("label", { class: "check" }, checked, "Comprobé que el dinero llegó a la cuenta receptora"),
+      el("div", { class: "row tight" }, approve, reject));
+    const verify = async (approved) => {
+      if (note.value.trim().length < 5 || (approved && (!checked.checked || bankId.value.trim().length < 3))) {
+        say(status, "Escribe la nota. Para confirmar, verifica el ingreso y escribe su identificador bancario.", "error"); return;
+      }
+      approve.disabled = reject.disabled = true;
+      const path = platform ? `/v1/billing/platform/${encodeURIComponent(invoice.payer_tenant)}/orders/${encodeURIComponent(invoice.invoice_id)}/review`
+        : `/v1/billing/orders/${encodeURIComponent(invoice.invoice_id)}/review`;
+      try {
+        await api(path, { method: "POST", body: { approved, note: note.value.trim(), bank_transaction_id: approved ? bankId.value.trim() : null } });
+        $("#dialog").close(); route();
+      } catch (err) { say(status, billingError(err), "error"); approve.disabled = reject.disabled = false; }
+    };
+    approve.addEventListener("click", () => verify(true));
+    reject.addEventListener("click", () => verify(false));
+    parts.push(form);
+  }
+  parts.push(status);
+  dialog("Detalle del pago", ...parts);
+}
+
+function billingRows(invoices, options = {}) {
+  if (!invoices.length) return empty("Todavía no hay órdenes de pago.");
+  return el("div", { class: "stack" }, ...invoices.map((invoice) => {
+    const open = el("button", { class: "btn small", type: "button", text: options.review && invoice.state === "transfer_review" ? "Revisar transferencia" : "Ver pago" });
+    open.addEventListener("click", () => billingInvoiceDialog(invoice, options));
+    return el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${billingMoney(invoice.amount_cents)} · ${BILLING_STATES[invoice.state] || invoice.state}` }),
+      el("p", { class: "muted", text: invoice.payer_tenant ? `Consultorio: ${invoice.payer_tenant}` : `Referencia: ${invoice.resource_id}` })), open);
+  }));
+}
+
+async function billingLedgerDialog(invoice, platform = false) {
+  const base = billingFollowupPath(invoice, platform);
+  let statement = await api(base + "/statement");
+  const status = el("p", { class: "status", role: "status" });
+  const due = el("input", { type: "datetime-local", value: billingLocalInput(statement.due_at) });
+  const saveDue = action("Guardar vencimiento", async () => {
+    saveDue.disabled = true;
+    try {
+      statement = await api(base + "/deadline", { method: "PUT", body: { revision: statement.revision, due_at: due.value ? new Date(due.value).toISOString() : null } });
+      say(status, "Vencimiento guardado.", "done");
+    } catch (err) { say(status, billingError(err), "error"); }
+    finally { saveDue.disabled = false; }
+  });
+  const amount = el("input", { type: "text", inputmode: "decimal", required: true, value: `${Math.floor(statement.balance_cents / 100)}.${String(statement.balance_cents % 100).padStart(2, "0")}` });
+  const bank = el("input", { type: "text", required: true, minlength: "3", maxlength: "120", autocomplete: "off" });
+  const note = el("input", { type: "text", required: true, minlength: "5", maxlength: "200" });
+  const verified = el("input", { type: "checkbox", required: true });
+  const send = el("button", { type: "submit", class: "btn primary", text: "Registrar abono confirmado" });
+  const requestId = crypto.randomUUID();
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Importe recibido en USD", amount), el("label", { class: "field" }, "Identificador único del ingreso bancario", bank), el("label", { class: "field" }, "Nota de verificación del ingreso", note), el("label", { class: "check" }, verified, "Verifiqué que este ingreso llegó a la cuenta receptora"), send);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const value = amount.value.trim().replace(",", ".");
+    if (!/^\d{1,9}(\.\d{1,2})?$/.test(value)) return say(status, "Escribe dólares y hasta dos decimales.", "error");
+    const [whole, fraction = ""] = value.split(".");
+    const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+    send.disabled = true;
+    try {
+      await api(base + "/credits", { method: "POST", body: { amount_cents: cents, bank_transaction_id: bank.value.trim(), request_id: requestId, note: note.value.trim(), confirmed: verified.checked } });
+      await billingLedgerDialog(invoice, platform);
+    } catch (err) { say(status, billingError(err), "error"); send.disabled = false; }
+  });
+  dialog("Saldo y abonos confirmados", el("p", { text: `Total: ${billingMoney(statement.amount_cents)}. Confirmado: ${billingMoney(statement.paid_cents)}. Saldo pendiente: ${billingMoney(statement.balance_cents)}.` }),
+    statement.due_at ? el("p", { text: `Vencimiento: ${new Date(statement.due_at).toLocaleString("es-EC")}.` }) : el("p", { class: "muted", text: "Todavía no se fijó un vencimiento." }),
+    isAdmin() ? el("div", { class: "stack" }, el("label", { class: "field" }, "Vencimiento (hora de este dispositivo)", due), saveDue) : null,
+    el("h3", { text: "Ingresos confirmados" }), ...statement.movements.map((m) => el("p", { text: `${billingMoney(m.amount_cents)} · ${new Date(m.created_at).toLocaleString("es-EC")} · ${m.bank_transaction_id}` })),
+    isAdmin() && statement.balance_cents > 0 && invoice.method === "transfer" && ["pending", "rejected", "transfer_review"].includes(statement.state) ? form : null,
+    isAdmin() ? action("Ensayar avisos sin enviar", () => billingNoticeTrialDialog(invoice, platform).catch((err) => say(status, billingError(err), "error"))) : null,
+    el("p", { class: "muted", text: "Informar o adjuntar un comprobante no confirma dinero. Cada abono requiere verificación del receptor; no hay una conexión automática al banco." }), status);
+}
+
+async function billingNoticeTrialDialog(invoice, platform = false) {
+  const base = billingFollowupPath(invoice, platform) + "/notice-trials";
+  const configPath = platform ? "/v1/billing/platform/notice-trials/configuration" : "/v1/billing/notice-trials/configuration";
+  let config = await api(configPath);
+  if (!config.private_available) { dialog("Ensayos de avisos", el("p", { text: "Esta prueba solo está disponible en el entorno privado." })); return; }
+  const names = { before_due: "Antes del vencimiento", due: "El día del vencimiento", post_1: "Primer seguimiento", post_2: "Segundo seguimiento", post_3: "Tercer seguimiento", paid: "Pago recibido", partial: "Abono recibido", escalation: "Aviso interno al administrador" };
+  const fields = Object.entries(config.policy.texts).map(([key, value]) => ({ key, input: el("textarea", { rows: "2", maxlength: "600", required: true, text: value, "aria-label": names[key] }) }));
+  const cadence = el("input", { type: "number", min: "1", max: "30", value: String(config.policy.cadence_days) });
+  const before = el("input", { type: "number", min: "1", max: "168", value: String(config.policy.before_hours) });
+  const cap = el("input", { type: "number", min: "1", max: "3", value: String(config.policy.maximum) });
+  const start = el("input", { type: "number", min: "0", max: "23", value: String(config.policy.start_hour) });
+  const end = el("input", { type: "number", min: "1", max: "24", value: String(config.policy.end_hour) });
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { type: "submit", class: "btn", text: "Guardar textos del ensayo" });
+  const form = el("form", { class: "stack" }, ...fields.map((r) => el("label", { class: "field" }, names[r.key], r.input)),
+    el("p", { class: "muted", text: "{balance} inserta el saldo, {amount} el total y {reference} la referencia del pago. No escribas información clínica." }),
+    el("div", { class: "fields" }, el("label", { class: "field" }, "Horas antes del vencimiento", before), el("label", { class: "field" }, "Días entre seguimientos", cadence), el("label", { class: "field" }, "Máximo después de vencer", cap), el("label", { class: "field" }, "Desde la hora", start), el("label", { class: "field" }, "Hasta la hora", end)), save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      config = await api(configPath, { method: "PUT", body: { revision: config.revision, policy: { ...config.policy, texts: Object.fromEntries(fields.map((r) => [r.key, r.input.value])), before_hours: Number(before.value), cadence_days: Number(cadence.value), maximum: Number(cap.value), start_hour: Number(start.value), end_hour: Number(end.value) } } });
+      for (const field of fields) delete field.input.dataset.dirty;
+      say(status, "Textos guardados para la simulación. No habilita WhatsApp real.", "done");
+    } catch (err) { say(status, billingError(err), "error"); }
+    finally { save.disabled = false; }
+  });
+  const at = el("input", { type: "datetime-local", value: todayISO() + "T10:00", required: true });
+  const history = el("div", { class: "stack" });
+  const draw = async () => {
+    const rows = await api(base);
+    history.replaceChildren(...rows.map((r) => el("section", { class: "notice" }, el("strong", { text: `${names[r.phase]} · SIMULADO` }), el("p", { text: r.text }))));
+  };
+  const simulate = action("Simular este momento", async () => {
+    simulate.disabled = true;
+    try {
+      const result = await api(base, { method: "POST", body: { at: zoned(at.value.slice(0, 10), at.value.slice(11, 16)) } });
+      const reasons = { already_simulated: "Este aviso ya se ensayó.", cadence_not_due: "Todavía no se cumple el intervalo entre avisos.", outside_hours: "Está fuera del horario permitido.", not_due: "Todavía no corresponde avisar.", deadline_missing: "Primero guarda un vencimiento para este pago." };
+      say(status, result.state === "simulated" ? "Simulación guardada. No se envió ningún mensaje." : reasons[result.reason] || BILLING_FOLLOWUP_REASONS[result.reason] || "No corresponde otro aviso para este momento.", result.state === "simulated" ? "done" : "");
+      await draw();
+    } catch (err) { say(status, billingError(err), "error"); }
+    finally { simulate.disabled = false; }
+  });
+  const nextDay = action("Avanzar un día ficticio", () => { const day = new Date(at.value + "Z"); day.setUTCDate(day.getUTCDate() + 1); at.value = day.toISOString().slice(0, 16); });
+  dialog("Ensayos de avisos de pago", el("p", { class: "notice", text: "Solo simulación privada. No hay envíos a pacientes ni una plantilla aprobada por Meta. El pago real no cambia al avanzar el reloj ficticio." }), form, el("label", { class: "field" }, `Fecha y hora ficticia (${config.timezone})`, at), el("div", { class: "row" }, simulate, nextDay), status, history);
+  await draw();
+}
+
+function billingBankForm(config, platform = false) {
+  const value = platform ? config.platform_bank_instructions : config.clinic_bank_instructions;
+  const input = el("textarea", { required: true, minlength: "10", maxlength: "1500", rows: "4", value });
+  input.value = value;
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar cuenta receptora" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "Banco, titular, tipo y número de cuenta", input),
+    el("p", { class: "muted", text: "Comprueba el titular y el número antes de guardar. Estos datos se mostrarán a quien deba realizar la transferencia." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!sure(save, "Confirmar cuenta receptora")) return;
+    save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/bank" : "/v1/billing/bank", { method: "PUT", body: { instructions: input.value.trim() } });
+      route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingView(main) {
+  const config = await api("/v1/billing/configuration");
+  const invoices = await api("/v1/billing/orders");
+  const parts = [page("Cobros y suscripción", "Dos tipos de pago, cada uno con su cuenta receptora.", link("#ajustes", "Volver a Ajustes"))];
+  if (!config.enabled) parts.push(el("p", { class: "notice", text: "Los cobros todavía no están activados. Puedes preparar los datos de la cuenta receptora." }));
+  parts.push(card("Cobros del consultorio", "", el("p", { text: "Tus pacientes pagan sus consultas y citas al consultorio. Desde una cita de la Agenda, pulsa Preparar pago." }),
+    isAdmin() ? el("div", { class: "stack" }, billingGatewayForm(config.dlocal.clinic), billingBankForm(config)) : el("p", { text: "Administración configura la cuenta receptora y verifica los ingresos." }),
+    billingRows(invoices, { review: isAdmin() })));
+  parts.push(await billingFollowupSection());
+  if (isAdmin()) parts.push(await billingAutomaticForm());
+  if (isAdmin()) {
+    const subscriptions = await api("/v1/billing/orders?kind=subscription");
+    const create = el("button", { class: "btn primary", type: "button", text: "Preparar transferencia de la mensualidad", disabled: !config.enabled || !config.platform_bank_configured || !config.monthly_price_cents });
+    const status = el("p", { class: "status", role: "status" });
+    create.addEventListener("click", async () => {
+      create.disabled = true;
+      try { billingInvoiceDialog(await api("/v1/billing/subscription", { method: "POST" })); }
+      catch (err) { say(status, billingError(err), "error"); }
+      finally { create.disabled = false; }
+    });
+    parts.push(card("Suscripción de Tatos", "", el("p", { text: "Una mensualidad por consultorio para usar toda la aplicación. Este pago lo recibe la operadora de Tatos." }),
+      el("p", { text: config.monthly_price_cents ? `${billingMoney(config.monthly_price_cents)} por mes` : "El precio mensual todavía no está configurado." }),
+      await billingSubscriptionCard(config),
+      await billingContactForm(),
+      create, status, billingRows(subscriptions)));
+  }
+  if (config.platform_operator) {
+    const pending = await api("/v1/billing/platform/subscriptions");
+    parts.push(card("Administración de suscripciones de Tatos", "", billingGatewayForm(config.dlocal.platform, true), billingBankForm(config, true), billingRows(pending, { review: true, platform: true })));
+    parts.push(await billingFollowupSection(true));
+    parts.push(await billingAutomaticForm(true));
+  }
+  main.replaceChildren(...parts);
+}
+
+const BILLING_FOLLOWUP_REASONS = { paid: "Pagado", payments_not_enabled: "Los cobros todavía no están activados", payment_needs_review: "Comprobar el pago antes de contactar", inactive_record: "Ficha o cita no disponible", paused: "Seguimiento en pausa", phone_missing: "Falta un WhatsApp con código de país", permission_missing: "Falta el permiso para recordatorios de pago", opted_out: "Solicitó no recibir WhatsApp", payment_promised: "Hay una fecha de pago acordada", contact_not_due: "Espera hasta el próximo seguimiento" };
+const BILLING_CONTACT_STATES = { prepared: "Borrador preparado", manual_sent: "Envío registrado por el equipo", discarded: "Borrador descartado", auto_accepted: "WhatsApp aceptó el recordatorio automático", auto_simulated: "Recordatorio automático simulado", auto_uncertain: "Envío automático por conciliar; no se repetirá automáticamente" };
+function billingFollowupPath(row, platform) {
+  return platform ? `/v1/billing/platform/${encodeURIComponent(row.payer_tenant)}/orders/${encodeURIComponent(row.invoice_id)}` : `/v1/billing/orders/${encodeURIComponent(row.invoice_id)}`;
+}
+function billingLocalInput(value) {
+  if (!value) return "";
+  const date = new Date(value); date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+async function billingFollowupSection(platform = false) {
+  const path = platform ? "/v1/billing/platform/followups" : "/v1/billing/followups";
+  const list = el("div", { class: "stack" });
+  const status = el("p", { class: "status", role: "status" });
+  const more = el("button", { class: "btn", type: "button", text: "Cargar más pagos pendientes" });
+  let cursor = "";
+  const load = async () => {
+    more.disabled = true;
+    try {
+      const data = await api(path + (cursor ? `?after=${encodeURIComponent(cursor)}` : ""));
+      if (!data.items.length && !list.children.length) list.append(empty("No hay órdenes de pago pendientes en este seguimiento."));
+      for (const row of data.items) {
+        const autoBlocksManual = row.automatic && (row.automatic.enabled || ["sending", "uncertain"].includes(row.automatic.state));
+        const prepare = el("button", { class: "btn small", type: "button", text: "Preparar WhatsApp", disabled: !!row.blocked_reason || !!autoBlocksManual });
+        const manage = el("button", { class: "btn small", type: "button", text: "Gestionar seguimiento" });
+        const item = el("article", { class: "doc", "data-followup": row.invoice_id },
+          el("div", { class: "what" }, el("strong", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }),
+            el("p", { text: `${BILLING_STATES[row.state] || row.state} · ${autoBlocksManual ? "Seguimiento automático configurado" : BILLING_FOLLOWUP_REASONS[row.blocked_reason] || "Listo para recordar"}` }),
+            el("p", { class: "muted", text: `Referencia: ${row.invoice_id.slice(0, 8)}${row.phone_masked ? " · WhatsApp " + row.phone_masked : ""}` }),
+            row.next_contact_at ? el("p", { class: "muted", text: `Próximo contacto: ${new Date(row.next_contact_at).toLocaleString("es-EC")}` }) : null,
+            row.history[0] ? el("p", { class: "muted", text: `${BILLING_CONTACT_STATES[row.history[0].state] || row.history[0].state} · ${new Date(row.history[0].confirmed_at || row.history[0].created_at).toLocaleString("es-EC")}` }) : null),
+          el("div", { class: "row tight" }, prepare, manage));
+        prepare.addEventListener("click", async () => {
+          prepare.disabled = true;
+          try { billingWhatsAppDialog(row, await api(billingFollowupPath(row, platform) + "/whatsapp", { method: "POST" }), platform); }
+          catch (err) { say(status, billingError(err), "error"); }
+          finally { prepare.disabled = !!row.blocked_reason || !!autoBlocksManual; }
+        });
+        manage.addEventListener("click", () => billingFollowupDialog(row, platform, data.can_record_permission));
+        list.append(item);
+      }
+      cursor = data.next_cursor; more.hidden = !cursor;
+    } catch (err) { say(status, billingError(err), "error"); }
+    finally { more.disabled = false; }
+  };
+  more.addEventListener("click", load);
+  await load();
+  return card(platform ? "Seguimiento de mensualidades" : "Seguimiento de pagos de pacientes", "",
+    el("p", { text: "Revisa los pagos pendientes, acuerda el próximo contacto y prepara recordatorios por WhatsApp. Las transferencias informadas se verifican antes de recordar." }),
+    list, more, status);
+}
+function billingWhatsAppDialog(row, draft, platform) {
+  const status = el("p", { class: "status", role: "status" });
+  const preview = el("textarea", { rows: "6", readonly: true }); preview.value = draft.message;
+  const sent = el("button", { type: "button", class: "btn primary", text: "Lo envié por WhatsApp" });
+  const discard = el("button", { type: "button", class: "btn", text: "Descartar borrador" });
+  const finish = async (didSend) => {
+    sent.disabled = discard.disabled = true;
+    try { await api(billingFollowupPath(row, platform) + `/whatsapp/${encodeURIComponent(draft.event_id)}`, { method: "POST", body: { sent: didSend } }); $("#dialog").close(); route(); }
+    catch (err) { say(status, billingError(err), "error"); sent.disabled = discard.disabled = false; }
+  };
+  sent.addEventListener("click", () => finish(true)); discard.addEventListener("click", () => finish(false));
+  dialog("Recordatorio de pago por WhatsApp",
+    el("p", { text: "Revisa el mensaje. Abre WhatsApp y pulsa Enviar desde la cuenta que corresponde. Después vuelve para registrar el contacto." }),
+    preview, el("a", { class: "btn primary", href: draft.whatsapp_url, target: "_blank", rel: "noopener noreferrer", text: "Abrir WhatsApp" }),
+    el("p", { class: "muted", text: "Abrir el chat deja el mensaje como borrador. El registro del equipo no acredita entrega, lectura ni pago." }),
+    el("div", { class: "row tight" }, sent, discard), status);
+}
+function billingFollowupDialog(row, platform, canPermission) {
+  const next = el("input", { type: "datetime-local", value: billingLocalInput(row.next_contact_at) });
+  const promise = el("input", { type: "datetime-local", value: billingLocalInput(row.promised_for) });
+  const paused = el("input", { type: "checkbox" }); paused.checked = row.paused;
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { class: "btn primary", type: "submit", text: "Guardar seguimiento" });
+  const form = el("form", { class: "stack" },
+    el("label", { class: "field" }, "Próximo contacto", next), el("label", { class: "field" }, "Fecha prometida de pago", promise),
+    el("p", { class: "muted", text: "Las horas corresponden a este dispositivo. Una promesa futura pausa los nuevos recordatorios hasta esa fecha." }),
+    el("label", { class: "check" }, paused, "Pausar recordatorios de este pago"), save);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try { await api(billingFollowupPath(row, platform) + "/followup", { method: "PUT", body: { next_contact_at: next.value ? new Date(next.value).toISOString() : null, promised_for: promise.value ? new Date(promise.value).toISOString() : null, paused: paused.checked } }); $("#dialog").close(); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  const parts = [el("p", { text: `${row.name} · ${billingMoney(row.amount_cents)}` }), form];
+  if (!platform) {
+    const automatic = el("input", { type: "checkbox", disabled: !row.can_automate }); automatic.checked = !!row.automatic?.enabled;
+    const due = el("input", { type: "datetime-local", value: billingLocalInput(row.automatic?.due_at) });
+    const autoSave = el("button", { class: "btn", type: "submit", text: "Guardar envío automático", disabled: !row.can_automate });
+    const autoForm = el("form", { class: "stack" }, el("label", { class: "check" }, automatic, "Recordatorios automáticos de este pago"),
+      el("label", { class: "field" }, "Vencimiento del pago para iniciar los recordatorios", due),
+      el("p", { class: "muted", text: "Disponible para pagos registrados en la pasarela y con WhatsApp configurado. Las transferencias bancarias directas requieren revisión." }), autoSave);
+    if (row.automatic) autoForm.append(el("p", { class: "muted", text: `Estado: ${billingAutoState(row.automatic.state)}${row.automatic.last_result ? " · " + billingAutoResult(row.automatic.last_result) : ""}` }));
+    autoForm.addEventListener("submit", async event => {
+      event.preventDefault(); autoSave.disabled = true;
+      try { await api(billingFollowupPath(row, false) + "/automation", { method: "PUT", body: { enabled: automatic.checked, due_at: due.value ? new Date(due.value).toISOString() : null } }); $("#dialog").close(); route(); }
+      catch (err) { say(status, billingError(err), "error"); autoSave.disabled = false; }
+    });
+    parts.push(autoForm);
+  }
+  if (!platform && canPermission && row.subject_id) {
+    const allowed = el("input", { type: "checkbox" }); allowed.checked = row.whatsapp_allowed;
+    const source = el("input", { type: "text", required: true, minlength: "5", maxlength: "128", placeholder: "Ej.: autorización firmada y su fecha" });
+    const record = el("button", { class: "btn", type: "submit", text: "Registrar permiso" });
+    const permission = el("form", { class: "stack" }, el("label", { class: "check" }, allowed, "La persona autorizó recordatorios de pago del consultorio por WhatsApp"), el("label", { class: "field" }, "Origen del permiso o de su retiro", source), record);
+    permission.addEventListener("submit", async (event) => {
+      event.preventDefault(); record.disabled = true;
+      try { await api(`/v1/subjects/${encodeURIComponent(row.subject_id)}/consents/whatsapp_billing`, { method: "PUT", body: { granted: allowed.checked, source: source.value.trim() } }); $("#dialog").close(); route(); }
+      catch (err) { say(status, humanError(err), "error"); record.disabled = false; }
+    });
+    parts.push(permission);
+  }
+  for (const event of row.history) {
+    parts.push(el("p", { class: "muted", text: `${BILLING_CONTACT_STATES[event.state] || event.state} · ${new Date(event.confirmed_at || event.created_at).toLocaleString("es-EC")} · ${event.actor}` }));
+    if (event.state === "prepared") {
+      const discard = el("button", { class: "btn", type: "button", text: "Descartar borrador pendiente" });
+      discard.addEventListener("click", async () => {
+        discard.disabled = true;
+        try { await api(billingFollowupPath(row, platform) + `/whatsapp/${encodeURIComponent(event.event_id)}`, { method: "POST", body: { sent: false } }); $("#dialog").close(); route(); }
+        catch (err) { say(status, billingError(err), "error"); discard.disabled = false; }
+      });
+      parts.push(discard);
+    }
+  }
+  parts.push(status); dialog("Gestionar seguimiento del pago", ...parts);
+}
+function billingAutoState(value) {
+  return ({ scheduled: "Programado", paused: "Pausado", sending: "Enviando", uncertain: "Por conciliar", settled: "Finalizado", limit_reached: "Límite de recordatorios alcanzado" })[value] || value;
+}
+function billingAutoResult(value) {
+  const extra = { live_payments_not_enabled: "Los pagos reales todavía no están habilitados para esta cuenta", daily_contact_limit: "Este contacto ya tiene un recordatorio registrado hoy", claim_conflict: "El recordatorio está en comprobación; se revisará antes de enviar" };
+  if (extra[value]) return extra[value];
+  return ({ accepted: "WhatsApp aceptó el mensaje; entrega sin confirmar", simulated: "Simulado, sin mensaje real", uncertain: "Resultado incierto, sin reintento automático", paid: "Pagado", renewal_no_longer_pending: "La renovación ya no requiere este recordatorio", policy_disabled: "Automatización desactivada", sandbox_delivery_disabled: "Entorno de prueba: envíos reales bloqueados", reconciliation_unavailable: "No se pudo verificar el pago o la conexión", manual_draft_open: "Hay un borrador manual abierto", subscription_not_active: "La suscripción necesita revisión" })[value] || BILLING_FOLLOWUP_REASONS[value] || "Revisar seguimiento";
+}
+async function billingAutomaticForm(platform = false) {
+  const path = platform ? "/v1/billing/platform/automation" : "/v1/billing/automation";
+  const data = await api(path);
+  const enabled = el("input", { type: "checkbox" }); enabled.checked = data.enabled;
+  const account = el("select", {}, el("option", { value: "", text: "Selecciona un WhatsApp conectado" }),
+    ...data.accounts.map(a => el("option", { value: a.account_id, text: a.handle })));
+  account.value = data.account_id || "";
+  const template = el("input", { type: "text", maxlength: "128", value: data.template_name, placeholder: "Nombre exacto de la plantilla aprobada" });
+  const language = el("input", { type: "text", maxlength: "12", value: data.language });
+  const cadence = el("input", { type: "number", min: "1", max: "30", value: String(data.cadence_days), required: true });
+  const maximum = el("input", { type: "number", min: "1", max: "3", value: String(data.maximum), required: true });
+  const status = el("p", { class: "status", role: "status" });
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar automatización" });
+  const form = el("form", { class: "stack" }, el("label", { class: "check" }, enabled, "Habilitar recordatorios automáticos por WhatsApp"),
+    el("label", { class: "field" }, "WhatsApp que enviará los recordatorios", account),
+    el("label", { class: "field" }, "Plantilla de utilidad aprobada por Meta", template),
+    el("label", { class: "field" }, "Idioma de la plantilla", language),
+    el("p", { class: "muted", text: "La plantilla debe tener dos variables en el cuerpo: importe y referencia. Sin información clínica." }),
+    el("label", { class: "field" }, "Días entre recordatorios", cadence),
+    el("label", { class: "field" }, "Máximo de recordatorios por pago", maximum), save, status);
+  form.addEventListener("submit", async event => {
+    event.preventDefault(); save.disabled = true;
+    try { await api(path, { method: "PUT", body: { enabled: enabled.checked, account_id: account.value || null, template_name: template.value.trim(), language: language.value.trim(), cadence_days: Number(cadence.value), maximum: Number(maximum.value) } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  const work = el("div", { class: "stack" });
+  for (const target of data.targets) {
+    const pause = el("button", { class: "btn small", type: "button", text: ["settled", "limit_reached"].includes(target.state) ? "Seguimiento finalizado" : target.enabled ? "Pausar automático" : "Reanudar automático" });
+    pause.disabled = ["sending", "uncertain", "settled", "limit_reached"].includes(target.state);
+    const item = el("article", { class: "doc" }, el("div", { class: "what" },
+      el("strong", { text: `${platform ? target.tenant + " · Renovación" : "Pago"} ${target.source_id.slice(0, 8)}` }),
+      el("p", { text: `${billingAutoState(target.state)}${target.last_result ? " · " + billingAutoResult(target.last_result) : ""}` }),
+      el("p", { class: "muted", text: `Próximo control: ${new Date(target.next_at).toLocaleString("es-EC")}` })), pause);
+    pause.addEventListener("click", async () => {
+      pause.disabled = true;
+      const endpoint = platform ? `/v1/billing/platform/${encodeURIComponent(target.tenant)}/automation/${encodeURIComponent(target.source_id)}` : `/v1/billing/orders/${encodeURIComponent(target.source_id)}/automation`;
+      try { await api(endpoint, { method: "PUT", body: { enabled: !target.enabled } }); route(); }
+      catch (err) { say(status, billingError(err), "error"); pause.disabled = false; }
+    });
+    work.append(item);
+  }
+  return card(platform ? "Automatización de mensualidades de Tatos" : "Automatización de pagos del consultorio", "",
+    el("p", { text: "Primer recordatorio al día siguiente del vencimiento, desde las 09:00. Consulta la pasarela antes de cada envío y se detiene al confirmar el pago. Las transferencias directas al banco requieren revisión." }),
+    el("p", { class: data.server_enabled ? "muted" : "notice", text: data.server_enabled ? `Horario de envío: ${data.hours}, ${data.timezone}.` : "Los envíos automáticos todavía no están activados en esta instalación. Puedes preparar su configuración." }),
+    !data.accounts.length ? link("#ajustes/redes", "Conectar WhatsApp en Redes sociales") : null, form, work);
+}
+async function billingContactForm() {
+  const contact = await api("/v1/billing/contact");
+  const phone = el("input", { type: "tel", maxlength: "32", required: !contact.configured, placeholder: contact.phone_masked ? `${contact.phone_masked} · deja vacío para conservarlo` : "Número completo con código de país" });
+  const allowed = el("input", { type: "checkbox" }); allowed.checked = contact.whatsapp_allowed;
+  const save = el("button", { class: "btn", type: "submit", text: "Guardar contacto de facturación" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" }, el("label", { class: "field" }, "WhatsApp para la mensualidad de Tatos", phone),
+    el("label", { class: "check" }, allowed, "Tengo el permiso de este contacto para los recordatorios de pago de Tatos"), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try { await api("/v1/billing/contact", { method: "PUT", body: { phone: phone.value.trim() || null, whatsapp_allowed: allowed.checked, source: "Permiso del contacto registrado por administración en Tatos" } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+function billingGatewayForm(account, platform = false) {
+  const environment = el("select", {}, el("option", { value: "sandbox", text: "Pruebas sin dinero real" }), el("option", { value: "live", text: "Cuenta real aprobada" }));
+  const key = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const secret = el("input", { type: "password", autocomplete: "off", required: true, maxlength: "512" });
+  const approved = el("input", { type: "checkbox" });
+  const save = el("button", { type: "submit", class: "btn", text: "Conectar dLocal Go" });
+  const status = el("p", { class: "status", role: "status" });
+  const form = el("form", { class: "stack" },
+    el("p", { text: account ? `dLocal Go: ${account.environment === "sandbox" ? "cuenta de pruebas" : "cuenta real"}. ${account.available ? "Disponible." : "Cobros pendientes de activación."}` : "dLocal Go todavía no está conectado." }),
+    el("p", { class: "muted", text: platform ? "Esta cuenta recibe las mensualidades de Tatos." : "Usa la cuenta de este consultorio para recibir sus citas." }),
+    el("label", { class: "field" }, "Entorno", environment),
+    el("label", { class: "field" }, "API Key de dLocal Go", key),
+    el("label", { class: "field" }, "Secret Key de dLocal Go", secret),
+    el("label", { class: "check" }, approved, "Para una cuenta real: dLocal Go aprobó mi cuenta y habilitó los retiros"),
+    el("p", { class: "muted", text: "Obtén las claves en dLocal Go → Integraciones → Integración API. Se guardan cifradas y no vuelven a mostrarse." }), save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      await api(platform ? "/v1/billing/platform/dlocal/account" : "/v1/billing/dlocal/account", { method: "PUT", body: { environment: environment.value, api_key: key.value.trim(), secret_key: secret.value.trim(), withdrawals_confirmed: approved.checked } });
+      key.value = secret.value = ""; route();
+    } catch (err) { say(status, billingError(err), "error"); save.disabled = false; }
+  });
+  return form;
+}
+
+async function billingSubscriptionCard(config) {
+  const subscription = await api("/v1/billing/dlocal/subscription");
+  const labels = { not_started: "Sin iniciar", preparing: "Preparando", uncertain: "Pendiente de comprobación", awaiting: "Pendiente de autorizar en dLocal Go", active: "Renovación automática activa", cancelled: "Renovación cancelada" };
+  const status = el("p", { class: "status", role: "status" });
+  const consent = el("input", { type: "checkbox" });
+  const start = el("button", { type: "button", class: "btn primary", text: "Configurar tarjeta automática", disabled: !config.dlocal.platform?.available || !["not_started", "awaiting"].includes(subscription.state) });
+  const sync = el("button", { type: "button", class: "btn", text: "Comprobar suscripción", disabled: ["not_started", "preparing", "uncertain"].includes(subscription.state) });
+  const cancel = el("button", { type: "button", class: "btn", text: "Cancelar renovación", disabled: !["awaiting", "active"].includes(subscription.state) });
+  const holder = el("div", { class: "stack" }, el("p", { text: labels[subscription.state] || "En comprobación" }),
+    el("p", { class: "muted", text: config.dlocal.platform?.environment === "sandbox" ? "Entorno de pruebas: no se cobra dinero real." : "La tarjeta y la autorización se completan en dLocal Go. Las transferencias requieren verificar el ingreso." }),
+    el("label", { class: "check" }, consent, `Autorizo la renovación automática de ${billingMoney(config.monthly_price_cents)} cada mes. Puedo cancelar los próximos cobros.`),
+    start, sync, cancel, status);
+  start.addEventListener("click", async () => {
+    if (!consent.checked) { say(status, "Marca la autorización mensual para continuar.", "error"); return; }
+    start.disabled = true;
+    try {
+      const data = await api("/v1/billing/dlocal/subscription", { method: "POST", body: { consent: true } });
+      if (data.checkout_url) holder.append(el("a", { class: "btn primary", href: data.checkout_url, target: "_blank", rel: "noopener noreferrer", text: "Autorizar mensualidad en dLocal Go" }));
+      say(status, "Completa la autorización y luego pulsa Comprobar suscripción."); sync.disabled = false;
+    } catch (err) { say(status, billingError(err), "error"); start.disabled = false; }
+  });
+  sync.addEventListener("click", async () => {
+    sync.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/reconcile", { method: "POST" }); route(); }
+    catch (err) { say(status, billingError(err), "error"); sync.disabled = false; }
+  });
+  cancel.addEventListener("click", async () => {
+    if (!sure(cancel, "Confirmar cancelación de próximos cobros")) return;
+    cancel.disabled = true;
+    try { await api("/v1/billing/dlocal/subscription/cancel", { method: "POST", body: { consent: true } }); route(); }
+    catch (err) { say(status, billingError(err), "error"); cancel.disabled = false; }
+  });
+  for (const renewal of subscription.renewals || []) holder.append(el("p", { text: `${renewal.amount_cents ? billingMoney(renewal.amount_cents) : "Renovación"} · ${BILLING_STATES[renewal.state] || "En comprobación"}` }));
+  return holder;
+}

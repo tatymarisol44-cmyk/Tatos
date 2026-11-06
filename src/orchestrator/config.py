@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     app_env: Literal["dev", "test", "prod"] = "dev"
     log_level: str = "INFO"
     build_revision: str = Field(default="dev", pattern=r"^(?:dev|[0-9a-f]{7,40})$")
+    # Payments stay closed until accounts, price and provider permissions are configured.
+    billing_enabled: bool = False
+    billing_dlocal_live_enabled: bool = False
+    billing_automation_enabled: bool = False
+    billing_platform_tenant: str = Field(default="", max_length=64)
+    # Owner-approved price, 2026-10-26: USD 100/month per clinic, entire app.
+    billing_monthly_price_cents: int = Field(default=10_000, ge=0, le=99_999_999_999)
 
     # --- Agent catalog -----------------------------------------------------
     agents_dir: Path = Path("vendor/agency-agents")
@@ -221,6 +228,11 @@ class Settings(BaseSettings):
     # A clinical file (signed consent PDF, external report, scanned test): stored in the
     # database, so it shares its isolation, encryption at rest and point-in-time backups.
     clinical_file_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
+    # Explicit test-image extraction, separate from general chat. No public cloud fallback.
+    clinical_vision_enabled: bool = False
+    clinical_vision_origin: str = "http://127.0.0.1:11434"
+    clinical_vision_model: str = Field(default="", max_length=128)
+    clinical_vision_timeout_seconds: float = Field(default=120, ge=5, le=300)
     injection_action: Literal["block", "flag"] = "block"
     redact_pii: bool = True
 

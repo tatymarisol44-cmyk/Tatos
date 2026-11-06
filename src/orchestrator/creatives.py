@@ -18,6 +18,7 @@ Rules that do not depend on who asks:
 from __future__ import annotations
 
 import hashlib
+import io
 import shutil
 import subprocess
 import tempfile
@@ -26,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel, Field, field_validator
 
 from orchestrator.config import Settings
@@ -193,11 +194,23 @@ def _footer(draw: ImageDraw.ImageDraw, brief: Brief, pack: Pack, fmt: Format) ->
         top += 44
 
 
-def draw_infographic(brief: Brief, pack: Pack, fmt: Format = "feed") -> Image.Image:
+def draw_infographic(
+    brief: Brief, pack: Pack, fmt: Format = "feed", logo: bytes | None = None
+) -> Image.Image:
     image, draw = _canvas(brief, fmt)
+    if logo:
+        with Image.open(io.BytesIO(logo)) as source:
+            badge = ImageOps.contain(source.convert("RGB"), (240, 100))
+            image.paste(badge, (MARGIN, 40))
     width = SIZES[fmt][0] - 2 * MARGIN
     top = _block(
-        draw, brief.title, top=MARGIN + 40, size=72, fill=brief.accent, width=width, bold=True
+        draw,
+        brief.title,
+        top=MARGIN + (100 if logo else 40),
+        size=64 if logo else 72,
+        fill=brief.accent,
+        width=width,
+        bold=True,
     )
     top += 40
     for point in brief.points:
@@ -252,9 +265,11 @@ def _sha256(path: Path) -> str:
 # --- rendering to files -----------------------------------------------------------------
 
 
-def render_infographic(brief: Brief, pack: Pack, out: Path, fmt: Format = "feed") -> Creative:
+def render_infographic(
+    brief: Brief, pack: Pack, out: Path, fmt: Format = "feed", logo: bytes | None = None
+) -> Creative:
     owner = vet(brief, pack)
-    image = draw_infographic(brief, pack, fmt)
+    image = draw_infographic(brief, pack, fmt, logo)
     out.parent.mkdir(parents=True, exist_ok=True)
     image.save(out, format="JPEG", quality=90, optimize=True)
     width, height = image.size

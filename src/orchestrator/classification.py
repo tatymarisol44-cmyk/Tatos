@@ -102,6 +102,18 @@ TABLE_CLASS: dict[str, DataClass] = {
     "alert_notifications": DataClass.HEALTH,  # who was told about a crisis alert
     "audit_events": DataClass.AUDIT,
     "audit_heads": DataClass.AUDIT,
+    "billing_orders": DataClass.HEALTH,
+    "billing_followups": DataClass.HEALTH,
+    "billing_auto_policies": DataClass.PERSONAL,
+    "billing_auto_targets": DataClass.HEALTH,
+    "billing_auto_attempts": DataClass.HEALTH,
+    "billing_followup_events": DataClass.HEALTH,
+    "billing_subscription_contacts": DataClass.PERSONAL,
+    "billing_payees": DataClass.PERSONAL,
+    "billing_gateway_accounts": DataClass.CREDENTIAL,
+    "billing_gateway_checkouts": DataClass.CREDENTIAL,
+    "billing_gateway_plans": DataClass.CREDENTIAL,
+    "billing_gateway_renewals": DataClass.PERSONAL,
     "campaign_recipients": DataClass.PERSONAL,
     "campaigns": DataClass.INTERNAL,
     "channel_accounts": DataClass.CREDENTIAL,  # secret_ref names a credential
@@ -112,6 +124,7 @@ TABLE_CLASS: dict[str, DataClass] = {
     "channel_optouts": DataClass.PERSONAL,
     "clinical_documents": DataClass.PSYCHOTHERAPY,  # holds psychotherapy notes among others
     "clinical_files": DataClass.PSYCHOTHERAPY,  # may hold an author-only document
+    "test_image_reports": DataClass.PSYCHOTHERAPY,  # author-only, never general chat or RAG
     "consents": DataClass.PERSONAL,
     "contact_budget": DataClass.PERSONAL,
     "crm_appointments": DataClass.HEALTH,
@@ -124,10 +137,25 @@ TABLE_CLASS: dict[str, DataClass] = {
     "instrument_assignments": DataClass.HEALTH,  # which test was sent to which patient
     "instrument_results": DataClass.HEALTH,  # a patient's answers and scores
     "instruments": DataClass.INTERNAL,  # definitions: items, scoring, no patient data
+    # Raw source may accidentally contain private material; author only.
+    "instrument_imports": DataClass.PSYCHOTHERAPY,
     "knowledge_documents": DataClass.INTERNAL,
     "knowledge_versions": DataClass.INTERNAL,
     "login_challenges": DataClass.CREDENTIAL,  # hashed sign-in codes and password links
     "marketing_goals": DataClass.INTERNAL,  # a metric, a target, a month: no patient
+    "marketing_groups": DataClass.INTERNAL,  # manual audience labels, never clinical rules
+    "marketing_brands": DataClass.INTERNAL,
+    "marketing_workflows": DataClass.INTERNAL,
+    "billing_movements": DataClass.HEALTH,
+    "billing_notice_policies": DataClass.INTERNAL,
+    "billing_notice_trials": DataClass.HEALTH,
+    "survey_definitions": DataClass.INTERNAL,
+    "survey_settings": DataClass.INTERNAL,
+    "survey_invitations": DataClass.HEALTH,
+    "survey_events": DataClass.HEALTH,
+    "tax_trial_issuers": DataClass.PERSONAL,  # a sole trader's fiscal identity
+    "tax_trial_documents": DataClass.HEALTH,  # linked to a clinic obligation
+    "marketing_group_members": DataClass.PERSONAL,  # selected people, consent still required
     "model_spend": DataClass.INTERNAL,  # cost per tenant and month
     "on_call_contacts": DataClass.PERSONAL,
     "principals": DataClass.CREDENTIAL,
@@ -136,6 +164,8 @@ TABLE_CLASS: dict[str, DataClass] = {
     "privacy_cases": DataClass.HEALTH,
     "professionals": DataClass.PERSONAL,
     "professional_hours": DataClass.INTERNAL,  # working hours, no patient
+    "schedule_settings": DataClass.INTERNAL,
+    "schedule_exceptions": DataClass.INTERNAL,
     "publications": DataClass.PUBLIC,
     "reviews": DataClass.HEALTH,  # a held answer may contain clinical advice
     # A staff member's e-mail and password hash (ADR 0024): staff, never patients.

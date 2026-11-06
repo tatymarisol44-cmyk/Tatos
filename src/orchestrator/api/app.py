@@ -26,12 +26,18 @@ from fastapi.staticfiles import StaticFiles
 from orchestrator import __version__
 from orchestrator.api import (
     a2a,
+    billing,
+    billing_automation,
+    billing_followup,
+    billing_notice_trials,
     business,
     channels,
     clinical,
     establishment,
     inbox,
+    instrument_imports,
     instruments,
+    marketing_workflow,
     oncall,
     patients,
     privacy,
@@ -40,6 +46,9 @@ from orchestrator.api import (
     social,
     social_login,
     staff_login,
+    surveys,
+    tax_trials,
+    test_images,
     workshops,
 )
 from orchestrator.api import agenda as agenda_api
@@ -120,9 +129,17 @@ async def outbox_worker(orch: Orchestrator, interval: int) -> None:
         except Exception:
             log.exception("appointment reminders pass failed")
         try:
+            await orch.billing_automation.due()
+        except Exception:
+            log.error("billing automation pass failed; automatic sends remain guarded")
+        try:
             await orch.publications.publish_due()
         except Exception:
             log.exception("scheduled publications pass failed")
+        try:
+            await orch.surveys.tick()
+        except Exception:
+            log.error("service survey reminders unavailable; no external messages were sent")
         try:
             await orch.refresh_ops_gauges()
         except Exception:
@@ -187,8 +204,11 @@ def create_app(
         max_bytes=settings.max_body_bytes,
         overrides={
             "/v1/knowledge/documents": settings.max_document_body_bytes,
+            "/v1/clinical/instrument-imports": 5 * 1024 * 1024 + 64 * 1024,
             # multipart framing adds a little to the file itself
             r"^/v1/clinical/patients/[\w.-]{1,64}/files$": settings.clinical_file_max_bytes
+            + 64 * 1024,
+            r"^/v1/clinical/patients/[\w.-]{1,64}/test-images$": settings.clinical_file_max_bytes
             + 64 * 1024,
         },
     )
@@ -212,6 +232,12 @@ def create_app(
         )
     app.include_router(a2a.router, tags=["a2a"])
     app.include_router(business.router)
+    app.include_router(billing.router)
+    app.include_router(billing_automation.router)
+    app.include_router(billing_followup.router)
+    app.include_router(billing_notice_trials.router)
+    app.include_router(surveys.router)
+    app.include_router(tax_trials.router)
     app.include_router(patients.router)
     app.include_router(channels.router)
     app.include_router(inbox.router)
@@ -221,9 +247,12 @@ def create_app(
     app.include_router(social.router)
     app.include_router(social_login.router)
     app.include_router(publications.router)
+    app.include_router(marketing_workflow.router)
     app.include_router(establishment.router)
     app.include_router(clinical.router)
     app.include_router(instruments.router)
+    app.include_router(instrument_imports.router)
+    app.include_router(test_images.router)
     app.include_router(agenda_api.router)
     app.include_router(oncall.router)
     app.include_router(privacy.router)

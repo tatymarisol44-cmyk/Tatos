@@ -207,6 +207,47 @@ async def test_a_long_run_does_not_lose_its_conversation_lease(orchestrator: Orc
             await orchestrator.leases.acquire("acme", "long-run", "another-replica")
 
 
+async def test_finishing_a_run_does_not_cancel_an_inflight_database_renewal(
+    orchestrator: Orchestrator,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    entered, finish = asyncio.Event(), asyncio.Event()
+    original = orchestrator.leases.renew
+    calls = 0
+    cancelled = False
+
+    async def delayed(tenant: str, thread: str, holder: str) -> bool:
+        nonlocal calls, cancelled
+        calls += 1
+        if calls > 1:
+            entered.set()
+            try:
+                await finish.wait()
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+        return await original(tenant, thread, holder)
+
+    orchestrator.leases.ttl = timedelta(milliseconds=600)
+    monkeypatch.setattr(orchestrator.leases, "renew", delayed)
+
+    async def run() -> None:
+        async with orchestrator._lease("acme", "closing"):
+            await asyncio.wait_for(entered.wait(), timeout=2)
+
+    task = asyncio.create_task(run())
+    await asyncio.wait_for(entered.wait(), timeout=2)
+    await asyncio.sleep(0)  # the owner starts closing while renewal is in flight
+    finish.set()
+    await asyncio.wait_for(task, timeout=2)
+    assert not cancelled
+    assert not await orchestrator.leases.active("acme", "closing")
+    await orchestrator.leases.acquire("acme", "still-usable", "next")
+    await orchestrator.leases.release("acme", "still-usable", "next")
+
+
 async def test_a_long_stream_keeps_its_lease_while_waiting_for_the_model(
     orchestrator: Orchestrator, fake_llm: FakeLLM
 ) -> None:

@@ -20,6 +20,12 @@ from orchestrator import usage as ledger
 from orchestrator.agenda import Agenda
 from orchestrator.answers import Provenance, provenance, sources_view
 from orchestrator.auth import PrincipalStore
+from orchestrator.availability import Availability
+from orchestrator.billing_automation import BillingAutomation
+from orchestrator.billing_followup import PaymentFollowups
+from orchestrator.billing_ledger import BillingLedger
+from orchestrator.billing_notice_trials import BillingNoticeTrials
+from orchestrator.billing_store import BillingStore
 from orchestrator.briefing import Briefing
 from orchestrator.campaigns import CampaignService
 from orchestrator.catalog import Catalog, load_catalog
@@ -29,6 +35,7 @@ from orchestrator.clinical_records import ClinicalRecords
 from orchestrator.config import Settings
 from orchestrator.crm import CrmService
 from orchestrator.db import Database, aware, utcnow
+from orchestrator.dlocal_billing import DlocalBilling
 from orchestrator.engagement import Engagement
 from orchestrator.establishment import Professionals
 from orchestrator.factories import (  # re-exported for callers of the old location
@@ -50,10 +57,14 @@ from orchestrator.guardrails import redact_pii
 from orchestrator.inbound import InboundService
 from orchestrator.inbox import InboxService
 from orchestrator.insights import InsightsService
+from orchestrator.instrument_imports import InstrumentImports
 from orchestrator.instruments import Instruments
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.loyalty import Loyalty
+from orchestrator.marketing_designer import MarketingDesigner
+from orchestrator.marketing_groups import MarketingGroups
+from orchestrator.marketing_workflow import Branding, MarketingWorkflow
 from orchestrator.media_store import build_media_store
 from orchestrator.memory import SemanticMemory
 from orchestrator.monthly_report import MonthlyReport
@@ -70,7 +81,10 @@ from orchestrator.social_login import SocialLogin
 from orchestrator.spend import Spend
 from orchestrator.staff_login import StaffLogins
 from orchestrator.subject_rights import SubjectRights
+from orchestrator.surveys import Surveys
+from orchestrator.tax_trials import TaxTrials
 from orchestrator.telemetry import OPS
+from orchestrator.test_images import TestImages
 from orchestrator.whatsapp_assistant import WhatsAppAssistant
 from orchestrator.workshops import Workshops
 
@@ -180,25 +194,57 @@ class Orchestrator:
         self.consents = ConsentRegistry(self.db, self.audit)
         self.principals = PrincipalStore(self.db, self.audit)
         self.staff_logins = StaffLogins(self.db, self.audit, self.principals, settings)
+        self.billing = BillingStore(self.db, self.audit, settings)
+        self.dlocal_billing = DlocalBilling(self.billing)
         self.professionals = Professionals(self.db, self.audit, settings)
         self.clinical = ClinicalRecords(self.db, self.audit, self.professionals)
         self.instruments = Instruments(self.db, self.audit)
+        self.instrument_imports = InstrumentImports(self.db, self.audit, self.instruments)
         self.agenda = Agenda(self.db, self.audit, settings)
+        self.availability = Availability(self.db, self.audit)
+        self.billing_ledger = BillingLedger(self.billing)
+        self.billing_notice_trials = BillingNoticeTrials(self)
+        self.surveys = Surveys(self.db, self.audit)
+        self.tax_trials = TaxTrials(self.db, self.audit, settings.app_env)
         self.followup = FollowUp(self.db, self.consents)
         self.spend = Spend(self.db, settings)
         self.clinical_files = ClinicalFiles(self.db, self.audit, settings.clinical_file_max_bytes)
+        self.test_images = TestImages(
+            self.db, self.audit, self.clinical_files, settings, self.instruments
+        )
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.social_login = SocialLogin(self.db, self.audit, self.social, settings)
         self.inbound = InboundService(self.db, self.audit, settings)
+        self.payment_followups = PaymentFollowups(self)
+        self.billing_automation = BillingAutomation(self)
         self.oncall = OnCall(self.db, self.audit, settings)
         self.privacy_cases = PrivacyCases(self.db, self.audit)
         self.publications = PublicationService(
             self.db, self.audit, self.social, build_media_store(settings), settings
         )
         self.crm = CrmService(self.db, self.audit, settings)
+        self.crm.after_completed = self.surveys.enqueue_completed
         self.insights = InsightsService(self.db, self.crm, self.consents, self.llm, settings)
+        self.marketing_groups = MarketingGroups(self.db, self.audit, self.consents)
+        self.marketing_designer = MarketingDesigner(self.catalog, self.llm, settings, self.audit)
+        self.branding = Branding(self.db, self.audit)
+        self.marketing_workflow = MarketingWorkflow(
+            self.db,
+            self.audit,
+            self.marketing_designer,
+            self.branding,
+            self.publications,
+            self.leases,
+        )
         self.campaigns = CampaignService(
-            self.db, self.audit, self.consents, self.crm, self.insights, self.llm, settings
+            self.db,
+            self.audit,
+            self.consents,
+            self.crm,
+            self.insights,
+            self.llm,
+            settings,
+            self.marketing_groups,
         )
         self.remote = remote or (A2AClient(settings) if settings.remote_agents else None)
         self.graph = build_graph(
@@ -225,7 +271,9 @@ class Orchestrator:
         self.workshops = Workshops(self.db, self.audit)
         self.loyalty = Loyalty(self.db)
         self.engagement = Engagement(self.db, self.consents)
-        self.monthly_report = MonthlyReport(self.db, self.audit, ZoneInfo(settings.clinic_timezone))
+        self.monthly_report = MonthlyReport(
+            self.db, self.audit, ZoneInfo(settings.clinic_timezone), self.surveys
+        )
         self.inbox.inbound = self.inbound
         self.inbox.assistant = self.inbound.assistant
         self.inbound.inbox = self.inbox
@@ -245,11 +293,15 @@ class Orchestrator:
             self.clinical,
             self.instruments,
             self.clinical_files,
+            self.test_images,
             self.campaigns,
             self.inbox,
             self.workshops,
             self.reviews,
             self.audit,
+            self.billing,
+            self.surveys,
+            self.tax_trials,
         )
         self.portal = PatientPortal(self, self.crm, self.campaigns, self.consents, settings)
         self.ready = False
