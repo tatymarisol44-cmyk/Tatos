@@ -2,7 +2,7 @@
 # Multi-stage build: the Maven wrapper pins Maven, the runtime is a JRE only, runs as
 # non-root, and the jar is extracted into layers so dependency layers are cached.
 
-FROM eclipse-temurin:21-jdk@sha256:3e3c176ffed168beb42c607be9bc1639b466cf00261a0fb04425562c9d0c5c2b AS build
+FROM eclipse-temurin:21-jdk@sha256:23cc5734ff46e776f51ce66eb9ee08444fd47caabec0a95b7eb6e94be2d3696d AS build
 WORKDIR /src
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q package -DskipTests \
  && java -Djarmode=tools -jar target/jvm-specialist-agent.jar extract --layers --launcher \
       --destination /extracted
 
-FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5 AS runtime
+FROM eclipse-temurin:21-jre@sha256:227118764cccd3c3294617061aaa93a08309c63a395eefa83e6b35032992ea99 AS runtime
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="jvm-specialist-agent" \
       org.opencontainers.image.version="${VERSION}" \
