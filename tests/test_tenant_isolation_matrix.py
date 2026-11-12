@@ -468,6 +468,13 @@ def seed(c: TestClient) -> Acme:
         )
     )
     ids["instrument_import"] = source["id"]
+    _ok(
+        c.put(
+            "/v1/integration-setup/mentaltestlab",
+            headers=ACME,
+            json={"version": 0, "profile": {"account_id": MARKER}},
+        )
+    )
     issuer = _ok(
         c.put(
             "/v1/tax-trials/issuers",
@@ -530,6 +537,7 @@ def snapshot(c: TestClient, acme: Acme) -> dict[str, Any]:
         "service_survey_events": get("/v1/surveys/events"),
         "instrument_import": get(f"/v1/clinical/instrument-imports/{ids['instrument_import']}"),
         "tax_issuers": get("/v1/tax-trials/issuers"),
+        "integration_references": get("/v1/integration-setup"),
         "tax_document": get(f"/v1/tax-trials/documents/{ids['tax_document']}"),
         "billing_notice_trials": get(f"/v1/billing/orders/{ids['billing_invoice']}/notice-trials"),
         "professionals": get("/v1/admin/professionals"),
@@ -634,6 +642,15 @@ def attacks(acme: Acme) -> dict[tuple[str, str], tuple[str, dict[str, Any] | Non
             None,
         ),
         ("GET", "/v1/billing/configuration"): ("/v1/billing/configuration", None),
+        ("GET", "/v1/integration-setup"): ("/v1/integration-setup", None),
+        ("PUT", "/v1/integration-setup/{provider}"): (
+            "/v1/integration-setup/mentaltestlab",
+            {"version": 0, "profile": {"account_id": "globex-account"}},
+        ),
+        ("DELETE", "/v1/integration-setup/{provider}"): (
+            "/v1/integration-setup/mentaltestlab?version=1",
+            None,
+        ),
         ("GET", "/v1/clinical/instrument-imports"): ("/v1/clinical/instrument-imports", None),
         ("POST", "/v1/clinical/instrument-imports"): (
             "/v1/clinical/instrument-imports",

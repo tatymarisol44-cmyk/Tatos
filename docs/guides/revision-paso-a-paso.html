@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <title>Tatos — revisión paso a paso</title>
+  <style>
+    body{margin:0;background:#edf4f5;color:#173746;font:17px/1.6 system-ui,sans-serif}
+    main{max-width:1000px;margin:auto;padding:24px 18px}h1,h2,h3{line-height:1.3}
+    section,details{background:white;border:1px solid #c6d9dc;border-radius:12px;padding:22px;margin:16px 0}
+    summary{cursor:pointer;font-weight:700}li{margin:9px 0}a{color:#006d70}
+    table{border-collapse:collapse;width:100%;font-size:15px}th,td{text-align:left;padding:10px;border-bottom:1px solid #d4e0e2}
+    .table{overflow:auto}.notice{background:#fff5de}.ok{color:#00664a;font-weight:700}.expected{border-left:4px solid #008080;padding-left:14px}
+    small{color:#47616b}code{font-size:.93em;overflow-wrap:anywhere}
+    .button{display:inline-block;background:#087679;color:white;padding:12px 18px;border-radius:8px;text-decoration:none}
+    @media print{body{background:white}details{break-inside:avoid}details>*{display:block}}
+  </style>
+</head>
+<body><main>
+  <p><small>6 de noviembre de 2026 · revisión de la propietaria sobre la prueba de Render</small></p>
+  <h1>Revisaremos cada cambio por separado</h1>
+  <p><a class="button" href="https://tatos-pruebas-20261106.onrender.com/lab">Entrar a la prueba</a></p>
+  <section>
+    <h2>Cómo registraremos cada resultado</h2>
+    <p><strong>Aprobado:</strong> hiciste los pasos y coincidió el resultado. <strong>Fallo:</strong> ocurrió algo diferente.
+      <strong>Pendiente:</strong> aún no lo revisaste. <strong>Bloqueado:</strong> falta un servicio o un dato necesario.</p>
+    <p>Un resultado de mis pruebas técnicas no se anota como si tú ya lo hubieras aprobado.
+      Estas marcas iniciales reflejan únicamente tus respuestas en el chat; esta página es una guía estática.</p>
+    <p class="ok">01. Confirmaste que aparecen las cuatro pacientes ficticias.</p>
+    <p class="ok">02. Confirmaste que se creó una paciente nueva, con datos distintos del ejemplo.</p>
+    <p class="ok">03. Confirmaste que los valores editados se conservan después de recargar.</p>
+    <p class="ok">04. Confirmaste la eliminación de la paciente de prueba. El comportamiento al cancelar aún no se confirmó por separado.</p>
+    <p class="ok">05a. Confirmaste que pudiste entrar después de escribir el código del autenticador.</p>
+    <p class="ok">05b. Confirmaste que funciona Quitar acceso y mostrar el perfil Sin acceso.</p>
+    <p class="ok">05c. Confirmaste que funciona eliminar EQUIPO QA 01 y que desaparece también del listado de perfiles sin acceso.</p>
+    <p class="ok">05d. Confirmaste que se pudo generar una invitación nueva con el mismo correo, sin error de correo registrado.</p>
+    <p class="ok">06a–06b. Indicaste la reserva del 7 de noviembre de 2026 a las 11:00 y respondiste OK al comprobarla en la Agenda de Doctora.</p>
+    <p class="ok">06c. Respondiste OK al movimiento de la cita a las 12:00 y su ausencia a las 11:00 en Doctora.</p>
+    <p class="ok">06d. Confirmaste el cambio también en Paciente. Confirmación recibida el 10/11; la cita del 7/11 queda como evidencia histórica.</p>
+    <p><strong>06e. Pendiente:</strong> probar el cierre del 12/11/2026 en Fechas especiales y vacaciones, comprobarlo desde Paciente y restaurar el horario semanal.</p>
+    <p>La actualización reinició los datos temporales; los controles anteriores conservan su evidencia histórica.</p>
+    <p>Para reportar un fallo: indica el número de prueba, lo que pulsaste y el mensaje exacto.
+      Si compartes una captura, deja fuera contraseñas y enlaces de acceso.</p>
+  </section>
+  <section>
+    <h2>Datos iniciales para comparar</h2>
+    <p>Son valores al arrancar la prueba. Si ya modificaste un registro, revisaremos su historial antes de comparar.</p>
+    <div class="table"><table>
+      <thead><tr><th>Paciente</th><th>ID de referencia</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Uso</th></tr></thead>
+      <tbody>
+        <tr><td>Paciente ficticia — Pendiente</td><td>paciente-demo-0</td><td>USD 50</td><td>USD 0</td><td>USD 50</td><td>Cobro pendiente</td></tr>
+        <tr><td>Paciente ficticia — Abono</td><td>paciente-demo-1</td><td>USD 50</td><td>USD 20</td><td>USD 30</td><td>Abonos; referencia inicial FICTICIO-1</td></tr>
+        <tr><td>Paciente ficticia — Pagado</td><td>paciente-demo-2</td><td>USD 50</td><td>USD 50</td><td>USD 0</td><td>No debe reclamar deuda; referencia FICTICIO-2</td></tr>
+        <tr><td>Paciente ficticia — Encuesta</td><td>paciente-demo-3</td><td>USD 50</td><td>USD 0</td><td>USD 50</td><td>Acceso Paciente, consulta completada y encuesta</td></tr>
+      </tbody>
+    </table></div>
+    <p>Profesional: <strong>Doctora de prueba</strong>. Horario inicial: todos los días, 09:00 a 13:00, intervalos de 60 minutos.
+      Las citas y vencimientos se generan respecto del arranque del servicio: no deben compararse con una fecha fija escrita aquí.</p>
+    <p>Mensualidad ficticia de la app: <strong>USD 100</strong>. Identidad visual inicial: Consultorio ficticio,
+      fondo #FFFFFF, acento #006666 y texto #222222. Marketing trae 1 plan y 3 creatividades (feed, story y square).
+      La cuenta @ficticio es un registro de demostración, no una cuenta conectada.</p>
+    <p>Acceso: usuario <strong>revisora</strong> y contraseña del auxiliar privado. Dentro de /lab, cada perfil entra automáticamente.
+      «Doctora» tiene permisos ampliados para esta revisión; no representa los permisos mínimos de una psicóloga real.</p>
+  </section>
+  <details open><summary>02. Crear paciente · Doctora</summary>
+    <ol><li>Abre Pacientes. Arriba de la lista pulsa <strong>Nuevo paciente</strong>.
+      <a href="https://tatos-pruebas-20261106.onrender.com/app#pacientes/nuevo">Abrir directamente el formulario</a> en el navegador donde elegiste Doctora.</li>
+      <li>Nombre: <strong>PRUEBA REVISION 01</strong>. Correo: <strong>prueba.revision@example.com</strong>.
+        Fecha de nacimiento: <strong>15/01/1990</strong>. Deja celular vacío.</li>
+      <li>Pulsa <strong>Crear paciente</strong>.</li></ol>
+    <p class="expected">Debe abrirse su ficha con el nombre y correo. Vuelve a Pacientes y busca el nombre: debe aparecer una sola vez.
+      Comprueba la fecha en Editar datos. Esta paciente es nueva; no sustituye ninguna de las cuatro iniciales.</p>
+  </details>
+  <details><summary>03. Editar datos y comprobar que se guardan · Doctora</summary>
+    <ol><li>Abre PRUEBA REVISION 01 y pulsa <strong>Editar datos</strong>.</li>
+      <li>Cambia nombre a <strong>PRUEBA REVISION EDITADA</strong> y correo a <strong>prueba.editada@example.com</strong>.
+        Conserva nacimiento y celular vacío.</li><li>Pulsa Guardar datos. Recarga y vuelve a abrir Editar datos.</li></ol>
+    <p class="expected">Deben conservarse los valores nuevos; no se crea una segunda paciente. La fecha sigue siendo 15/01/1990.</p>
+  </details>
+  <details><summary>04. Eliminar datos de una paciente nueva · Doctora</summary>
+    <ol><li>Crea otra paciente llamada <strong>PRUEBA BORRAR 01</strong>, sin datos de contacto ni historia.</li>
+      <li>En su ficha pulsa <strong>Eliminar datos del paciente</strong>.</li>
+      <li>Primero pulsa Cancelar: debe seguir en la lista.</li>
+      <li>Abre otra vez la eliminación y escribe exactamente <strong>PRUEBA BORRAR 01</strong>. Pulsa Confirmar eliminación.</li></ol>
+    <p class="expected">No confirma con un nombre diferente; después de confirmar sale del listado habitual y no conserva sus datos de contacto.
+      Esta acción no implica borrar por completo un historial clínico existente. No uses las cuatro pacientes iniciales.</p>
+  </details>
+  <details><summary>05. Equipo: quitar acceso y eliminar perfil · Doctora</summary>
+    <ol><li>Ve a Ajustes → Equipo → Agregar a una persona.</li><li>Nombre <strong>EQUIPO QA 01</strong>,
+      correo <strong>equipo.qa@example.com</strong>, permiso <strong>Recepción</strong>. Pulsa Invitar.</li>
+      <li>Revisa que el perfil aparezca. Su enlace permite activar la cuenta temporal con contraseña y autenticador.
+        Usa una contraseña exclusiva para esta prueba y no compartas el enlace, el QR ni los códigos.</li>
+      <li>Quita el acceso. Marca Mostrar perfiles sin acceso y comprueba que continúa allí.</li>
+      <li>En ese perfil usa Eliminar perfil, confirma su nombre y vuelve a invitar el mismo correo.</li></ol>
+    <p class="expected">Quitar acceso conserva el perfil; eliminarlo permite volver a utilizar el correo.
+      No elimines tu cuenta actual ni los perfiles iniciales del laboratorio. Cualquier bloqueo debe quedar pendiente, no aprobado por suposición.</p>
+  </details>
+  <details><summary>06. Agenda compartida, reserva y reprogramación · Paciente / Doctora</summary>
+    <ol><li>Desde Cambiar perfil de prueba elige Paciente. En Citas elige una fecha futura y un horario libre de Doctora de prueba; anótalos.</li>
+      <li>Confirma una reserva. Cambia a Doctora y localiza esa misma cita de Paciente ficticia — Encuesta.</li>
+      <li>Reprograma a otro horario libre y confirma. Vuelve a Paciente y revisa el cambio.</li>
+      <li>En Doctora → Ajustes → Fechas especiales y vacaciones, indica 12/11/2026 en Primera fecha y Última fecha. En Qué cambia elige Cerrar: vacaciones o ausencia y pulsa Guardar excepción. Debe mostrar el aviso Guardado y la fecha como cerrado.</li>
+      <li>Después cambia a Paciente y comprueba que no se ofrece esa fecha para reservar. Vuelve a Doctora y restaura esa misma fecha con Volver al horario semanal → Guardar excepción. Comprueba de nuevo los horarios desde Paciente. Estos pasos siguen pendientes.</li></ol>
+    <p class="expected">Ambos perfiles ven la misma cita. Reprogramar conserva la cita y su precio, sin duplicarla.
+      No puede confirmarse una segunda reserva que se solape. La selección de servicio debe respetar duración e intervalo configurados.</p>
+  </details>
+  <details><summary>07. Cargar una fuente y parámetros de Tests · Doctora</summary>
+    <p><a href="test-ficticio-qa.json" download>Guardar el archivo test-ficticio-qa.json</a>. Todo su contenido es inventado para QA.</p>
+    <ol><li>Abre Ajustes → Fuentes de tests. Nombre <strong>TEST FICTICIO QA - NO CLINICO</strong>;
+      propietario <strong>Material original ficticio de QA de Tatos</strong>; licencia <strong>Material propio solo para pruebas de software</strong>;
+      edición <strong>QA 1</strong>; fuente <strong>test-ficticio-qa.json</strong>; uso permitido <strong>Prueba privada de software, sin uso clínico</strong>.</li>
+      <li>Deja API oficial vacía. Referencia de cálculo <strong>Suma QA de tres valores 0, 1 o 2</strong>.
+        Referencia de validación <strong>NO VALIDADO CLINICAMENTE; ejemplo ficticio de software</strong>.</li>
+      <li>Selecciona el archivo JSON y pulsa Cargar como borrador. Revisa la definición propuesta.</li>
+      <li>Comprueba las tres preguntas, sus opciones y los rangos de ejemplo. Solo entonces marca las tres revisiones e incorpora el test privado.</li></ol>
+    <p class="expected">Se registra fuente, edición y huella; la definición queda privada. Suma, opciones y bandas coinciden con el archivo.
+      Declarar «no validado» no valida clínicamente el test. Word/Excel solo extraen texto/celdas; PDF e imágenes son adjuntos sin OCR en esta pantalla.</p>
+  </details>
+  <details><summary>08. Puntuación, bandas y versión de un Test · Doctora / Paciente</summary>
+    <ol><li>En la ficha de Paciente ficticia — Encuesta, Tests, selecciona el test ficticio y pulsa Enviar a su app.</li>
+      <li>Con perfil Paciente abre el test pendiente, responde <strong>Dos, Uno, Cero</strong> y envíalo.</li>
+      <li>Vuelve a Doctora → esa paciente → Tests y abre el resultado.</li>
+      <li>En Ajustes → Tus tests → Editar textos revisa Puntuación y bandas. Si guardas una nueva versión, comprueba que el informe anterior conserve su versión.</li></ol>
+    <div class="table"><table><thead><tr><th>Respuestas</th><th>Suma esperada</th><th>Banda ficticia</th></tr></thead><tbody>
+      <tr><td>0, 0, 0</td><td>0</td><td>Ejemplo A</td></tr><tr><td>2, 1, 0</td><td>3</td><td>Ejemplo B</td></tr><tr><td>2, 2, 2</td><td>6</td><td>Ejemplo B</td></tr>
+    </tbody></table></div>
+    <p class="expected">Opciones 0/1/2, método suma, banda A de 0 a 2 y B de 3 a 6, sin alerta clínica.
+      La profesional ve el resultado; no debe transformarse en un diagnóstico. Los informes previos no se recalculan al cambiar los parámetros.</p>
+  </details>
+  <details><summary>09. Tests en imagen y parámetros de aplicación · revisión parcial</summary>
+    <p>En la ficha → Tests revisaremos carga de imagen, tipo de documento y datos de aplicación: fuente/edición,
+      población, criterios y reglas. Las respuestas deben revisarse antes de asociarlas con un resultado.</p>
+    <p class="expected">La interfaz no debe inventar respuestas ni bandas. Un dibujo no tiene un baremo diagnóstico automático validado.
+      El motor de visión local está <strong>desactivado en este Render</strong>: inferencia por imagen e informe automático quedan
+      <strong>bloqueados aquí</strong>, no aprobados por abrir la ventana.</p>
+  </details>
+  <details><summary>10. Grupos exclusivos y publicidad separada · Dueña</summary>
+    <ol><li>En Marketing → Grupos crea <strong>Grupo QA A</strong> y marca Paciente ficticia — Pendiente.</li>
+      <li>Crea <strong>Grupo QA B</strong> y marca Paciente ficticia — Abono.</li>
+      <li>Reabre A y B. La persona de A debe aparecer bloqueada para entrar en B mientras siga en A.</li>
+      <li>Para moverla: desmárcala en A, guarda, luego márcala en B y guarda.</li>
+      <li>En Campañas crea <strong>Publicidad QA A</strong> seleccionando solo A y <strong>Publicidad QA B</strong> seleccionando solo B.</li></ol>
+    <p class="expected">Cada persona pertenece a un solo grupo. Las listas y campañas permanecen separadas.
+      Eliminar un grupo no elimina pacientes. Pertenecer a un grupo no concede consentimiento ni envía publicidad.</p>
+  </details>
+  <details><summary>11. Identidad visual, agente y diseños · Dueña</summary>
+    <ol><li>En Marketing → Identidad cambia el nombre a <strong>Consultorio QA</strong> y conserva los colores iniciales.</li>
+      <li>En Planes y diseños abre el plan existente: deben verse tres variantes de diseño.</li>
+      <li>Para un borrador nuevo usa objetivo <strong>Presentar un taller ficticio de organización semanal</strong>,
+        público <strong>Público general adulto</strong>, red <strong>Instagram</strong>.</li>
+      <li>Revisa el texto, los formatos, los archivos de diseño y los pasos de aprobación/programación.</li></ol>
+    <p class="expected">Los agentes existentes alimentan borradores revisables y se crean archivos de diseño.
+      La IA de este entorno está simulada; ni una aprobación ni una fecha programada acreditan una publicación real en Instagram.</p>
+  </details>
+  <details><summary>12. Encuestas voluntarias y respuesta crítica · Paciente / Dueña</summary>
+    <ol><li>Como Paciente abre Encuestas y localiza <strong>Experiencia de atención (prueba)</strong>.</li>
+      <li>Comprueba la pregunta <strong>¿Cómo fue la atención?</strong>, escala de 1 a 5.</li>
+      <li>Responde <strong>1</strong> y envía una sola vez. Vuelve como Dueña a Marketing → Encuestas.</li>
+      <li>Revisa el resumen y el aviso crítico. Comprueba que cambiar una definición no altere lo ya asignado.</li></ol>
+    <p class="expected">La respuesta queda registrada; el mínimo de la escala se normaliza a 0/100 y cae bajo el umbral ficticio de 40.
+      No es una medida clínica. La encuesta es voluntaria y las invitaciones sociales reales siguen pendientes.</p>
+  </details>
+  <details><summary>13. Cobros, abonos y protección contra duplicados · Doctora</summary>
+    <ol><li>En Cobros abre Ver pago → Saldo y abonos y compara los cuatro saldos de la tabla inicial.</li>
+      <li>En la orden de <strong>Abono</strong>, registra <strong>USD 10</strong>, identificador <strong>QA-ABONO-001</strong>,
+        nota <strong>Ingreso inventado para revisar software</strong>. La casilla de verificación se usa solo como ensayo, sin dinero real.</li>
+      <li>Reabre: abonado 30, saldo 20. Intenta repetir esos USD 10 con el mismo identificador QA-ABONO-001.</li>
+      <li>El saldo debe seguir en 20. Registra después <strong>USD 20</strong> con identificador <strong>QA-ABONO-002</strong>.</li></ol>
+    <p class="expected">Final: abonado 50, saldo 0 y estado pagado. No duplica un ingreso ni permite exceder el total.
+      Adjuntar o informar un comprobante no confirma por sí solo el pago. No hay banco o pasarela real conectados.</p>
+  </details>
+  <details><summary>14. Seguimiento de impagos y límite de avisos · simulador</summary>
+    <ol><li>En una orden pendiente abre Saldo y abonos → <strong>Ensayar avisos sin enviar</strong>.</li>
+      <li>Revisa y configura el intervalo de un día y máximo de tres avisos; anota su vencimiento.</li>
+      <li>Ejecuta la simulación desde el día posterior al vencimiento, después de las 09:00 de la zona indicada.</li>
+      <li>Repítela sin avanzar el día: no debe añadir otro aviso del mismo intervalo. Avanza los días ficticios hasta el límite.</li>
+      <li>Revisa una orden pagada: no debe reclamar saldo. Comprueba que la simulación no cambió pagos ni fechas reales.</li></ol>
+    <p class="expected">Se ve el motivo y el historial del ensayo, sin superar tres recordatorios ni continuar con deuda saldada.
+      Esto no verifica WhatsApp real, notificaciones de la pasarela ni ejecución automática diaria de un worker.</p>
+  </details>
+  <details><summary>15. Mensualidad de la app y separación de cobros · Administración Tatos</summary>
+    <ol><li>Cambia a Administración Tatos y abre la sección de cobros de plataforma.</li>
+      <li>Localiza la mensualidad ficticia de <strong>USD 100</strong> del consultorio de prueba.</li>
+      <li>Comprueba que no se mezcla con las consultas de USD 50; revisa saldo y seguimiento por separado.</li></ol>
+    <p class="expected">La suscripción de la app pertenece al cobro de la plataforma. La consulta pertenece al consultorio.
+      La tarjeta recurrente y las transferencias reales no se acreditan con esta prueba.</p>
+  </details>
+  <details><summary>16. Ensayo fiscal y reintentos · Doctora</summary>
+    <ol><li>En Ajustes → Ensayo fiscal privado selecciona el emisor <strong>Consultorio de ensayo</strong>,
+      RUC ficticio <strong>0000000000001</strong>, establecimiento 001 y punto 001.</li>
+      <li>Elige una obligación de USD 50. Impuesto de ensayo <strong>0 centavos</strong>;
+        fundamento <strong>Importe ficticio de QA, sin regla tributaria aplicable</strong>.</li>
+      <li>Prueba los escenarios de aceptar, rechazar y fallo temporal. En fallo temporal revisa el tiempo de espera antes de reintentar.</li></ol>
+    <p class="expected">Cada ensayo conserva secuencia privada, estado y XML no tributario.
+      Debe señalar que no hay firma, autorización SRI o factura válida. El importe cero es un ejemplo de software, no una indicación fiscal.</p>
+  </details>
+  <details><summary>17. Conversaciones e historia clínica · requiere un ejemplo disponible</summary>
+    <ol><li>En Mensajes revisa si existe una conversación ficticia. Si está vacío, anota <strong>Pendiente: falta conversación de ejemplo</strong>.</li>
+      <li>Si existe una preparada para borrar, abre Eliminar conversación: primero cancela; luego confirma escribiendo <strong>ELIMINAR</strong>.</li>
+      <li>Para historia crea una paciente diferente, <strong>PRUEBA HISTORIA 01</strong>, y guarda el texto <strong>Nota totalmente ficticia de QA</strong>.</li>
+      <li>Usa Corregir y guarda <strong>Corrección ficticia de QA</strong>. Revisa que se conserven la original y la corrección vinculadas.</li></ol>
+    <p class="expected">Cancelar no borra; confirmar borra la conversación operativa y borradores.
+      La historia no se sobrescribe ni desaparece con una eliminación de contacto; su conservación restringida debe quedar explícita.
+      No se considera probado un botón sin un registro de ejemplo para utilizarlo.</p>
+  </details>
+  <details><summary>18. Permisos, privacidad y aislamiento · todos los perfiles</summary>
+    <ol><li>Como Recepción revisa agenda y contacto. No debe permitir leer notas, resultados clínicos o documentos restringidos.</li>
+      <li>Como Dueña revisa marketing; no debe obtener acceso clínico por ese rol.</li>
+      <li>Como Otro consultorio busca las pacientes y los archivos del primero: no deben aparecer.</li>
+      <li>Como Paciente comprueba que solo puede ver sus citas, tests asignados y encuestas.</li></ol>
+    <p class="expected">Los datos se separan por consultorio y por permiso, también ante enlaces directos.
+      El perfil Doctora de esta prueba incluye permisos de administración; su amplitud no sirve para evaluar el rol clínico mínimo.</p>
+  </details>
+  <section class="notice">
+    <h2>Qué sigue pendiente aunque estos controles pasen</h2>
+    <p>Conexiones reales de Meta/WhatsApp y pagos, cobro recurrente real, verificación bancaria, ejecución programada,
+      visión remota, autorización SRI y validación clínica de baremos/modelos. Las pruebas de PostgreSQL real también siguen pendientes.</p>
+    <p>Usa únicamente datos inventados. El estado del laboratorio se pierde al reiniciarse el servicio.
+      Si ocurre, repetiremos el control inicial antes de comparar saldos. No se modifica la app de producción.</p>
+  </section>
+</main></body></html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tatos — preparación de integraciones</title>
+<style>
+body{margin:0;background:#eef5f5;color:#193c46;font:17px/1.6 system-ui,sans-serif}
+main{max-width:900px;margin:auto;padding:24px}section{background:#fff;border:1px solid #c8dddd;border-radius:12px;padding:22px;margin:20px 0}
+h1,h2{line-height:1.25}a{color:#006f73}li{margin:8px 0}.status{background:#fff4d5;padding:16px;border-radius:8px}code{overflow-wrap:anywhere}
+</style>
+<main>
+<h1>Conexiones de cada consultorio</h1>
+<p class="status"><strong>Preparación local del 10 de noviembre de 2026.</strong>
+La pantalla nueva aún no está publicada en Render. Las conexiones externas no se han activado.</p>
+<section><h2>Qué está preparado</h2>
+<p>La pantalla <strong>Ajustes → Integraciones del consultorio → Preparar integraciones</strong>
+permite a Administración o Dueña guardar y eliminar las referencias de su empresa.
+Cada consultorio tiene sus propios datos. El formulario no recibe contraseñas ni claves API.</p>
+<p>Las comprobaciones locales finalizaron con <strong>67 pruebas aprobadas y una omitida</strong>.
+Se revisaron los formularios en Chrome, el aislamiento entre consultorios, permisos,
+cifrado, conflictos al guardar y migración de base de datos SQLite. No es evidencia de conexión real.</p>
+</section>
+<section><h2>1. Facebook, Instagram y WhatsApp</h2>
+<ol><li>En la nueva sección, escribir el <strong>RUC de la empresa</strong> y el
+<strong>ID del portafolio empresarial de Meta</strong>.</li>
+<li>Pulsar <strong>Guardar datos de mi cuenta</strong>. El estado seguirá indicando verificación externa pendiente.</li>
+<li>Pulsar <strong>Continuar con el inicio de sesión de Meta</strong>.</li>
+<li>Elegir la red, iniciar sesión en Meta y autorizar los activos que administra ese consultorio.</li>
+<li>Al volver a Tatos, elegir la cuenta autorizada para terminar de vincularla.</li></ol>
+<p>Un RUC o un ID no otorga un rol de prueba ni verifica la propiedad de una cuenta.
+La habilitación de usuarios externos depende de Meta y de los permisos concretos de la aplicación.
+No se ha abierto el modo desarrollo a todas las cuentas.</p>
+<p>Referencias oficiales de Meta:
+<a href="https://www.postman.com/meta/facebook-marketing-api/collection/0zr4mes/facebook-marketing-api-mapi" target="_blank" rel="noopener noreferrer">Marketing API y acceso avanzado</a>;
+<a href="https://www.postman.com/meta/messenger-platform-api/folder/22794852-255610cd-47f5-4f4d-b3fa-71aec360be9a" target="_blank" rel="noopener noreferrer">permisos de conversaciones</a>.</p>
+</section>
+<section><h2>2. TuFacturero</h2>
+<p>Se pueden preparar el RUC y una referencia de cuenta. TuFacturero confirma que dispone de API,
+pero falta obtener su documentación y acceso técnico para implementar y probar el conector.</p>
+<ol><li>Entrar en la cuenta propia de <a href="https://tufacturero.ec/" target="_blank" rel="noopener noreferrer">TuFacturero</a>.</li>
+<li>Solicitar a su equipo de desarrollo documentación de integración y ambiente de pruebas.</li>
+<li>Pedir autenticación por empresa, emisión, consulta de estados, XML/RIDE y prevención de duplicados.</li>
+<li>Guardar las credenciales por un canal privado cuando el contrato esté disponible.</li></ol>
+<p>La preparación no emite una factura ni acredita autorización del SRI.
+<a href="https://tufacturero.ec/faq-items/puedo-integrar-tufacturero-con-mi-sistema-administrativo/" target="_blank" rel="noopener noreferrer">Respuesta oficial de integración</a>.</p>
+</section>
+<section><h2>3. MentalTestLab</h2>
+<p>Se puede guardar una referencia de cuenta. No se encontró documentación pública de API en la búsqueda realizada.
+El enlace de CAPTCHA no es una API de evaluaciones.</p>
+<ol><li>Abrir el <a href="https://mentaltestlab.com/evaluaciones/" target="_blank" rel="noopener noreferrer">catálogo oficial de evaluaciones</a>.</li>
+<li>Consultar si ofrecen API para integrar cuentas de consultorios y obtener documentación y pruebas.</li>
+<li>Confirmar autorización para asignar evaluaciones e importar resultados, versiones y baremos.</li>
+<li>Acordar el tratamiento de datos antes de enviar información de pacientes.</li></ol>
+<p>La preparación no descarga tests, copia baremos ni envía datos clínicos.
+<a href="https://mentaltestlab.com/terminos-y-condiciones/" target="_blank" rel="noopener noreferrer">Condiciones del proveedor</a>.</p>
+</section>
+<section><h2>Para continuar</h2>
+<p>Faltan las especificaciones de API y el acceso de pruebas de los proveedores.
+Con ellos se podrán implementar los contratos reales y comprobarlos por consultorio.</p>
+<p>La revisión de agenda queda pendiente desde el control 06e; este cambio de tarea no la da por aprobada.</p>
+</section>
+</main>
+</html>

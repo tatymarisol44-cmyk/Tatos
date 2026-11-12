@@ -882,6 +882,7 @@ function openVisitActions(visit) {
 VIEWS.ajustes = async (main, section, which) => {
   const s = state.session;
   if (section === "redes") return socialAccountsView(main);
+  if (section === "integraciones") return integrationSetupView(main);
   if (section === "pagos") return billingView(main);
   if (section === "redes-manual") return manualSocialAccountsView(main);
   if (section === "test" && which) return testEditor(main, which);
@@ -890,6 +891,9 @@ VIEWS.ajustes = async (main, section, which) => {
   const parts = [page("Ajustes", "Tu perfil, tu horario, tus tests y la guardia", connectSocialButton(),
     state.session.roles.some((role) => ["admin", "reception", "owner"].includes(role)) ? link("#ajustes/pagos", "Cobros y suscripción") : null)];
   parts.push(s.professional ? await hoursCard(s.professional) : profileCard());
+  if (canPrepareIntegrations()) parts.push(card("Integraciones del consultorio", "",
+    el("p", { text: "Registra los datos de tu empresa y revisa lo que falta para conectar Meta, TuFacturero y MentalTestLab." }),
+    link("#ajustes/integraciones", "Preparar integraciones", "btn")));
   if (s.clinician) parts.push(await testsCard());
   if (s.roles.some((role) => ["admin", "owner"].includes(role))) parts.push(card("Prototipo fiscal privado", "", link("#ajustes/fiscal-ensayo", "Abrir ensayos sin validez tributaria", "btn")));
   if (canReadCare()) parts.push(await onCallCard());
@@ -897,6 +901,70 @@ VIEWS.ajustes = async (main, section, which) => {
   parts.push(accountCard());
   main.replaceChildren(...parts);
 };
+
+function canPrepareIntegrations() { return state.session.roles.some((role) => ["admin", "owner"].includes(role)); }
+
+async function integrationSetupView(main) {
+  const head = page("Integraciones del consultorio", "Datos de la empresa y requisitos de conexión", link("#ajustes", "Volver a Ajustes"));
+  if (!canPrepareIntegrations()) {
+    main.replaceChildren(head, empty("La dueña o Administración configura las integraciones del consultorio.")); return;
+  }
+  const entries = await api("/v1/integration-setup");
+  const cards = entries.map((entry) => {
+    let version = entry.version;
+    const ruc = el("input", { type: "text", inputmode: "numeric", pattern: "[0-9]{13}", minlength: "13", maxlength: "13", value: entry.profile?.ruc || "", required: entry.provider !== "mentaltestlab", autocomplete: "off" });
+    const account = el("input", { type: "text", maxlength: "128", value: entry.profile?.account_id || "", required: entry.provider !== "tufacturero", autocomplete: "off", spellcheck: "false" });
+    const status = el("p", { role: "status", class: "status", "aria-live": "polite" });
+    const saved = el("p", { class: "muted", text: entry.configured ? "Datos guardados. Verificación externa pendiente." : "Aún no has guardado los datos de esta integración." });
+    const save = el("button", { type: "submit", class: "btn primary", text: "Guardar datos de mi cuenta" });
+    const clear = el("button", { type: "button", class: "btn", text: "Eliminar datos guardados", disabled: !entry.configured });
+    const accountLabel = entry.provider === "meta" ? "ID del portafolio empresarial de Meta"
+      : entry.provider === "tufacturero" ? "Referencia de cuenta en TuFacturero (opcional)" : "Referencia de tu cuenta en MentalTestLab";
+    const form = el("form", { class: "stack" },
+      entry.provider !== "mentaltestlab" ? el("label", { class: "field" }, "RUC de mi empresa (13 dígitos)", ruc) : null,
+      el("label", { class: "field" }, accountLabel, account),
+      el("p", { class: "muted", text: "Introduce solo la referencia o identificador de tu cuenta. Las claves y contraseñas se configuran por un canal privado." }),
+      save, clear, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); if (save.disabled || !form.reportValidity()) return;
+      save.disabled = true; clear.disabled = true;
+      try {
+        const result = await api(`/v1/integration-setup/${entry.provider}`, { method: "PUT", body: { version, profile: {
+          ruc: entry.provider === "mentaltestlab" ? null : ruc.value.trim(), account_id: account.value.trim() || null,
+        } } });
+        version = result.version;
+        saved.textContent = "Datos guardados. Verificación externa pendiente.";
+        clear.disabled = false;
+        say(status, "Datos guardados para este consultorio. La autorización del proveedor sigue pendiente.", "done");
+      } catch (err) {
+        say(status, err.status === 409 ? "Los datos cambiaron. Recarga antes de guardar otra vez."
+          : err.status === 422 ? "Revisa el RUC de 13 dígitos y la referencia de cuenta. El ID empresarial de Meta debe ser numérico." : humanError(err), "error");
+        clear.disabled = false;
+      } finally { save.disabled = false; }
+    });
+    clear.addEventListener("click", async () => {
+      if (!sure(clear, "Sí, eliminar datos")) return;
+      clear.disabled = true; save.disabled = true;
+      try {
+        const result = await api(`/v1/integration-setup/${entry.provider}?version=${version}`, { method: "DELETE" });
+        version = result.version; ruc.value = ""; account.value = "";
+        saved.textContent = "Aún no has guardado los datos de esta integración.";
+        say(status, "Datos de preparación eliminados.", "done");
+      } catch (err) { clear.disabled = false; say(status, humanError(err), "error"); }
+      finally { save.disabled = false; }
+    });
+    const explanation = entry.provider === "meta"
+      ? "El RUC y el ID identifican tu negocio, pero no verifican su propiedad ni habilitan cualquier cuenta en desarrollo. Meta decide qué cuentas pueden autorizar la aplicación."
+      : entry.provider === "tufacturero"
+        ? "Preparación para facturación electrónica. Falta implementar y probar el conector con la documentación oficial de TuFacturero."
+        : "Preparación para evaluaciones externas. Falta confirmar la disponibilidad de la API y obtener autorización y documentación de MentalTestLab.";
+    return card(entry.name, "", el("p", { text: explanation }), saved, form,
+      el("h3", { text: "Para completar la conexión" }), el("ul", {}, ...entry.requirements.map((text) => el("li", { text }))),
+      el("a", { href: entry.url, target: "_blank", rel: "noopener noreferrer", class: "btn", text: "Abrir plataforma oficial" }),
+      entry.provider === "meta" ? link("#ajustes/redes", "Continuar con el inicio de sesión de Meta", "btn") : null);
+  });
+  main.replaceChildren(head, ...cards);
+}
 
 // Account setup uses credential names only (ADR 0015); tokens stay on the server.
 const SOCIAL_CONNECTIONS = {
@@ -935,7 +1003,9 @@ async function socialAccountsView(main) {
   }
   const [config, accounts] = await Promise.all([api("/v1/social/login/configuration"), api("/v1/social/accounts")]);
   const feedback = el("p", { class: "status", role: "status", "aria-live": "polite" });
-  const cards = [head];
+  const cards = [head,
+    el("p", { class: "notice", text: "Si Meta mantiene la aplicación en desarrollo, las pruebas están limitadas a las cuentas habilitadas por Meta. Guardar un RUC o ID no cambia esa habilitación." }),
+    canPrepareIntegrations() ? link("#ajustes/integraciones", "Datos de la empresa e integraciones", "btn") : null].filter(Boolean);
   for (const network of ["facebook", "instagram", "whatsapp"]) {
     const name = SOCIAL_CONNECTIONS[network].name;
     const available = config.providers[network]?.available;
@@ -1336,6 +1406,7 @@ async function testsCard() {
     ...(rows.length ? rows : [empty("Aún no tienes tests. Empieza con una plantilla de dominio público.")]),
     el("div", { class: "row tight" }, add("phq9", "Agregar PHQ-9 (depresión)"), add("gad7", "Agregar GAD-7 (ansiedad)")),
     status, link("#ajustes/importaciones", "Cargar test desde Word, Excel, JSON u otra fuente", "btn"), importTestConfiguration(),
+    canPrepareIntegrations() ? link("#ajustes/integraciones", "Preparar integración con MentalTestLab", "btn") : null,
     el("p", { class: "muted", text: "Por derechos de autor, las plantillas no traen el texto de las preguntas: cópialo del formulario oficial publicado. Hasta entonces el test no se puede enviar a las pacientes." }));
 }
 

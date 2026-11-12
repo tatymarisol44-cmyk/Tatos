@@ -1,0 +1,23 @@
+{
+  "name": "TEST FICTICIO QA - NO CLINICO",
+  "description": "Material original inventado para comprobar la interfaz y la suma. Sin validacion ni interpretacion clinica.",
+  "instructions": "Selecciona un numero en cada ejercicio. Es una prueba de software, no una evaluacion de salud.",
+  "administration": "self_report",
+  "items": [
+    {"id": "qa1", "text": "Ejercicio ficticio A: selecciona un numero", "options": [{"label": "Cero", "value": 0}, {"label": "Uno", "value": 1}, {"label": "Dos", "value": 2}]},
+    {"id": "qa2", "text": "Ejercicio ficticio B: selecciona un numero", "options": [{"label": "Cero", "value": 0}, {"label": "Uno", "value": 1}, {"label": "Dos", "value": 2}]},
+    {"id": "qa3", "text": "Ejercicio ficticio C: selecciona un numero", "options": [{"label": "Cero", "value": 0}, {"label": "Uno", "value": 1}, {"label": "Dos", "value": 2}]}
+  ],
+  "scoring": {
+    "method": "sum",
+    "bands": [
+      {"min": 0, "max": 2, "label": "Ejemplo A", "severity": "none"},
+      {"min": 3, "max": 6, "label": "Ejemplo B", "severity": "none"}
+    ]
+  },
+  "licence": {
+    "source": "Material original ficticio de QA de Tatos",
+    "attestation": true,
+    "note": "Solo pruebas de software. No es un test clinico ni un baremo validado."
+  }
+}

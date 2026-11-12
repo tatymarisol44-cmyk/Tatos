@@ -59,6 +59,7 @@ from orchestrator.inbox import InboxService
 from orchestrator.insights import InsightsService
 from orchestrator.instrument_imports import InstrumentImports
 from orchestrator.instruments import Instruments
+from orchestrator.integration_setup import IntegrationSetup
 from orchestrator.knowledge import KnowledgeBase
 from orchestrator.llm import LLMClient, build_llm
 from orchestrator.loyalty import Loyalty
@@ -214,6 +215,7 @@ class Orchestrator:
         )
         self.social = SocialAccounts(self.db, self.audit, self.professionals)
         self.social_login = SocialLogin(self.db, self.audit, self.social, settings)
+        self.integration_setup = IntegrationSetup(self.db, self.audit, settings)
         self.inbound = InboundService(self.db, self.audit, settings)
         self.payment_followups = PaymentFollowups(self)
         self.billing_automation = BillingAutomation(self)

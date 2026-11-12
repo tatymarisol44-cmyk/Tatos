@@ -37,6 +37,7 @@ from orchestrator.api import (
     inbox,
     instrument_imports,
     instruments,
+    integration_setup,
     marketing_workflow,
     oncall,
     patients,
@@ -246,6 +247,7 @@ def create_app(
     app.include_router(workshops.router)
     app.include_router(social.router)
     app.include_router(social_login.router)
+    app.include_router(integration_setup.router)
     app.include_router(publications.router)
     app.include_router(marketing_workflow.router)
     app.include_router(establishment.router)

@@ -32,6 +32,7 @@ from orchestrator import (  # noqa: F401  (imported for the tables they register
     inbox,
     instrument_imports,
     instruments,
+    integration_setup,
     knowledge,
     marketing_groups,
     marketing_workflow,
